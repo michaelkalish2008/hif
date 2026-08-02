@@ -13,7 +13,7 @@ Every HIF measurement is a **triple**: **observable × functional × resolution*
 
   The record always carries the run-level scalar (Part 1); measurements with `per-step` or `per-position` resolution additionally have a token-level trace that restores what the scalar compresses (Part 2).
 
-**History (vocabulary).** Earlier versions of these docs split this one concept across two words and two files: aggregate-resolution quantities were "metrics" (a METRICS.md) and token-level ones were "instrument readings" (an INSTRUMENTS.md). The split was nothing but the resolution coordinate of the triple wearing two names, and maintaining two vocabularies for one axis invited exactly the kind of double-counting the dedup notes below warn against. There is one concept — a **measurement** — and resolution is a field, not a document boundary.
+There is one concept — a **measurement** — and resolution is a field on it, not a category of its own. Splitting aggregate and token-level quantities into separate vocabularies would be the resolution coordinate wearing two names, and two names for one axis is how a set starts double-counting itself.
 
 ## Significance Gate — the bar for admitting a measurement
 
@@ -57,7 +57,16 @@ The triple says *what* was measured and at what granularity. It does not say *wh
 
 The prompt-only quantities are not worthless — "how surprising is this prompt under a fixed reference model" is a real question, and its answer is comparable across targets *precisely because* the target does not enter it. That is why they are reported rather than dropped, and why they are reported somewhere other than the model's measurement set.
 
-**How to see it for yourself.** Profile `gpt2` and `gpt2-medium` on the same prompt with `--diagnostics`. Every target-side number moves; `attention_entropy_input_bits` is bit-identical in both (`1.6677721955190443`), because it is a fixed reader measuring your prompt and the prompt did not change. A quantity that returns the same value whichever model you profiled is not measuring that model — that is what the subject field records, and `tests/unit/test_zero_variance_canary.py` asserts it for every row.
+**How to see it for yourself.** The two attention measurements come from the *same* reader — a fixed encoder that reads text as an object. They differ only in whose text it reads. Profile `gpt2` and `gpt2-medium` on one prompt with `--diagnostics`:
+
+| | reads the **prompt** (`attention_entropy_input_bits`) | reads the **generated text** (`attention_entropy_output_bits`) |
+|---|---|---|
+| `gpt2` | 1.6677721955190443 | 3.4767 |
+| `gpt2-medium` | 1.6677721955190443 | 3.6143 |
+
+The output-side value moves, because the two models generated different text and the reader read it. The input-side value is bit-identical, because the reader read your prompt and your prompt did not change — no property of either model can reach it. Same instrument, two subjects.
+
+That is the distinction `subject` records: not which tool computed a number, but whose data it was computed from. A quantity that returns the same value whichever model you profiled is measuring something other than that model. `tests/unit/test_zero_variance_canary.py` asserts this for every row, so a mislabelled subject fails without anyone reviewing the label.
 
 **`io_correlation_r` is the genuine mixed case**, and is classified as such rather than lumped either way. Under a surrogate it is the Pearson r between a surrogate-read per-variant input entropy shift and the *target's own* per-variant JSD. The target's data does enter, so the quantity stays in `measurements`; but a correlation cannot be attributed to one of its two series, so its subject degrades to `mixed` and the CLI marks the row. On `[F]` both series are the target's and the subject is `target-distribution`.
 
