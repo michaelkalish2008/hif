@@ -1,6 +1,6 @@
 # Computational Phenomenology and Hermeneutic Reading
 
-*This document collects the interpretive and philosophical framing from a longer paper on the Horizonal Interpretability Framework; the paper's empirical sections were withdrawn following an audit.*
+*The interpretive framing behind the framework: why read a model through its output distributions at all. It makes no empirical claims — those belong to the studies that use these measurements.*
 
 ---
 

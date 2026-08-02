@@ -222,9 +222,10 @@ class BehavioralRangeProfile(BaseModel):
     #   None, so 0.7.0 profile JSON still validates unchanged — and a profile
     #   without it is simply unchecked, never assumed compliant.
     # 0.9.0: REMOVED input_side.volatility_score
-    #   (mean_entropy / log2(vocab_size)) — the normaliser the measurement set
-    #   banned, still computed and persisted under a *_score name. Nothing in
-    #   hif read it. read input_side.mean_entropy (bits) with
+    #   (mean_entropy / log2(vocab_size)) — dividing entropy by vocabulary size
+    #   puts tokenizer metadata into a number labelled behaviour, and it
+    #   saturates. Nothing in hif read it. Read input_side.mean_entropy (bits)
+    #   with
     #   input_side.max_entropy as labelled context instead. Older profile JSON
     #   still carries the key and loads unchanged: pydantic ignores unknown
     #   fields on validation, so removal is read-compatible in the direction

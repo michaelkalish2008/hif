@@ -627,9 +627,9 @@ MEASUREMENT_REGISTRY: tuple[Measurement, ...] = (
         # `input_analysis.attention_map` — the encoder's self-attention over the
         # PROMPT. Nothing the target produced enters: the value is a function of
         # prompt text and encoder weights alone, so it is deterministic in the
-        # prompt and cannot vary with any model-side change. That is precisely
-        # the zero-variance signature the predecessor audit found. It is a real
-        # measurement of the prompt under a fixed reference encoder; it is not a
+        # prompt and cannot vary with any model-side change — profile two
+        # different models on one prompt and this value is bit-identical. It is a
+        # real measurement of the prompt under a fixed reference encoder; not a
         # measurement of the target, and no backend can make it one.
         subject=SUBJECT_PROMPT_ONLY,
         label="Horizon",  # no glyph: the ▼ symbol is not used in the code.

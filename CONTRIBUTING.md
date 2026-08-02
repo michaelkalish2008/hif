@@ -122,11 +122,9 @@ automatically once the row declares the subject, so the only thing you must
 get right is the declaration. A prompt-only quantity is still worth having:
 it is comparable across targets precisely because the target does not enter
 it. It is simply not a fact about the target, and the record must not be able
-to imply that it is. A caveat flag is not a substitute for absence here — that
-was the exact failure this field exists to prevent, and the prompt-only
-measurements in the predecessor audit showed zero variance across every
-model-side change tested, which is what "cannot see the model" looks like in
-data.
+to imply that it is. A caveat flag is not a substitute for absence here: a flag
+says "a number about this model, with a caveat", and absence says "this model
+produced no number". Only the second is true.
 
 ### 3. Check it passes the Significance Gate
 

@@ -118,11 +118,9 @@ limitation lives in provider opacity, not in the method.
 This instrument **describes** behaviour. It does not detect drift, identify
 attacks, or judge quality, and it should not be used as though it does.
 
-An earlier version of this project made inferential claims on top of these
-measurements — that shifts indicated model drift, that signatures identified
-adversarial inputs. Those claims were withdrawn after an internal audit found
-they did not survive scrutiny. The measurement layer survived; the interpretation
-built on top of it did not. What remains is deliberately narrow.
+Interpretation is the researcher's, and it belongs in the work that cites this
+tool rather than in the tool. That division is the point: a number you can check
+is worth more than a verdict you have to trust.
 
 Known limitations, stated plainly:
 
@@ -131,19 +129,17 @@ Known limitations, stated plainly:
   evidence will mislead you.
 - **On `[T-k]` and `[P]` backends, some quantities describe a local surrogate
   rather than the model you asked about.** They are computed from prompt text and
-  a local reader, and cannot observe a hosted model's internals — in the
-  predecessor project's audit they showed exactly zero variance across every
-  model-side change tested. Those quantities are no longer part of the
-  measurement set on those backends; they are reported separately, with their
-  reference model named. Check `hif models` before drawing conclusions about an
-  API model.
+  a local reader, and cannot observe a hosted model's internals — they return
+  the same value whichever model you profiled. They are reported separately from
+  the measurement set on those backends, with their reference model named. Check
+  `hif models` before drawing conclusions about an API model.
 - **`output_entropy_bits` is a lower bound** whenever the distribution is
   truncated to top-k, and is not comparable across backends with different k.
 - **No thresholds, no levels, no verdicts.** Deciding what a value *means*
   requires a baseline you establish yourself, on your own models and prompts —
   including measuring what the number does when nothing has changed. That
-  judgement is out of scope here, deliberately, because getting it wrong is how
-  the earlier version of this project went wrong.
+  judgement is deliberately out of scope here — it depends on your models, your
+  prompts, and what you are asking, none of which this tool can know.
 
 ## Documentation
 
