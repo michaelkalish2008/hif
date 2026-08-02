@@ -1,6 +1,7 @@
 """Tests for the within-generation semantic field instrument, Veer (◈).
 
-DRIFT_FIELD_MODEL.md §11.3. Veer is the per-step displacement of the top-K
+The Veer rule (docs/ARCHITECTURE.md § Field-model notes): Veer is the
+per-step displacement of the top-K
 candidate cloud's semantic centroid; deformation is the per-step change in the
 cloud's spread. Uses a content-addressable (deterministic-per-string) embedder so
 identical candidate clouds → identical centroids → zero Veer.

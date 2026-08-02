@@ -189,7 +189,8 @@ def collect_output_trace_mm(
     """Multimodal counterpart of collect_output_trace.
 
     Uses MultimodalModel.generate_prepared on an already-prepared input
-    (tokenize is never called with media — MULTIMODAL.md Design §2).
+    (tokenize is never called with media — Design §1-2,
+    docs/ARCHITECTURE.md § Multimodal notes).
     input_ids in the trace are the full processed sequence ids (placeholder
     ids for patches included).
 

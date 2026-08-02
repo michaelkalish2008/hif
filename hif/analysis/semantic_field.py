@@ -1,8 +1,8 @@
 """Within-generation semantic field instrument — "Veer" (◈).
 
-DRIFT_FIELD_MODEL.md § 11.3. The six admitted instruments read one generation
-event; this adds a seventh that reads the *trajectory* of the output's semantic
-possibility field WITHIN a single generation. At each step the top-K candidate
+The Veer rule (docs/ARCHITECTURE.md § Field-model notes): the admitted
+instruments read one generation event; this one reads the *trajectory* of the
+output's semantic possibility field WITHIN a single generation. At each step the top-K candidate
 cloud has a probability-weighted centroid in embedding space. As generation
 proceeds that centroid traces a path:
 

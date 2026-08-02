@@ -164,7 +164,7 @@ def analyze_input_side_mm(
     Entropy/surprisal are computed ONLY over positions in
     prepared.part_map.text_positions() — patch/placeholder positions have no
     meaningful vocab distribution and are excluded from the aggregate means
-    (MULTIMODAL.md Design §2 and Risk rule 3).
+    (Design §1-2 and Risk rule 3, docs/ARCHITECTURE.md § Multimodal notes).
 
     Args:
         model: A MultimodalModel with supports_teacher_forcing == True.

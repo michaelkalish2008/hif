@@ -44,9 +44,10 @@ class ModelIdentity(BaseModel):
 class InputPartRecord(BaseModel):
     """Persisted record of one multimodal input part: hash + dims ONLY.
 
-    Never pixels/base64 — raw media must not reach the profile JSON or the
-    API (see platform/lib/raw-trace-guard.ts and MULTIMODAL.md § Storage &
-    privacy).
+    Never pixels/base64 — raw media must not reach the profile JSON or any
+    API payload (§ Storage & privacy and Risk rule 2, docs/ARCHITECTURE.md
+    § Multimodal notes; the hosted platform enforces the same guard on its
+    side at import).
     """
 
     kind: str                      # "text" | "image" (M2/M3 add more)
@@ -84,7 +85,8 @@ class MetricBundle(BaseModel):
     stability: StabilityMetrics
     similarity: SimilarityMetrics | None = None  # None when no perturbation variants exist
     # Derived perturbation-field geometry (centroid dispersion + radii + per-class
-    # sub-fields). Derived scalars only — never a distribution (DRIFT_FIELD_MODEL.md).
+    # sub-fields). Derived scalars only — never a distribution
+    # (docs/ARCHITECTURE.md § Field-model notes).
     # None when < 2 field members aligned (e.g. n_variants=0). Defaults to None so
     # profiles written before schema 0.4.0 still validate.
     field: PerturbationField | None = None
@@ -179,8 +181,10 @@ class BehavioralRangeProfile(BaseModel):
     # Bump this whenever a field is added, removed, or its meaning changes —
     # profiles are validated strictly (Pydantic rejects unknown-shape data), so
     # an unbumped version number is not a reliable compatibility signal for
-    # older profile JSON on disk or uploaded via `hif push`. See
-    # platform/app/api/v1/import-profile/route.ts's SUPPORTED_SCHEMA_VERSIONS.
+    # older profile JSON on disk or uploaded via `hif push`. (The hosted
+    # platform's import endpoint keeps its own allow-list of supported schema
+    # versions in the platform repo, so a bump here needs a matching entry
+    # there before hosted imports of new artifacts succeed.)
     #
     # 0.2.0: added metrics.distribution[].nucleus_entropy_bits,
     #   findings.similarity_level, findings.similarity_trend. Profiles written

@@ -39,7 +39,7 @@ class BranchConvergence(BaseModel):
 class BranchField(BaseModel):
     """Geometric field descriptors of the trajectory-branch cloud in embedding
     space — the sampling-perturbation twin of the perturbation field
-    (DRIFT_FIELD_MODEL.md § trajectory branches). Where Continuity collapses the
+    (docs/ARCHITECTURE.md § Field-model notes). Where Continuity collapses the
     branch cloud to one mean-pairwise-cosine scalar, this restores its shape:
     the centroid (expected trajectory), the radii around it, and — crucially —
     cluster_count, which detects MULTI-MODALITY (branches splitting into distinct

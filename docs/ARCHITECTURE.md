@@ -263,3 +263,122 @@ The full pipeline, as orchestrated by `build_profile()` in `hif/profile/builder.
 15. **Charts (optional)** — `generate_signal_plots()` renders the registry's signal charts plus a combined dashboard index.
 
 `SessionEngine` (`hif/engine.py`) wraps steps 1–13 for the load-once/profile-many callers (`hif profile`, `hif batch`, `hif suite`); it never writes an artifact implicitly.
+
+---
+
+## Multimodal notes (M1)
+
+The multimodal path was built against a design/risk spec (`MULTIMODAL.md`)
+that lives in a private monorepo and is not part of this repository — part of
+it is under legal review, so its text cannot be copied in. Code comments used
+to cite it by section, which pointed readers at a document they cannot open.
+This section replaces those citations: it restates the cited rules **as the
+code and its tests verifiably implement them**, and for this repository it —
+together with the code and tests it describes — is the authority. The
+original rule labels (Design §N, Risk rule N) are preserved because the code
+cites them by number.
+
+### Design rules
+
+- **§1–2 — Scope and interfaces.** One multimodal milestone is implemented:
+  image+text input → text output (`PromptRecord.modality` is a closed enum,
+  `"text" | "image+text"`). Text-only models and call sites are untouched:
+  `tokenize/detokenize/forward/generate` keep their exact signatures on
+  `Model`; multimodality enters only through the `MultimodalModel` ABC
+  (`prepare()` / `forward_prepared()` / `generate_prepared()`,
+  `hif/models/mm.py`). `prepare()` runs exactly once per input (and once per
+  media variant); the processor owns all media/tokenization logic, and
+  `tokenize()` is never called with media anywhere in the pipeline.
+  Input-side entropy/surprisal are computed only over
+  `part_map.text_positions()` — patch/placeholder positions have no
+  meaningful vocab distribution and are excluded from the aggregates.
+- **§3 — Region sensitivity is derived from perturbation response.** The
+  per-grid-cell artifact is assembled from (mask-trace, `SensitivityMetrics`)
+  pairs produced by the `image_grid_mask` family — perturbation-JSD per cell,
+  nothing else (see also Risk rule 7).
+- **§6 — Media perturbation is a separate namespace.** Media families
+  implement the `PerturbationFamily` protocol and resolve via
+  `get_family()`; text generators resolve via `get_generator()`. The two
+  namespaces never mix (`hif/perturbation/__init__.py`).
+- **§7 — Attention analysis reads text parts only.** The attention stage uses
+  its own bidirectional text encoder over the text parts and the generated
+  continuation — never generation-model internals.
+- **§ Builder entry point.** `build_profile` routes by input type: a plain
+  `str`, or a `MultimodalInput` with no media parts, takes the text path
+  verbatim (byte-identical profiles). Media parts on a model without
+  `supports_multimodal_input` raise `ValueError` **before any inference**.
+  Text-part perturbation of a multimodal input is out of scope in M1:
+  explicitly configured text generators are a config error, raised before
+  inference; the untouched default generator list is ignored with a warning,
+  so the default config works on multimodal input with the `image_grid_mask`
+  family (a deliberate decision, agreed 2026-07-03).
+- **§ Storage & privacy.** Raw media (pixels, base64) must never reach the
+  profile JSON or any API payload. Profiles persist `InputPartRecord` —
+  content hash + dimensions + byte length only. Perturbed images live only as
+  in-memory `image_bytes` parts; media traces (`PerturbationTrace`) carry
+  geometry and parameters, never pixels.
+- **§ Profile schema impact.** Multimodal `prompt_hash` is the sha256 over
+  the concatenated part `content_hash`es in part order, so the hash covers
+  media identity without embedding media content.
+
+### Risk rules
+
+- **Rule 2 — No pixels in persisted JSON, ever.** Including with raw-trace
+  capture enabled: traces carry geometry and knobs only. (The storage
+  enforcement of Design § Storage & privacy; asserted by
+  `tests/unit/test_mm.py` and `tests/unit/test_image_grid.py`.)
+- **Rule 3 — Text positions only, and only when certain.** Position→part
+  attribution is positive-match only: a position that cannot be attributed to
+  a text span with certainty is left out of every span, so
+  structural/chat-template tokens are never inside a part span
+  (`HFVLMModel.prepare`), and input-side analysis reads only
+  `part_map.text_positions()` (`analyze_input_side_mm`).
+- **Rule 6 — No trajectory rollouts in M1.** Trajectory analysis re-forwards
+  `input_ids` alone, which would silently drop pixel state — so the stage is
+  skipped (zero branches) on the multimodal path rather than run wrong, and
+  the profile's provenance records that it did not run.
+- **Rule 7 — Region sensitivity never touches generation-model attention.**
+  The grid artifact is perturbation-JSD only (Design §3). The originating
+  spec's rationale is not public; the behaviour is defined by
+  `hif/analysis/region_sensitivity.py` and its tests, which read nothing but
+  (mask-trace, `SensitivityMetrics`) pairs.
+- **Rule 8 — Copy rule.** Human-facing strings about masked cells say the
+  masking "materially affected the model's response behavior" — no causal,
+  correctness, or attention language (`hif/analysis/region_sensitivity.py`).
+
+---
+
+## Field-model notes
+
+The perturbation field, trajectory branch field, and within-generation
+semantic field were built against a second private spec
+(`DRIFT_FIELD_MODEL.md`), also not part of this repository. As above, this
+section restates the rules the code verifiably implements and is the in-repo
+authority for them.
+
+- **Derived scalars only.** Field blocks persist descriptors — dispersion,
+  radii, cluster counts, per-step cosine displacements — never a
+  distribution, an embedding, or token identities. The raw variant/branch
+  traces they are computed from are compute-and-discard
+  (`hif/metrics/field.py`'s privacy invariant); persisting them is the
+  explicit `traceability` opt-in.
+- **Basis consistency.** The distribution basis used for field members must
+  match the basis of the other output-side metrics. On a selected-only
+  backend the raw traces are point masses and the field would collapse to a
+  token-agreement signal, so when a surrogate is available each degenerate
+  member is proxy-recovered the same way `semantic_steps` recovers the
+  baseline (`builder.py` step 9a).
+- **No deformation from one sample.** A per-generator sub-field needs ≥ 2
+  members; with a single sample the within-class radius variance is
+  undefined, and the sub-field is omitted rather than estimated.
+- **Trajectory branch field.** The geometric twin of the perturbation field
+  over sampling (branch) variation: where Continuity collapses the branch
+  cloud to one mean-pairwise-cosine scalar, `BranchField` restores its shape
+  — centroid radii plus `cluster_count`, which detects multi-modality a mean
+  cannot see (`hif/hourglass/trajectory.py`).
+- **Veer ◈ (within-generation semantic field).** The admitted instruments
+  read one generation event; Veer reads the trajectory of the output's
+  semantic possibility field *within* a generation — per-step displacement of
+  the probability-weighted candidate-cloud centroid (translation) and the
+  step-to-step change in its spread (deformation). It is the geometric twin
+  of Shift ◆ (`hif/analysis/semantic_field.py`).

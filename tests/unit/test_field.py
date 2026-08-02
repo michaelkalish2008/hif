@@ -1,4 +1,5 @@
-"""Unit tests for the perturbation-field prototype (DRIFT_FIELD_MODEL.md).
+"""Unit tests for the perturbation-field prototype (docs/ARCHITECTURE.md
+§ Field-model notes).
 
 Covers the generalized-JSD / centroid primitives and the trace-level field
 descriptors. All inputs are constructed — no data is read or written (the field

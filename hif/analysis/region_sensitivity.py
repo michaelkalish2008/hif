@@ -1,9 +1,9 @@
 """Region-sensitivity artifact: per-grid-cell perturbation JSD.
 
 Assembled from (PerturbationTrace.regions, SensitivityMetrics) pairs produced
-by the image_grid_mask family (MULTIMODAL.md § Design §3/§6). This is
-perturbation-JSD only — it never touches generation-model attention (Risk
-rule 7).
+by the image_grid_mask family (Design §3/§6, docs/ARCHITECTURE.md
+§ Multimodal notes). This is perturbation-JSD only — it never touches
+generation-model attention (Risk rule 7, same section).
 
 Copy rule (Risk rules 7-8): human-facing strings describe cells whose masking
 "materially affected the model's response behavior" — no causal, correctness,

@@ -104,7 +104,8 @@ def get_generator(
 
 
 # ---------------------------------------------------------------------------
-# Media-side family registry (MULTIMODAL.md § Design §6) — a SEPARATE
+# Media-side family registry (Design §6, docs/ARCHITECTURE.md § Multimodal
+# notes) — a SEPARATE
 # namespace from get_generator(); text and media names never mix.
 # ---------------------------------------------------------------------------
 

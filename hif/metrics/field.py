@@ -24,8 +24,9 @@ enables it, the builder persists the raw member traces on the PROFILE artifact
 (``BehavioralRangeProfile.raw_traces`` — never in the field models emitted
 here) so field descriptors, JS-centroids, translation, and branch fields can be
 reconstructed from the artifact without re-running models. This module must
-never be imported from the hosted request path (platform/); it is a
-scoring-time-only, sample-only computation.
+never be imported from a hosted request path (the companion platform repo
+enforces this on its side); it is a scoring-time-only, sample-only
+computation.
 """
 
 from __future__ import annotations
@@ -55,7 +56,8 @@ class SubField(BaseModel):
     Estimable only when the class contributed ≥ 2 members (i.e. n_variants ≥ 2
     for that generator). With a single sample per class the within-class radius
     variance is undefined and this is omitted — the honest "can't measure
-    deformation-per-class from one sample" case DRIFT_FIELD_MODEL.md calls out.
+    deformation-per-class from one sample" case (the no-deformation-from-one-
+    sample rule, docs/ARCHITECTURE.md § Field-model notes).
     """
 
     generator: str

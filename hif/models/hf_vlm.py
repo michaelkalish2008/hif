@@ -195,8 +195,8 @@ class HFVLMModel(MultimodalModel):
 
         Text spans are located positively (exact token-subsequence match per
         text part); positions that cannot be attributed with certainty are
-        left out of every span (MULTIMODAL.md Risk rule 3: if unsure whether
-        a position is text, exclude it). Structural/chat-template tokens are
+        left out of every span (Risk rule 3, docs/ARCHITECTURE.md
+        § Multimodal notes: if unsure whether a position is text, exclude it). Structural/chat-template tokens are
         therefore never inside any part span.
         """
         from PIL import Image

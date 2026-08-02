@@ -1,13 +1,14 @@
 """Multimodal input representation and the MultimodalModel capability ABC.
 
-Implements docs/confidential/specs/MULTIMODAL.md § Design §1-2 (M1: image+text →
-text). Text-only models and call sites are untouched: `tokenize/detokenize/
-forward/generate` keep their exact signatures on `Model`; multimodality enters
-only via `MultimodalModel.prepare()/forward_prepared()/generate_prepared()`.
+Implements the M1 multimodal scope — image+text → text (Design §1-2,
+docs/ARCHITECTURE.md § Multimodal notes). Text-only models and call sites are
+untouched: `tokenize/detokenize/forward/generate` keep their exact signatures
+on `Model`; multimodality enters only via
+`MultimodalModel.prepare()/forward_prepared()/generate_prepared()`.
 
 Privacy invariant: `InputPart.image_bytes` must never reach disk or the API.
 Profiles store only `InputPartRecord` (hash + dims) — see
-hif/profile/schema.py and the raw-trace guard rules in the spec.
+hif/profile/schema.py and § Storage & privacy in the same doc section.
 """
 
 from __future__ import annotations

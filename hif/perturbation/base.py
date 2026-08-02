@@ -2,7 +2,8 @@
 
 Text generators (`PerturbationGenerator`, str -> str) are the original
 namespace, resolved via `get_generator()`. Media-side perturbation
-(MULTIMODAL.md § Design §6) uses the separate `PerturbationFamily` protocol,
+(Design §6, docs/ARCHITECTURE.md § Multimodal notes) uses the separate
+`PerturbationFamily` protocol,
 resolved via `get_family()` — the two namespaces never mix.
 """
 
@@ -32,7 +33,7 @@ class PerturbationGenerator(ABC):
 
 
 # ---------------------------------------------------------------------------
-# Media-side perturbation (MULTIMODAL.md § Design §6)
+# Media-side perturbation (Design §6, docs/ARCHITECTURE.md § Multimodal notes)
 # ---------------------------------------------------------------------------
 
 

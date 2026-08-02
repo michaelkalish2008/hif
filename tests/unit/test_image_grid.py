@@ -3,7 +3,7 @@
 Covers: family determinism, original-input immutability, trace recording,
 audit/fast sweep semantics, the get_family registry, PerturbationRecord.traces
 back-compat, region artifact assembly, and the no-pixels-in-JSON invariant
-with traces present (MULTIMODAL.md Risk rule 2).
+with traces present (Risk rule 2, docs/ARCHITECTURE.md § Multimodal notes).
 """
 
 from __future__ import annotations

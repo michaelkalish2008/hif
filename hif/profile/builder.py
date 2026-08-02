@@ -100,8 +100,8 @@ def build_profile(
         The text prompt to analyze, or a MultimodalInput. A plain str (or a
         MultimodalInput with no media parts) takes the existing text path
         verbatim. Media parts require a MultimodalModel — a ValueError is
-        raised before any inference otherwise (MULTIMODAL.md § Builder
-        entry point).
+        raised before any inference otherwise (the builder entry-point rule,
+        docs/ARCHITECTURE.md § Multimodal notes).
     regime:
         A label for the prompt category/regime (e.g., "factual", "creative").
     config:
@@ -115,7 +115,8 @@ def build_profile(
         model does not support it (e.g. all API backends). If None and the
         target model lacks teacher forcing, input-side metrics are zeroed.
     """
-    # 0. Route by input type/modality (MULTIMODAL.md § Builder entry point).
+    # 0. Route by input type/modality (the builder entry-point rule,
+    #    docs/ARCHITECTURE.md § Multimodal notes).
     #    Text-only inputs — plain str or MultimodalInput without media —
     #    take the existing text path verbatim (byte-identical profiles).
     if isinstance(prompt, MultimodalInput):
@@ -409,11 +410,12 @@ def build_profile(
     # 9a. Perturbation field — derived geometry of the {baseline + variants}
     # cloud around its Jensen-Shannon centroid. Compute-and-discard: the
     # transient variant traces fall out of scope after this call; only the
-    # derived scalars persist (DRIFT_FIELD_MODEL.md). None when < 2 members
-    # aligned (e.g. n_variants=0).
+    # derived scalars persist (docs/ARCHITECTURE.md § Field-model notes).
+    # None when < 2 members aligned (e.g. n_variants=0).
     #
-    # Distribution basis MUST match the other output-side metrics (DRIFT_FIELD_MODEL
-    # §9): for a degenerate selected-only backend (e.g. Anthropic — topk length 1)
+    # Distribution basis MUST match the other output-side metrics (the
+    # basis-consistency rule, docs/ARCHITECTURE.md § Field-model notes): for a
+    # degenerate selected-only backend (e.g. Anthropic — topk length 1)
     # the raw traces are point masses, so the field would collapse to a crude
     # token-agreement signal. When a surrogate is available we proxy-recover each
     # member's distribution the same way `semantic_steps` recovers the baseline,
@@ -632,9 +634,10 @@ def _build_profile_mm(
     seed: int = 42,
     surrogate_model: "Model | None" = None,
 ) -> BehavioralRangeProfile:
-    """Multimodal profile path per MULTIMODAL.md § Design.
+    """Multimodal profile path (docs/ARCHITECTURE.md § Multimodal notes —
+    the in-repo statement of the design and risk rules cited below).
 
-    Key differences from the text path (each spec'd, none improvised):
+    Key differences from the text path (each a stated rule, none improvised):
     - prepare() is run exactly once; tokenize() is never called with media.
     - Input-side entropy/surprisal are computed only over
       part_map.text_positions() (Risk rule 3).
@@ -644,7 +647,8 @@ def _build_profile_mm(
       EXPLICITLY configured text generators are a config error, raised before
       inference. Default (unset) text generators are ignored with a warning
       when a media family is configured — default config on multimodal input
-      Just Works with the image_grid_mask family (spec sign-off 2026-07-03).
+      Just Works with the image_grid_mask family (a deliberate decision,
+      agreed 2026-07-03; § Builder entry point in the doc section above).
     - Media perturbation runs via PerturbationFamily (image_grid_mask by
       default); per-variant SensitivityMetrics mirror the text path, and the
       grid-mask traces are assembled into the region_sensitivity artifact.
@@ -668,7 +672,7 @@ def _build_profile_mm(
         if explicitly_set:
             raise ValueError(
                 "Text-part perturbation of a multimodal input is out of scope "
-                "in M1 (MULTIMODAL.md § Builder entry point). Set "
+                "in M1 (docs/ARCHITECTURE.md § Multimodal notes). Set "
                 "perturbation.generators=[] for multimodal profiles."
             )
         logger.warning(
@@ -1029,7 +1033,8 @@ def _build_profile_mm(
         ).analyze(output_trace)
 
     # Optional attention analysis — separate analysis model, text parts only
-    # (never generation-model internals; MULTIMODAL.md § Design §3/§7).
+    # (never generation-model internals; Design §7 and Risk rule 7,
+    # docs/ARCHITECTURE.md § Multimodal notes).
     attention_analysis = None
     if config.attention.enabled:
         from hif.analysis.attention import AttentionAnalyzer
@@ -1054,7 +1059,8 @@ def _build_profile_mm(
     )
 
     # Multimodal prompt_hash: sha256 over concatenated part content_hashes,
-    # in part order (spec § Profile schema impact).
+    # in part order (§ Profile schema impact, docs/ARCHITECTURE.md
+    # § Multimodal notes).
     prompt_hash = hashlib.sha256(
         "".join(p.content_hash for p in mm_input.parts).encode()
     ).hexdigest()

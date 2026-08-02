@@ -1,4 +1,5 @@
-"""Media perturbation families for image parts (MULTIMODAL.md § Design §6).
+"""Media perturbation families for image parts (Design §6,
+docs/ARCHITECTURE.md § Multimodal notes).
 
 ImageGridMaskFamily — masks one grid cell per variant with the image's mean
 color; the region-sensitivity artifact is assembled from the resulting

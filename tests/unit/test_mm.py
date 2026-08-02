@@ -1,4 +1,5 @@
-"""Unit tests for the multimodal M1 contracts (MULTIMODAL.md § Design).
+"""Unit tests for the multimodal M1 contracts (docs/ARCHITECTURE.md
+§ Multimodal notes).
 
 Covers: MultimodalInput modality derivation, InputPartMap.text_positions and
 row-major patch math, HFVLMModel.prepare with a mocked processor, the
