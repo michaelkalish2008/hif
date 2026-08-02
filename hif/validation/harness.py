@@ -75,23 +75,6 @@ class ValidationResult:
                 f"(threshold {self.threshold:.2f}, n={len(self.per_image)})")
 
 
-def plan_sweep(corpus_dir: Path | str | None = None, *, grid: tuple[int, int] = DEFAULT_GRID,
-               pilot: bool = False) -> list[dict]:
-    """Enumerate the (image, variant, masked_cell | baseline) run plan without
-    inference. Used by --dry-run and run-count printouts."""
-    rows, cols = grid
-    plan: list[dict] = []
-    for rec in load_corpus(corpus_dir, pilot=pilot):
-        for variant, question in enumerate(rec["question_variants"]):
-            plan.append({"image_id": rec["image_id"], "variant": variant,
-                         "question": question, "masked_cell": None})  # baseline
-            for r in range(rows):
-                for c in range(cols):
-                    plan.append({"image_id": rec["image_id"], "variant": variant,
-                                 "question": question, "masked_cell": {"row": r, "col": c}})
-    return plan
-
-
 def validate_region_sensitivity(
     model,
     corpus_dir: Path | str | None = None,

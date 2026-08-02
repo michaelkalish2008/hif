@@ -104,7 +104,6 @@ class TestTraceabilityDisabled:
 
     def test_default_config_is_disabled(self):
         assert RunConfig().traceability.enabled is False
-        assert RunConfig().traceability.profiles_dir is None
 
     def test_profile_has_no_raw_traces(self):
         profile = _build(traceability_enabled=False)

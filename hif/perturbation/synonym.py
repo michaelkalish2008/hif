@@ -129,9 +129,3 @@ def _rejoin(tokens: list[str]) -> str:
         else:
             result.append(tok)
     return " ".join(result)
-
-
-# Legacy function shim (kept for any existing callers)
-def generate_synonym_variants(prompt: str, n: int = 5) -> list[str]:
-    """Return n prompt variants with content words replaced by synonyms."""
-    return SynonymGenerator().generate(prompt, n_variants=n).variants

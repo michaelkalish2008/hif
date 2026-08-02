@@ -89,9 +89,3 @@ class AmbiguityGenerator(PerturbationGenerator):
             variants.append(variant)
 
         return PerturbationResult(original=prompt, variants=variants, generator=self.name)
-
-
-# Legacy function shim
-def generate_ambiguity_variants(prompt: str, n: int = 5) -> list[str]:
-    """Return n prompt variants with injected lexical or structural ambiguity."""
-    return AmbiguityGenerator().generate(prompt, n_variants=n).variants

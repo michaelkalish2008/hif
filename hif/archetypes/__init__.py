@@ -1,9 +1,13 @@
 """Application archetype registry.
 
-Each archetype is a flat YAML file in this directory defining a perturbation
-family, a default analysis window, and a report template id. Selecting one via
-``--application`` changes how the prompt is perturbed and how much output is
-analysed; it does not change how any measurement is computed.
+Each archetype is a flat YAML file in this directory with a description and a
+default analysis window. Selecting one via ``--application`` labels the run
+(the archetype id and the effective analysis window are recorded in the JSON
+record's extras) and fills in ``--analysis-window`` when the user did not pass
+one. It does not change how the prompt is perturbed or how any measurement is
+computed. (Earlier revisions declared a per-archetype ``perturbation_family``
+and ``report_template``; nothing ever consumed them, so the registry no
+longer carries fields the pipeline does not read.)
 
 The YAML files use a flat ``key: value`` format, parsed with a minimal
 hand-rolled parser so the core package does not depend on pyyaml.
@@ -22,9 +26,7 @@ _ARCHETYPES_DIR = Path(__file__).parent
 class Archetype:
     id: str
     description: str
-    perturbation_family: str
     default_analysis_window: Union[int, str]  # int token count or "adaptive"
-    report_template: str
 
 
 class UnknownArchetypeError(KeyError):
@@ -82,14 +84,12 @@ def load_archetype(archetype_id: str) -> Archetype:
     if not path.exists():
         raise UnknownArchetypeError(archetype_id, list_archetypes())
     data = _parse_flat_yaml(path.read_text(encoding="utf-8"))
-    required = ("id", "description", "perturbation_family", "default_analysis_window", "report_template")
+    required = ("id", "description", "default_analysis_window")
     missing = [k for k in required if data.get(k) is None]
     if missing:
         raise ValueError(f"Archetype file {path.name} missing fields: {', '.join(missing)}")
     return Archetype(
         id=str(data["id"]),
         description=str(data["description"]),
-        perturbation_family=str(data["perturbation_family"]),
         default_analysis_window=data["default_analysis_window"],  # type: ignore[arg-type]
-        report_template=str(data["report_template"]),
     )

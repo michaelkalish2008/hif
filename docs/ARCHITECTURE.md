@@ -123,8 +123,6 @@ hif/
     anthropic_model.py     # AnthropicModel (selected-token-only logprobs)
     gemini_model.py        # GeminiModel (top-k logprobs on Vertex AI)
     ollama.py              # OllamaModel (local Ollama server)
-    _openai.py             # Internal OpenAI client helpers
-    _anthropic.py          # Internal Anthropic client helpers
 
   hourglass/
     input_side.py          # analyze_input_side() → InputSideAnalysis; mean_surprisal_excess()

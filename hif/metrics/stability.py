@@ -61,8 +61,6 @@ class PerturbationResponse(BaseModel):
     # signed and un-clamped: the sign is the interesting part.
     input_output_correlation: float | None
     n_perturbations: int
-    temperature_robustness: float | None = None
-    prompt_order_robustness: float | None = None
 
 
 # Backwards-compatible alias for the historical class name.
@@ -164,21 +162,3 @@ def compute_stability_metrics(
         n_perturbations=max(n_in, n_out),
     )
 
-
-# ---------------------------------------------------------------------------
-# Legacy shims
-# ---------------------------------------------------------------------------
-
-
-def intra_class_consistency(grouped_embeddings):  # type: ignore[no-untyped-def]
-    """Deprecated: prefer compute_stability_metrics for trace-based analysis."""
-    raise NotImplementedError(
-        "intra_class_consistency is deprecated. Use compute_stability_metrics instead."
-    )
-
-
-def cluster_coherence(labels, embeddings):  # type: ignore[no-untyped-def]
-    """Deprecated: prefer compute_stability_metrics for trace-based analysis."""
-    raise NotImplementedError(
-        "cluster_coherence is deprecated. Use compute_stability_metrics instead."
-    )

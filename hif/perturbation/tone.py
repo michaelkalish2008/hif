@@ -136,9 +136,3 @@ class ToneGenerator(PerturbationGenerator):
             else:  # hedged
                 variants.append(_make_hedged(prompt, i))
         return PerturbationResult(original=prompt, variants=variants, generator=self.name)
-
-
-# Legacy function shim
-def generate_tone_variants(prompt: str, n: int = 5) -> list[str]:
-    """Return n rewrites of the seed prompt spanning a range of tonal registers."""
-    return ToneGenerator().generate(prompt, n_variants=n).variants

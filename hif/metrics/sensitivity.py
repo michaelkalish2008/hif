@@ -321,17 +321,3 @@ def compute_sensitivity_metrics(
         mean_nucleus_stability_p90=mean_nucleus_stability,
     )
 
-
-# ---------------------------------------------------------------------------
-# Legacy shims
-# ---------------------------------------------------------------------------
-
-
-def perturbation_sensitivity(base_embedding, perturbed_embeddings):  # type: ignore[no-untyped-def]
-    """Measure average embedding shift between baseline and perturbed-prompt outputs.
-
-    Deprecated: prefer compute_sensitivity_metrics for trace-based analysis.
-    """
-    raise NotImplementedError(
-        "perturbation_sensitivity is deprecated. Use compute_sensitivity_metrics instead."
-    )

@@ -79,12 +79,12 @@ RECORD_SCHEMA_VERSION = "record-v5"
 # hif-v2.1: added input_entropy_std_bits and
 # branch_pairwise_cosine_similarity — the natural-unit forms of the Stability
 # and Continuity aggregates, which were computed but never surfaced.
-# hif-v3 (current): `measurements` no longer contains prompt-only quantities.
+# hif-v3: `measurements` no longer contains prompt-only quantities.
 # This is a REMOVAL from the measurement set, not an additive superset — a
 # hif-v2 artifact carries numbers under keys a hif-v3 artifact deliberately
 # does not, so the two are not intersectable without silently comparing a
 # fact about the target against a fact about a reference model.
-# hif-v3.1 (current): added output_step_jsd_bits (Shift ◆ — the step-to-step
+# hif-v3.1: added output_step_jsd_bits (Shift ◆ — the step-to-step
 # output divergence that existed only as a chart, so a reader could see it on
 # the companion website and not reproduce it with the CLI) and its companion
 # output_step_topk_overlap_fraction. Purely additive within the hif-v3 family:
@@ -986,16 +986,6 @@ def prompt_measurement_block(p) -> Optional[dict]:
         },
         "values": values,
     }
-
-
-# Historical names kept as thin aliases so external callers and tests that
-# import them keep working. Both return the same flat measurement dict.
-def profile_scores(profile) -> dict[str, float]:
-    return measurements(profile)
-
-
-def extended_signal_values(p) -> dict[str, float]:
-    return measurements(p)
 
 
 # ---------------------------------------------------------------------------

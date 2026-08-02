@@ -24,7 +24,7 @@ EXPECTED_IDS = [
     "support-chatbot",
 ]
 
-# Text archetypes use the paraphrase family; multimodal ones use grid masking.
+# Multimodal archetypes carry the smaller default analysis window.
 MULTIMODAL_IDS = {"multimodal-qa", "document-understanding"}
 
 
@@ -49,20 +49,16 @@ def test_load_archetype_valid(archetype_id):
     assert a.id == archetype_id
     assert a.description
     if archetype_id in MULTIMODAL_IDS:
-        assert a.perturbation_family == "image_grid_mask"
         assert a.default_analysis_window == 256
-    else:
-        assert a.perturbation_family == "paraphrase"
-    assert a.report_template == "default"
     assert a.default_analysis_window == "adaptive" or isinstance(
         a.default_analysis_window, int
     )
 
 
 def test_archetype_carries_no_reference_prior():
-    """An archetype selects a perturbation family and an analysis window. It
-    never names a stored reference profile to compare against — an archetype
-    changes how a run is measured, never what the measurement is judged by."""
+    """An archetype supplies a label and a default analysis window. It never
+    names a stored reference profile to compare against — an archetype must
+    not decide what a measurement is judged by."""
     a = load_archetype("agent-tool-use")
     assert not hasattr(a, "prior")
     assert "prior" not in {f.name for f in fields(Archetype)}
@@ -78,6 +74,16 @@ def test_coding_assistant_uses_adaptive_window():
 
 def test_support_chatbot_has_integer_window():
     assert load_archetype("support-chatbot").default_analysis_window == 512
+
+
+def test_archetype_carries_no_unconsumed_fields():
+    """Regression for the dead --application surface: perturbation_family and
+    report_template were loaded and validated as required but consumed
+    nowhere, so the flag's help overstated what it did. The registry must not
+    reacquire fields the pipeline does not read."""
+    a = load_archetype("rag-qa")
+    assert not hasattr(a, "perturbation_family")
+    assert not hasattr(a, "report_template")
 
 
 # ---------------------------------------------------------------------------

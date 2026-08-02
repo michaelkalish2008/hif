@@ -58,14 +58,6 @@ def available(profile: BehavioralRangeProfile) -> str | None:
     return None
 
 
-def _divergence_color(distance: float) -> str:
-    if distance >= 0.4:
-        return _HIGH
-    if distance >= 0.25:
-        return _MID
-    return _LOW
-
-
 def generate(profile, output_path: Path, formats: list[str] = ["html"]) -> dict[str, Path]:
     reason = available(profile)
     if reason:

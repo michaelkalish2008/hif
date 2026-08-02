@@ -391,8 +391,6 @@ class TestComputeStabilityMetrics:
     def test_optional_fields_none_by_default(self):
         baseline = _make_input_analysis()
         result = compute_stability_metrics(baseline, [], [])
-        assert result.temperature_robustness is None
-        assert result.prompt_order_robustness is None
 
 
 # ---------------------------------------------------------------------------

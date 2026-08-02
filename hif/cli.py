@@ -530,12 +530,14 @@ def profile(
     application: Optional[str] = typer.Option(
         None,
         help="Application archetype (support-chatbot, rag-qa, coding-assistant, summarization, extraction, classification, agent-tool-use, multimodal-qa, document-understanding). "
-        "Selects the perturbation family and the default analysis window.",
+        "Labels the run and supplies the default --analysis-window; both are "
+        "recorded in the JSON record. It does not change how anything is "
+        "measured.",
     ),
     mode: str = typer.Option(
         "fast",
-        help="fast: fewer perturbation variants, smaller default analysis window. "
-        "audit: full perturbation set, governance-ready report. "
+        help="fast: fewer perturbation variants. "
+        "audit: full perturbation set (multimodal: exhaustive grid sweep). "
         "Input is always passed in full regardless of mode.",
     ),
     analysis_window: Optional[str] = typer.Option(
@@ -636,6 +638,23 @@ def profile(
         )
         raise typer.Exit(3)
 
+    # Chart guard: fail fast when no chart draws the requested measurement,
+    # BEFORE loading the model — the same message generate_signal_plots would
+    # raise at the end of the run, minus the wasted pipeline.
+    if metric is not None and charts:
+        from hif.viz.registry import NEAREST_CHART, SIGNALS_BY_ID, resolve_signal
+
+        if resolve_signal(metric) is None:
+            near = SIGNALS_BY_ID[NEAREST_CHART[metric]]
+            err_console.print(
+                f"[red]No chart draws the measurement {metric!r} directly.[/red]\n"
+                f"[yellow]The nearest chart is {near.id!r} ({near.label}) — it "
+                f"shows the series or companion quantity behind it. Drop "
+                f"--charts to print the number alone, or use --charts without "
+                f"--metric for the full dashboard.[/yellow]"
+            )
+            raise typer.Exit(3)
+
     # Capability guard: fail fast when the requested metric can't be produced by
     # the chosen backend, BEFORE loading the model or running the pipeline.
     # (This is what would have caught `--metric stability --backend ollama`.)
@@ -732,11 +751,14 @@ def profile(
         if analysis_window is None:
             analysis_window = str(archetype_def.default_analysis_window)
 
-    # Resolve analysis_window
-    analysis_window_val: Optional[int] = None
+    # Validate analysis_window's form. The value itself is recorded in the
+    # run's extras (and nothing else): no pipeline stage consumes it, so no
+    # parsed copy is kept — a local integer sat here for a while, assigned and
+    # never read, which made the flag look wired into analysis when it is a
+    # recorded label.
     if analysis_window and analysis_window != "adaptive":
         try:
-            analysis_window_val = int(analysis_window)
+            int(analysis_window)
         except ValueError:
             err_console.print(f"[red]--analysis-window must be an integer or 'adaptive', got {analysis_window!r}[/red]")
             raise typer.Exit(3)

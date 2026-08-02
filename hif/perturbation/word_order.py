@@ -84,9 +84,3 @@ class WordOrderGenerator(PerturbationGenerator):
             variants.append(_rejoin(new_tokens))
 
         return PerturbationResult(original=prompt, variants=variants, generator=self.name)
-
-
-# Legacy function shim
-def generate_word_order_variants(prompt: str, n: int = 5) -> list[str]:
-    """Return n grammatical reorderings of the seed prompt."""
-    return WordOrderGenerator().generate(prompt, n_variants=n).variants

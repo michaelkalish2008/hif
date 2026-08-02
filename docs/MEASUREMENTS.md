@@ -844,7 +844,7 @@ Four fields, each computed independently from whatever evidence exists and set t
 | `perturbation_jsd_bits` | bits | `mean(mean_js_divergence)` over variants |
 | `input_output_correlation` | dimensionless | Pearson `r` between the shift and JSD per-variant series |
 
-`n_perturbations` records how many variants contributed. `temperature_robustness` and `prompt_order_robustness` exist on the model as optional fields and default to `None`; nothing in the pipeline populates them.
+`n_perturbations` records how many variants contributed. (Two documented-dead optional fields, `temperature_robustness` and `prompt_order_robustness`, were removed in profile schema 0.10.0 — nothing in the pipeline ever populated them.)
 
 These are the quantities that surface as `input_entropy_shift_bits`, `input_entropy_std_bits`, `perturbation_jsd_bits`, and `io_correlation_r` in Part 1 — see there for ranges and absent-vs-zero semantics.
 

@@ -141,7 +141,9 @@ def build_index(
     <p><strong>This is a single behavioral snapshot</strong> — one model, one prompt, one moment.
        It describes what the model did. It does <strong>not</strong> detect drift, attacks, or
        quality, and it makes no claim that any value here is normal or abnormal.</p>
-    <p>Each chart maps to exactly one measurement. Charts marked
+    <p>Where a chart draws a reported measurement, the registry names it
+       (<code>measurement_key</code>); some charts instead draw a component
+       series that is deliberately not a measurement. Charts marked
        <em>not available this run</em> need data this backend does not expose
        (teacher forcing, attention capture, or perturbation variants).</p>
   </footer>

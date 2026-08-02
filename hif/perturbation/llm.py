@@ -46,13 +46,10 @@ _OLLAMA_BASE_URL_DEFAULT = "http://localhost:11434/v1"
 _OLLAMA_API_KEY_DEFAULT = "ollama"
 _OLLAMA_MODEL_DEFAULT = "gemma3:4b-it-qat"
 
-# Suggested (not defaulted-to) hosted option — a gateway that exposes Claude
-# Haiku through an OpenAI-compatible schema, so
-# this module needs no Anthropic-specific adapter. Verify the exact model
-# slug against the gateway's current catalog before using in production; this
-# is a starting suggestion, not a maintained/pinned identifier.
-_SUGGESTED_HOSTED_BASE_URL = "https://openrouter.ai/api/v1"
-_SUGGESTED_HOSTED_MODEL = "anthropic/claude-haiku-4.5"
+# Hosted alternative: any OpenAI-compatible gateway works via base_url —
+# e.g. OpenRouter (https://openrouter.ai/api/v1) exposes Claude models through
+# the same schema, so this module needs no Anthropic-specific adapter. Verify
+# the model slug against the gateway's current catalog; nothing here pins one.
 
 _SYSTEM_PROMPTS: dict[VariantType, str] = {
     "synonym": (

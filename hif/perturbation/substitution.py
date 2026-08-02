@@ -115,9 +115,3 @@ class SubstitutionGenerator(PerturbationGenerator):
             variants.append(" ".join(new_words))
 
         return PerturbationResult(original=prompt, variants=variants, generator=self.name)
-
-
-# Legacy function shim
-def generate_substitution_variants(prompt: str, n: int = 5) -> list[str]:
-    """Return n prompt variants using alternative domain-appropriate lexical items."""
-    return SubstitutionGenerator().generate(prompt, n_variants=n).variants

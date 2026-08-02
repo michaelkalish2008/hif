@@ -81,8 +81,6 @@ class PerturbationConfig(BaseModel):
 
 class OutputConfig(BaseModel):
     output_dir: Path = Path("outputs")
-    save_plots: bool = True
-    plot_format: list[str] = ["html"]
 
 
 class ExposureConfig(BaseModel):
@@ -111,7 +109,6 @@ class AttentionConfig(BaseModel):
     enabled: bool = False
     model_name: str = "distilbert-base-uncased"
     aggregate_method: str = "mean_all_layers"  # "mean_all_layers" | "last_layer" | "mean_upper_half"
-    top_pairs: int = 20  # how many top-attending token pairs to store
     max_seq_length: int = 512  # DistilBERT limit
     trajectory_interval: int = 4  # checkpoint every N continuation tokens
 
@@ -130,7 +127,6 @@ class TraceabilityConfig(BaseModel):
     storage location is trusted with prompt/continuation-level content.
     """
     enabled: bool = False
-    profiles_dir: Optional[Path] = None
 
 
 class RunConfig(BaseModel):

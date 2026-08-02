@@ -27,15 +27,6 @@ VIOLET  = "#8b5cf6"
 AMBER   = "#f59e0b"
 EMERALD = "#10b981"
 RED     = "#ef4444"
-GOLD    = "#F4A922"   # chosen-token highlight — keep unchanged
-
-# Phenomenon palette — dark-calibrated
-PHENOMENON_COLORS: dict[str, str] = {
-    "convergence": "#60a5fa",   # blue-400
-    "clustering":  "#a78bfa",   # violet-400
-    "divergence":  "#fb923c",   # orange-400
-    "diffusion":   "#94a3b8",   # slate-400
-}
 
 
 # ---------------------------------------------------------------------------

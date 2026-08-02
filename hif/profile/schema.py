@@ -240,6 +240,12 @@ class BehavioralRangeProfile(BaseModel):
     #   accessible alternatives — not hallucination (docs/MEASUREMENTS.md
     #   § counterfactual_exposure_fraction: "This is not a factuality
     #   judgment").
+    #   The same release removed fields nothing ever populated or read:
+    #   metrics.stability.temperature_robustness / prompt_order_robustness
+    #   (documented-dead since docs/MEASUREMENTS.md first said so), and from
+    #   the embedded config, output.save_plots / output.plot_format,
+    #   attention.top_pairs, and traceability.profiles_dir. Old JSON carrying
+    #   any of them still validates — unknown fields are ignored on load.
     schema_version: str = "0.10.0"
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     model: ModelIdentity
