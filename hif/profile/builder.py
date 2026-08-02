@@ -18,7 +18,7 @@ from hif.hourglass.output_side import (
     output_steps_via_surrogate,
 )
 from hif.hourglass.trajectory import TrajectoryAnalysis, analyze_trajectory
-from hif.metrics.distribution import compute_distribution_metrics
+from hif.metrics.distribution import DistributionMetrics, compute_distribution_metrics
 from hif.metrics.semantic import SemanticMetrics, compute_semantic_metrics
 from hif.metrics.sensitivity import SensitivityMetrics, compute_sensitivity_metrics
 from hif.metrics.similarity import SimilarityMetrics, compute_similarity_metrics
@@ -73,6 +73,264 @@ def generate_findings(
         similarity_trend_slope=similarity_trend_slope,
         surrogate_model_name=surrogate_model_name,
         output_distribution_surrogate_name=output_distribution_surrogate_name,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Shared pipeline stages
+# ---------------------------------------------------------------------------
+#
+# Stages that are the same computation in build_profile (text) and
+# _build_profile_mm (image+text) live here once, so what stays inline in each
+# orchestrator is only what actually differs. Where a stage differs, the
+# difference is an ARGUMENT, visible at the call site. The two that matter:
+#
+#   * the output-side basis. The text path may substitute a surrogate-recovered
+#     step series (`semantic_steps`, step 6b) for the target's own; the
+#     multimodal path never does.
+#   * the attention stage's inputs. The text path feeds it perturbation
+#     variants; the multimodal path feeds it none.
+#
+# A stage whose log line differs between the paths keeps that line at the call
+# site: moving it in would change what one path emits, and these change nothing.
+
+
+def _zeroed_input_analysis(
+    model: Model, *, prompt_token_ids: list[int], prompt_text: str
+) -> InputSideAnalysis:
+    """Input-side analysis when nothing could read the prompt.
+
+    Neither the target (no teacher forcing) nor a surrogate (none supplied) can
+    produce per-position distributions, so there are none. The scalars are zero
+    because there is nothing to average over; the measurements that depend on
+    them are omitted downstream rather than reported as zero. `max_entropy`
+    survives because it is a property of the tokenizer, not of the run.
+    """
+    import math
+
+    logger.warning(
+        "No teacher-forcing and no surrogate — input-side metrics zeroed for %s. "
+        "Pass surrogate_model= to compute hermeneutic input-side analysis.",
+        model.name,
+    )
+    max_entropy = math.log2(model.vocab_size) if model.vocab_size > 0 else 16.0
+    return InputSideAnalysis(
+        positions=[],
+        prompt_token_ids=prompt_token_ids,
+        prompt_text=prompt_text,
+        mean_surprisal=0.0,
+        mean_entropy=0.0,
+        max_entropy=max_entropy,
+    )
+
+
+def _skipped_trajectory(*, start_step: int, rollout_steps: int) -> TrajectoryAnalysis:
+    """An empty trajectory: no branches were generated.
+
+    The two paths reach it for different reasons — a text backend that cannot
+    teacher-force, or the multimodal path, where re-forwarding a context from
+    input_ids alone would drop the pixel state. Either way `branches=[]`, which
+    is what `trajectory_analysis_ran` reads.
+    """
+    return TrajectoryAnalysis(
+        start_step=start_step,
+        n_branches=0,
+        rollout_steps=rollout_steps,
+        branches=[],
+        convergence_profile=[],
+        persistence_score=0.0,
+        explosion_score=0.0,
+        convergence_score=0.0,
+        initial_n_clusters=0,
+    )
+
+
+def _distribution_metrics_for(
+    steps: list, *, vocab_size: int
+) -> list[DistributionMetrics]:
+    """One DistributionMetrics per step of the caller's chosen basis.
+
+    `vocab_size` must belong to whichever model produced `steps`: it is the
+    uniform-tail upper bound's denominator, so the target's vocabulary over a
+    surrogate's distributions would silently mis-bound every step.
+    """
+    logger.debug("Computing distribution metrics...")
+    out: list[DistributionMetrics] = []
+    for step in steps:
+        probs_arr = np.array([e.prob for e in step.topk], dtype=np.float64)
+        logits_arr = np.array([e.logit for e in step.topk], dtype=np.float64)
+        # Pass raw (unnormalized) probs so entropy_bits gives the correct lower bound.
+        # uniform_tail_entropy uses the tail mass (1 - sum) for the upper bound.
+        out.append(
+            compute_distribution_metrics(
+                probs=probs_arr,
+                logits=logits_arr,
+                top_k_for_mass=min(10, len(probs_arr)),
+                truncated=True,
+                vocab_size=vocab_size,
+            )
+        )
+    return out
+
+
+def _semantic_metrics_for(
+    steps: list, *, embedder: EmbeddingModel, cluster_config
+) -> list[SemanticMetrics]:
+    """One SemanticMetrics per step of the caller's chosen basis.
+
+    Each step's candidates are embedded in the context of the few tokens that
+    preceded them, so the same token at two points in a generation is not the
+    same point in embedding space.
+    """
+    logger.debug("Computing semantic metrics...")
+    out: list[SemanticMetrics] = []
+    for i, step in enumerate(steps):
+        # Build context prefix from the last min(5, i) already-generated token strings.
+        # GPT-2-style tokenizers include leading spaces in token_str, so plain
+        # concatenation (no separator) reconstructs natural text.
+        context_window = min(5, i)
+        if context_window > 0:
+            context_prefix = "".join(
+                s.selected_token_str for s in steps[i - context_window : i]
+            )
+            candidate_strings = [context_prefix + e.token_str for e in step.topk]
+        else:
+            # Step 0: no context yet — use the bare token string
+            candidate_strings = [e.token_str for e in step.topk]
+        probs_arr = np.array([e.prob for e in step.topk], dtype=np.float64)
+        total = probs_arr.sum()
+        if total > 0:
+            probs_arr = probs_arr / total
+        out.append(
+            compute_semantic_metrics(
+                candidate_strings=candidate_strings,
+                probs=probs_arr,
+                embedder=embedder,
+                cluster_config=cluster_config,
+                truncated=True,
+            )
+        )
+    return out
+
+
+def _exposure_reading(
+    config: RunConfig,
+    *,
+    trace: OutputSideTrace,
+    semantic_metrics: list[SemanticMetrics],
+    embedder: EmbeddingModel,
+):
+    """Counterfactual exposure, or None when the stage is disabled.
+
+    Reads `trace.steps[*].topk` for accessible alternatives, so `trace` must
+    carry the same basis the distribution and semantic metrics used — otherwise
+    it silently finds none on a selected-only backend while the other readings
+    used the recovered cloud.
+    """
+    if not config.exposure.enabled:
+        return None
+    from hif.analysis.exposure import ExposureAnalyzer
+
+    logger.debug("Running exposure analysis...")
+    exposure_analyzer = ExposureAnalyzer(
+        embedder=embedder,
+        min_prob=config.exposure.min_prob,
+    )
+    return exposure_analyzer.analyze(
+        output_trace=trace,
+        semantic_metrics=semantic_metrics,
+        distance_threshold=config.exposure.distance_threshold,
+    )
+
+
+def _attention_reading(
+    config: RunConfig,
+    *,
+    model: Model,
+    prompt_text: str,
+    output_trace: OutputSideTrace,
+    variants: list[str],
+):
+    """Attention-row analysis over (prompt, continuation), plus any variants.
+
+    The analyser is a separate bidirectional encoder reading text as an object;
+    the model under analysis contributes only the text. `variants` is what the
+    two paths disagree about — perturbed prompts on the text path, none on the
+    multimodal path, where a media perturbation leaves the text unchanged.
+
+    The caller owns the enabled check and the log line; the paths word it
+    differently.
+    """
+    from hif.analysis.attention import AttentionAnalyzer
+
+    analyzer = AttentionAnalyzer(config.attention)
+    continuation = model.detokenize(output_trace.generated_ids)
+    continuation_token_strs = [s.selected_token_str for s in output_trace.steps]
+    return analyzer.analyze(
+        prompt_text,
+        continuation,
+        variants,
+        continuation_token_strs=continuation_token_strs,
+    )
+
+
+def _model_identity(model: Model, config: RunConfig) -> ModelIdentity:
+    """Who generated. Identical on both paths."""
+    return ModelIdentity(
+        name=model.name,
+        backend=config.model.backend,
+        vocab_size=model.vocab_size,
+        context_length=model.context_length,
+        parameter_count=None,
+    )
+
+
+def _raw_traces(
+    config: RunConfig,
+    *,
+    variant_traces: list[VariantRawTrace],
+    trajectory: TrajectoryAnalysis,
+) -> "RawTraces | None":
+    """Opt-in raw-trace capture (schema 0.7.0), or None — the default.
+
+    None is absence, not an empty capture: with traceability off the transient
+    variant traces fall out of scope and nothing reconstructable is persisted.
+    Branch traces reuse the trajectory's own Branch records.
+    """
+    if not config.traceability.enabled:
+        return None
+    return RawTraces(
+        variant_traces=variant_traces,
+        branch_traces=list(trajectory.branches),
+    )
+
+
+def _run_provenance(
+    *,
+    model: Model,
+    input_teacher_forcing_model: str | None,
+    output_distribution_model: str,
+    attention_analysis,
+    output_trace: OutputSideTrace,
+    trajectory: TrajectoryAnalysis,
+) -> RunProvenance:
+    """Which model filled each role, and what degraded.
+
+    Every field is an observation made while the pipeline ran, never an
+    inference from the result — the evidence each declared `subject` is checked
+    against. `output_distribution_model` is the one argument the paths differ
+    on: the text path names the surrogate when step 6b recovered a cloud, the
+    multimodal path always names the target, having run no such recovery.
+    """
+    return RunProvenance(
+        generation_model=model.name,
+        input_teacher_forcing_model=input_teacher_forcing_model,
+        output_distribution_model=output_distribution_model,
+        attention_analysis_model=_attention_analysis_model(attention_analysis),
+        output_distribution_selected_only=output_distribution_degenerate(
+            output_trace.steps
+        ),
+        trajectory_analysis_ran=bool(trajectory.branches),
     )
 
 
@@ -159,20 +417,10 @@ def build_profile(
             surrogate_model, prompt, top_k=config.generation.top_k
         )
     else:
-        import math
-        logger.warning(
-            "No teacher-forcing and no surrogate — input-side metrics zeroed for %s. "
-            "Pass surrogate_model= to compute hermeneutic input-side analysis.",
-            model.name,
-        )
-        max_entropy = math.log2(model.vocab_size) if model.vocab_size > 0 else 16.0
-        input_analysis = InputSideAnalysis(
-            positions=[],
+        input_analysis = _zeroed_input_analysis(
+            model,
             prompt_token_ids=model.tokenize(prompt),
             prompt_text=prompt,
-            mean_surprisal=0.0,
-            mean_entropy=0.0,
-            max_entropy=max_entropy,
         )
 
     # 3. Output trace
@@ -208,16 +456,9 @@ def build_profile(
         )
     else:
         logger.debug("Skipping trajectory analysis — %s does not support teacher forcing.", model.name)
-        trajectory = TrajectoryAnalysis(
+        trajectory = _skipped_trajectory(
             start_step=len(context_ids),
-            n_branches=0,
             rollout_steps=config.trajectory.rollout_steps,
-            branches=[],
-            convergence_profile=[],
-            persistence_score=0.0,
-            explosion_score=0.0,
-            convergence_score=0.0,
-            initial_n_clusters=0,
         )
 
     # 6. Perturbation analysis
@@ -351,53 +592,16 @@ def build_profile(
         surrogate_model.vocab_size if output_distribution_surrogate_name else model.vocab_size
     )
 
-    # 7. Distribution metrics — one DistributionMetrics per output step
-    logger.debug("Computing distribution metrics...")
-    from hif.metrics.distribution import DistributionMetrics
-    distribution_metrics: list[DistributionMetrics] = []
-    for step in semantic_steps:
-        probs_arr = np.array([e.prob for e in step.topk], dtype=np.float64)
-        logits_arr = np.array([e.logit for e in step.topk], dtype=np.float64)
-        # Pass raw (unnormalized) probs so entropy_bits gives the correct lower bound.
-        # uniform_tail_entropy uses the tail mass (1 - sum) for the upper bound.
-        dm = compute_distribution_metrics(
-            probs=probs_arr,
-            logits=logits_arr,
-            top_k_for_mass=min(10, len(probs_arr)),
-            truncated=True,
-            vocab_size=dist_vocab_size,
-        )
-        distribution_metrics.append(dm)
+    # 7. Distribution metrics — one DistributionMetrics per output step, over
+    #    the (possibly surrogate-recovered) basis chosen in 6b.
+    distribution_metrics = _distribution_metrics_for(
+        semantic_steps, vocab_size=dist_vocab_size
+    )
 
-    # 8. Semantic metrics — one SemanticMetrics per output step
-    logger.debug("Computing semantic metrics...")
-    semantic_metrics: list[SemanticMetrics] = []
-    for i, step in enumerate(semantic_steps):
-        # Build context prefix from the last min(5, i) already-generated token strings.
-        # GPT-2-style tokenizers include leading spaces in token_str, so plain
-        # concatenation (no separator) reconstructs natural text.
-        context_window = min(5, i)
-        if context_window > 0:
-            context_prefix = "".join(
-                s.selected_token_str
-                for s in semantic_steps[i - context_window : i]
-            )
-            candidate_strings = [context_prefix + e.token_str for e in step.topk]
-        else:
-            # Step 0: no context yet — use the bare token string
-            candidate_strings = [e.token_str for e in step.topk]
-        probs_arr = np.array([e.prob for e in step.topk], dtype=np.float64)
-        total = probs_arr.sum()
-        if total > 0:
-            probs_arr = probs_arr / total
-        sm = compute_semantic_metrics(
-            candidate_strings=candidate_strings,
-            probs=probs_arr,
-            embedder=embedder,
-            cluster_config=config.cluster,
-            truncated=True,
-        )
-        semantic_metrics.append(sm)
+    # 8. Semantic metrics — one SemanticMetrics per output step, same basis.
+    semantic_metrics = _semantic_metrics_for(
+        semantic_steps, embedder=embedder, cluster_config=config.cluster
+    )
 
     # 9. Stability metrics
     logger.debug("Computing stability metrics...")
@@ -479,74 +683,53 @@ def build_profile(
         output_distribution_surrogate_name=output_distribution_surrogate_name,
     )
 
-    # 11b. Optional counterfactual exposure analysis (uses cached embeddings
-    # — cheap). Reads step.topk for its candidate alternatives, so it needs the
-    # same semantic_steps substitution as distribution/semantic metrics above —
-    # otherwise it silently finds zero candidates on degenerate backends.
-    exposure_profile = None
-    if config.exposure.enabled:
-        from hif.analysis.exposure import ExposureAnalyzer
+    # 11a. The basis every cloud-reading stage below shares: 6b's recovery
+    # when it fired, the target's own trace otherwise. `is` rather than `==`
+    # because 6b either rebinds semantic_steps or leaves it pointing at
+    # output_trace.steps, so identity is the exact question.
+    recovered_trace = (
+        output_trace if semantic_steps is output_trace.steps
+        else output_trace.model_copy(update={"steps": semantic_steps})
+    )
 
-        logger.debug("Running exposure analysis...")
-        exposure_analyzer = ExposureAnalyzer(
-            embedder=embedder,
-            min_prob=config.exposure.min_prob,
-        )
-        exposure_trace = (
-            output_trace if semantic_steps is output_trace.steps
-            else output_trace.model_copy(update={"steps": semantic_steps})
-        )
-        exposure_profile = exposure_analyzer.analyze(
-            output_trace=exposure_trace,
-            semantic_metrics=semantic_metrics,
-            distance_threshold=config.exposure.distance_threshold,
-        )
+    # 11b. Optional counterfactual exposure analysis (uses cached embeddings
+    # — cheap), over the recovered basis.
+    exposure_profile = _exposure_reading(
+        config,
+        trace=recovered_trace,
+        semantic_metrics=semantic_metrics,
+        embedder=embedder,
+    )
 
     # 11d. Within-generation semantic field (Veer ◈) — per-step semantic-centroid
-    # trajectory. Uses the same surrogate-recovered basis (semantic_steps) as the
-    # other output-side readings on degenerate backends. Compute-and-discard.
+    # trajectory, same recovered basis. Compute-and-discard.
     semantic_field_reading = None
     if config.semantic_field.enabled:
         from hif.analysis.semantic_field import SemanticFieldAnalyzer
 
         logger.debug("Running within-generation semantic field (Veer)...")
-        sf_trace = (
-            output_trace if semantic_steps is output_trace.steps
-            else output_trace.model_copy(update={"steps": semantic_steps})
-        )
         semantic_field_reading = SemanticFieldAnalyzer(
             embedder, context_window=config.semantic_field.context_window
-        ).analyze(sf_trace)
+        ).analyze(recovered_trace)
 
-    # 11c. Optional attention analysis
+    # 11c. Optional attention analysis. Up to 5 perturbed prompts go in
+    # alongside the baseline — the text path is the one that has them.
     attention_analysis = None
     if config.attention.enabled:
-        from hif.analysis.attention import AttentionAnalyzer
-
         logger.debug("Running attention analysis...")
-        analyzer = AttentionAnalyzer(config.attention)
-        # Collect up to 5 perturbed variants across all generators
         all_variants: list[str] = []
         for pr in perturbation_records:
             all_variants.extend(pr.variants[:2])
-        # Detokenize the generated continuation
-        continuation = model.detokenize(output_trace.generated_ids)
-        continuation_token_strs = [s.selected_token_str for s in output_trace.steps]
-        attention_analysis = analyzer.analyze(
-            prompt,
-            continuation,
-            all_variants[:5],
-            continuation_token_strs=continuation_token_strs,
+        attention_analysis = _attention_reading(
+            config,
+            model=model,
+            prompt_text=prompt,
+            output_trace=output_trace,
+            variants=all_variants[:5],
         )
 
     # 12. Build ModelIdentity and PromptRecord
-    model_identity = ModelIdentity(
-        name=model.name,
-        backend=config.model.backend,
-        vocab_size=model.vocab_size,
-        context_length=model.context_length,
-        parameter_count=None,
-    )
+    model_identity = _model_identity(model, config)
 
     prompt_record = PromptRecord.from_text(
         text=prompt,
@@ -554,31 +737,22 @@ def build_profile(
         token_count=len(input_analysis.prompt_token_ids),
     )
 
-    # 12b. Opt-in raw-trace capture (schema 0.7.0). None (absent) by default —
-    # disabled behavior is unchanged and the transient traces above simply
-    # fall out of scope. Branch traces reuse the trajectory's Branch records
-    # (empty list when the trajectory stage was skipped).
-    raw_traces: RawTraces | None = None
-    if config.traceability.enabled:
-        raw_traces = RawTraces(
-            variant_traces=raw_variant_traces,
-            branch_traces=list(trajectory.branches),
-        )
+    # 12b. Opt-in raw-trace capture (schema 0.7.0). None (absent) by default.
+    raw_traces = _raw_traces(
+        config, variant_traces=raw_variant_traces, trajectory=trajectory
+    )
 
-    # 12c. Run provenance — which model filled each role, and what degraded.
-    # Recorded from the stages themselves, not inferred from the result: this
-    # is the evidence every declared `subject` is checked against.
-    provenance = RunProvenance(
-        generation_model=model.name,
+    # 12c. Run provenance. The output-distribution role names the surrogate
+    # when 6b recovered a cloud — the one field the two paths fill differently.
+    provenance = _run_provenance(
+        model=model,
         input_teacher_forcing_model=input_teacher_forcing_model,
         output_distribution_model=(
             output_distribution_surrogate_name or model.name
         ),
-        attention_analysis_model=_attention_analysis_model(attention_analysis),
-        output_distribution_selected_only=output_distribution_degenerate(
-            output_trace.steps
-        ),
-        trajectory_analysis_ran=bool(trajectory.branches),
+        attention_analysis=attention_analysis,
+        output_trace=output_trace,
+        trajectory=trajectory,
     )
 
     # 13. Return full profile (persist the embedder that actually ran — a
@@ -715,21 +889,10 @@ def _build_profile_mm(
             surrogate_model, text_concat, top_k=config.generation.top_k
         )
     else:
-        import math
-        logger.warning(
-            "No teacher-forcing and no surrogate — input-side metrics zeroed "
-            "for %s. Pass surrogate_model= to compute hermeneutic input-side "
-            "analysis.",
-            model.name,
-        )
-        max_entropy = math.log2(model.vocab_size) if model.vocab_size > 0 else 16.0
-        input_analysis = InputSideAnalysis(
-            positions=[],
+        input_analysis = _zeroed_input_analysis(
+            model,
             prompt_token_ids=list(prepared.input_ids),
             prompt_text=text_concat,
-            mean_surprisal=0.0,
-            mean_entropy=0.0,
-            max_entropy=max_entropy,
         )
 
     # 4. Output trace via generate_prepared
@@ -758,16 +921,9 @@ def _build_profile_mm(
         "Skipping trajectory analysis — multimodal trajectory is deferred in M1."
     )
     context_len = len(prepared.input_ids) + len(output_trace.generated_ids)
-    trajectory = TrajectoryAnalysis(
+    trajectory = _skipped_trajectory(
         start_step=context_len,
-        n_branches=0,
         rollout_steps=config.trajectory.rollout_steps,
-        branches=[],
-        convergence_profile=[],
-        persistence_score=0.0,
-        explosion_score=0.0,
-        convergence_score=0.0,
-        initial_n_clusters=0,
     )
 
     # 7. Media perturbation analysis (PerturbationFamily protocol). Each
@@ -914,47 +1070,15 @@ def _build_profile_mm(
 
     region_sensitivity = assemble_region_sensitivity(trace_sensitivity_pairs)
 
-    # 8. Distribution metrics — one per output step (same math as text path)
-    logger.debug("Computing distribution metrics...")
-    from hif.metrics.distribution import DistributionMetrics
-    distribution_metrics: list[DistributionMetrics] = []
-    for step in output_trace.steps:
-        probs_arr = np.array([e.prob for e in step.topk], dtype=np.float64)
-        logits_arr = np.array([e.logit for e in step.topk], dtype=np.float64)
-        dm = compute_distribution_metrics(
-            probs=probs_arr,
-            logits=logits_arr,
-            top_k_for_mass=min(10, len(probs_arr)),
-            truncated=True,
-            vocab_size=model.vocab_size,
-        )
-        distribution_metrics.append(dm)
-
-    # 9. Semantic metrics — one per output step (same math as text path)
-    logger.debug("Computing semantic metrics...")
-    semantic_metrics: list[SemanticMetrics] = []
-    for i, step in enumerate(output_trace.steps):
-        context_window = min(5, i)
-        if context_window > 0:
-            context_prefix = "".join(
-                s.selected_token_str
-                for s in output_trace.steps[i - context_window : i]
-            )
-            candidate_strings = [context_prefix + e.token_str for e in step.topk]
-        else:
-            candidate_strings = [e.token_str for e in step.topk]
-        probs_arr = np.array([e.prob for e in step.topk], dtype=np.float64)
-        total = probs_arr.sum()
-        if total > 0:
-            probs_arr = probs_arr / total
-        sm = compute_semantic_metrics(
-            candidate_strings=candidate_strings,
-            probs=probs_arr,
-            embedder=embedder,
-            cluster_config=config.cluster,
-            truncated=True,
-        )
-        semantic_metrics.append(sm)
+    # 8/9. Distribution and semantic metrics — the same stages the text path
+    #      runs, but always over the target's OWN trace: there is no step-6b
+    #      equivalent here, so `model.vocab_size` is always the denominator.
+    distribution_metrics = _distribution_metrics_for(
+        output_trace.steps, vocab_size=model.vocab_size
+    )
+    semantic_metrics = _semantic_metrics_for(
+        output_trace.steps, embedder=embedder, cluster_config=config.cluster
+    )
 
     # 10. Stability metrics. Full-access models feed real per-variant
     #     input-side analyses (computed over text positions in the loop
@@ -1006,21 +1130,14 @@ def _build_profile_mm(
         surrogate_model_name=surrogate_model.name if used_surrogate else None,
     )
 
-    # Optional counterfactual exposure analysis (text-side outputs only)
-    exposure_profile = None
-    if config.exposure.enabled:
-        from hif.analysis.exposure import ExposureAnalyzer
-
-        logger.debug("Running exposure analysis...")
-        exposure_analyzer = ExposureAnalyzer(
-            embedder=embedder,
-            min_prob=config.exposure.min_prob,
-        )
-        exposure_profile = exposure_analyzer.analyze(
-            output_trace=output_trace,
-            semantic_metrics=semantic_metrics,
-            distance_threshold=config.exposure.distance_threshold,
-        )
+    # Optional counterfactual exposure analysis (text-side outputs only), over
+    # the target's own trace — again, no recovered basis exists here.
+    exposure_profile = _exposure_reading(
+        config,
+        trace=output_trace,
+        semantic_metrics=semantic_metrics,
+        embedder=embedder,
+    )
 
     # Within-generation semantic field (Veer ◈) — mm path uses the raw output
     # trace (no surrogate output-recovery on the mm path). Compute-and-discard.
@@ -1037,26 +1154,18 @@ def _build_profile_mm(
     # docs/ARCHITECTURE.md § Multimodal notes).
     attention_analysis = None
     if config.attention.enabled:
-        from hif.analysis.attention import AttentionAnalyzer
-
         logger.debug("Running attention analysis on text parts...")
-        analyzer = AttentionAnalyzer(config.attention)
-        continuation = model.detokenize(output_trace.generated_ids)
-        continuation_token_strs = [s.selected_token_str for s in output_trace.steps]
-        attention_analysis = analyzer.analyze(
-            text_concat,
-            continuation,
-            [],
-            continuation_token_strs=continuation_token_strs,
+        # No variants: a media perturbation leaves the text an encoder would
+        # read unchanged, so there is nothing for the analyser to contrast.
+        attention_analysis = _attention_reading(
+            config,
+            model=model,
+            prompt_text=text_concat,
+            output_trace=output_trace,
+            variants=[],
         )
 
-    model_identity = ModelIdentity(
-        name=model.name,
-        backend=config.model.backend,
-        vocab_size=model.vocab_size,
-        context_length=model.context_length,
-        parameter_count=None,
-    )
+    model_identity = _model_identity(model, config)
 
     # Multimodal prompt_hash: sha256 over concatenated part content_hashes,
     # in part order (§ Profile schema impact, docs/ARCHITECTURE.md
@@ -1097,12 +1206,9 @@ def _build_profile_mm(
 
     # Opt-in raw-trace capture (schema 0.7.0; see text path §12b). None by
     # default — disabled behavior is unchanged.
-    raw_traces: RawTraces | None = None
-    if config.traceability.enabled:
-        raw_traces = RawTraces(
-            variant_traces=raw_variant_traces,
-            branch_traces=list(trajectory.branches),
-        )
+    raw_traces = _raw_traces(
+        config, variant_traces=raw_variant_traces, trajectory=trajectory
+    )
 
     config = _record_effective_embedder(config, embedder)
     return BehavioralRangeProfile(
@@ -1123,19 +1229,17 @@ def _build_profile_mm(
         region_sensitivity=region_sensitivity,
         raw_traces=raw_traces,
         # Same roles as the text path. The mm path runs no output-distribution
-        # surrogate recovery and no trajectory rollouts (Risk rule 6), so both
-        # facts are recorded as they are rather than left to be inferred.
-        provenance=RunProvenance(
-            generation_model=model.name,
+        # surrogate recovery and no trajectory rollouts (Risk rule 6), so the
+        # output-distribution role always names the target and
+        # trajectory_analysis_ran is always False — recorded as facts rather
+        # than left to be inferred.
+        provenance=_run_provenance(
+            model=model,
             input_teacher_forcing_model=input_teacher_forcing_model,
             output_distribution_model=model.name,
-            attention_analysis_model=_attention_analysis_model(
-                attention_analysis
-            ),
-            output_distribution_selected_only=output_distribution_degenerate(
-                output_trace.steps
-            ),
-            trajectory_analysis_ran=bool(trajectory.branches),
+            attention_analysis=attention_analysis,
+            output_trace=output_trace,
+            trajectory=trajectory,
         ),
     )
 
