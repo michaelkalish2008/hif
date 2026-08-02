@@ -135,12 +135,20 @@ def test_keys_are_snake_case():
         assert re.fullmatch(r"[a-z][a-z0-9_]*", m.key), m.key
 
 
-def test_labels_are_canonical_shorthands_or_none():
-    """A label is either a non-empty shorthand or None — never ""."""
+def test_every_row_has_exactly_one_name_and_no_row_shares_it():
+    """`name` is the only naming layer, and it names one quantity.
+
+    There is no `label` field: the registry carried a second, coined name per
+    row until hif-v3.3 (see the SIGNAL_SET_VERSION history), and the coined one
+    is the one that drifted off its quantity. This asserts what replaced it —
+    a required, non-blank, unique `name` — and that the removed field has not
+    been reintroduced under the old spelling.
+    """
     for m in MEASUREMENT_REGISTRY:
-        assert m.label is None or m.label.strip(), f"{m.key}: blank label"
-    labels = [m.label for m in MEASUREMENT_REGISTRY if m.label is not None]
-    assert len(labels) == len(set(labels)), "duplicate labels"
+        assert m.name.strip(), f"{m.key}: blank name"
+        assert not hasattr(m, "label"), f"{m.key}: `label` is back"
+    names = [m.name for m in MEASUREMENT_REGISTRY]
+    assert len(names) == len(set(names)), "duplicate names"
 
 
 # ---------------------------------------------------------------------------
@@ -302,7 +310,7 @@ def test_schema_emits_full_row_per_measurement():
     for m in MEASUREMENT_REGISTRY:
         row = doc["measurements"][m.key]
         assert row["name"] == m.name
-        assert row["label"] == m.label
+        assert "label" not in row
         assert row["unit"] == m.unit
         assert row["definition"] == m.definition
         assert row["observable"] == m.observable

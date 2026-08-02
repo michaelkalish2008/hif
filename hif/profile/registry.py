@@ -79,7 +79,18 @@ from typing import Optional
 # absent-not-pinned rule. No key was removed from the set — the rule is an
 # absence condition on already-optional keys, so `hif compare` still intersects
 # across the v3 family.
-SIGNAL_SET_VERSION = "hif-v3.2"
+# hif-v3.3 (current): removed the `label` field. Rows carried an optional
+# shorthand from this project's own vocabulary — "Stability", "Sensitivity",
+# "Wager ▲", "Continuity", "Horizon", "Exposure ◇", "Veer ◈", "Spread ■",
+# "Entropy ●", "Shift ◆" — alongside the descriptive `name`. Two names for one
+# quantity is one name too many, and the shorthand was the one that went wrong:
+# "Stability" ended up on `input_entropy_std_bits`, a standard deviation, where
+# a higher number means LESS stable. A name that inverts the reading direction
+# of its own number is worse than no name. `name` remains, and says what the
+# quantity is in the terms it is computed in. No key, unit, definition, or
+# absence rule changed, so `hif compare` still intersects across the v3 family;
+# a consumer reading `label` off `hif schema` reads `name` instead.
+SIGNAL_SET_VERSION = "hif-v3.3"
 
 
 # ---------------------------------------------------------------------------
@@ -186,7 +197,24 @@ class Measurement:
     key             record/measurement key — descriptive and unit-suffixed;
                     this is the stable machine name and never changes.
     name            human-readable quantity name, shown in CLI and report
-                    tables.
+                    tables. It names the quantity in the terms the quantity is
+                    computed in — "Input entropy shift spread (bits)", not a
+                    coined shorthand — so `key` and `name` say the same thing
+                    at two registers and a reader needs no glossary to move
+                    between them.
+
+                    There is deliberately no second naming layer. Rows used to
+                    carry an optional `label` holding a shorthand from this
+                    project's own vocabulary ("Stability", "Wager ▲",
+                    "Continuity"), and the shorthand outlived the quantity it
+                    was coined for: "Stability" ended up on a standard
+                    deviation, where a HIGHER number means LESS stable, so the
+                    name inverted the reading direction of the number it
+                    named. The quantities here have accepted names already —
+                    Shannon entropy, Jensen-Shannon divergence, Pearson r,
+                    cosine similarity, surprisal — and `name` uses them. Chart
+                    glyphs live in hif/viz/registry.py, which never needed the
+                    measurement row to carry them.
     unit            the natural unit ("bits", "dimensionless", "cosine
                     distance", "fraction of analysed generation steps").
     definition      what the quantity is, in one or two sentences, including
@@ -199,9 +227,6 @@ class Measurement:
                     the target's own machinery produced it (the `[F]` case).
                     Required: a row that cannot say who it is about should not
                     be in the set.
-    label           optional canonical shorthand from the docs ("Wager ▲",
-                    "Continuity"). None when no established shorthand exists —
-                    a made-up name would be worse than none.
     surrogate_group which surrogate caveat applies when the target model could
                     not produce the quantity itself: "input" measurements
                     inherit findings.surrogate_model_name's proxy caveat,
@@ -238,7 +263,6 @@ class Measurement:
     functional: str
     resolution: str
     subject: str
-    label: Optional[str] = None
     surrogate_group: str = ""
     subject_under_surrogate: Optional[str] = None
     needs_distribution_pair: bool = False
@@ -263,9 +287,6 @@ MEASUREMENT_REGISTRY: tuple[Measurement, ...] = (
         # the target never saw a token of.
         subject=SUBJECT_TARGET_DISTRIBUTION,
         subject_under_surrogate=SUBJECT_PROMPT_ONLY,
-        label=None,  # the historical "Input Stability" named the removed
-        # inverted score (1 − x), not this quantity — carrying that name
-        # forward would re-attach the score reading.
         surrogate_group="input",
     ),
     Measurement(
@@ -285,8 +306,6 @@ MEASUREMENT_REGISTRY: tuple[Measurement, ...] = (
         # rather than its mean), so the same subject and the same degradation.
         subject=SUBJECT_TARGET_DISTRIBUTION,
         subject_under_surrogate=SUBJECT_PROMPT_ONLY,
-        label="Stability",  # the natural-unit form of the Stability
-        # aggregate (see SIGNAL_SET_VERSION history above).
         surrogate_group="input",
     ),
     Measurement(
@@ -323,8 +342,6 @@ MEASUREMENT_REGISTRY: tuple[Measurement, ...] = (
         # would have to pass the Significance Gate on its own, and no run has
         # been shown to need it.
         subject=SUBJECT_TARGET_DISTRIBUTION,
-        label="Sensitivity",  # the quantity the historical `sensitivity`
-        # score was computed from (mean JS divergence per variant).
         # CORRECTED (was "output"): the surrogate recovery in builder.py step 6b
         # substitutes `semantic_steps` for the distribution/semantic/exposure
         # metrics and rebuilds the perturbation FIELD basis, but never touches
@@ -359,8 +376,6 @@ MEASUREMENT_REGISTRY: tuple[Measurement, ...] = (
         # target's reaction, which is a claim about the pair.
         subject=SUBJECT_TARGET_DISTRIBUTION,
         subject_under_surrogate=SUBJECT_MIXED,
-        label=None,  # no established shorthand — the docs name it only by
-        # its zone ("Center").
         surrogate_group="input",
         needs_distribution_pair=True,  # because of what it correlates: one of
         # its two series IS the per-variant perturbation JSD. On a selected-only
@@ -388,8 +403,6 @@ MEASUREMENT_REGISTRY: tuple[Measurement, ...] = (
         # another model's behaviour standing in for the target's. No surrogate
         # path touches it.
         subject=SUBJECT_TARGET_OUTPUT_TEXT,
-        label=None,  # no established shorthand (`io_sim` is a field name,
-        # not a doc name).
     ),
     Measurement(
         key="prompt_surprisal_excess_bits",
@@ -408,7 +421,6 @@ MEASUREMENT_REGISTRY: tuple[Measurement, ...] = (
         # is the surrogate's over the prompt. The target contributes nothing.
         subject=SUBJECT_TARGET_DISTRIBUTION,
         subject_under_surrogate=SUBJECT_PROMPT_ONLY,
-        label="Wager ▲",
         surrogate_group="input",
     ),
     Measurement(
@@ -430,8 +442,6 @@ MEASUREMENT_REGISTRY: tuple[Measurement, ...] = (
         # the target's real output, not a stand-in for the target's behaviour.
         subject=SUBJECT_TARGET_DISTRIBUTION,
         subject_under_surrogate=SUBJECT_TARGET_OUTPUT_TEXT,
-        label=None,  # "Cluster Entropy" in the docs names the per-step
-        # component, not a canonical instrument shorthand.
         surrogate_group="output",
     ),
     Measurement(
@@ -450,7 +460,6 @@ MEASUREMENT_REGISTRY: tuple[Measurement, ...] = (
         # candidate_cluster_entropy_bits.
         subject=SUBJECT_TARGET_DISTRIBUTION,
         subject_under_surrogate=SUBJECT_TARGET_OUTPUT_TEXT,
-        label="Entropy ●",
         surrogate_group="output",
     ),
     Measurement(
@@ -468,11 +477,11 @@ MEASUREMENT_REGISTRY: tuple[Measurement, ...] = (
         # candidate_cluster_entropy_bits.
         subject=SUBJECT_TARGET_DISTRIBUTION,
         subject_under_surrogate=SUBJECT_TARGET_OUTPUT_TEXT,
-        label=None,  # deliberately NOT "Shift ◆": Shift is the step-to-step
-        # JSD (where the mass sits); this is the step-to-step change in the
-        # amount of uncertainty. Two steps can carry identical entropy over
-        # completely different token sets, so the two quantities are not
-        # substitutes. Shift is `output_step_jsd_bits`, the next row but one.
+        # Not a substitute for `output_step_jsd_bits`, the next row but one:
+        # that one measures where the mass sits, this one the change in how
+        # much uncertainty there is. Two steps can carry identical entropy
+        # over completely different token sets, so the entropy delta reads 0
+        # where the step JSD reads a full bit.
         surrogate_group="output",
     ),
     Measurement(
@@ -505,7 +514,6 @@ MEASUREMENT_REGISTRY: tuple[Measurement, ...] = (
         # here: on a selected-only backend the quantity is ABSENT rather than
         # proxied, hence no surrogate_group and no subject_under_surrogate.
         subject=SUBJECT_TARGET_DISTRIBUTION,
-        label="Shift ◆",
         surrogate_group="",
         needs_distribution_pair=True,  # JSD(Qⱼ₋₁, Qⱼ) — consecutive steps.
     ),
@@ -528,9 +536,6 @@ MEASUREMENT_REGISTRY: tuple[Measurement, ...] = (
         resolution="per-step",
         # Same series, same raw basis, same absence rules as output_step_jsd_bits.
         subject=SUBJECT_TARGET_DISTRIBUTION,
-        label=None,  # no established shorthand — it is new with Shift's
-        # admission to the measurement set, and inventing one would imply a
-        # doc vocabulary that does not exist.
         surrogate_group="",
         needs_distribution_pair=True,  # same series, same absence rules as
         # output_step_jsd_bits.
@@ -551,7 +556,6 @@ MEASUREMENT_REGISTRY: tuple[Measurement, ...] = (
         # `semantic_steps` — the same basis as the distribution metrics.
         subject=SUBJECT_TARGET_DISTRIBUTION,
         subject_under_surrogate=SUBJECT_TARGET_OUTPUT_TEXT,
-        label="Veer ◈",
         # CORRECTED (was ""): step 11d passes `sf_trace`, which IS the
         # surrogate-recovered basis when step 6b fired. The row was silent
         # about a proxy it actually uses, so on a [P] backend the CLI table
@@ -578,7 +582,6 @@ MEASUREMENT_REGISTRY: tuple[Measurement, ...] = (
         # target's ACTUAL generated continuation, so it is a fixed instrument on
         # the target's real output: it moves when the target's output moves.
         subject=SUBJECT_TARGET_OUTPUT_TEXT,
-        label="Spread ■",
     ),
     Measurement(
         key="attention_entropy_input_bits",
@@ -602,7 +605,6 @@ MEASUREMENT_REGISTRY: tuple[Measurement, ...] = (
         # real measurement of the prompt under a fixed reference encoder; not a
         # measurement of the target, and no backend can make it one.
         subject=SUBJECT_PROMPT_ONLY,
-        label="Horizon",  # no glyph: the ▼ symbol is not used in the code.
     ),
     Measurement(
         key="counterfactual_exposure_fraction",
@@ -621,7 +623,6 @@ MEASUREMENT_REGISTRY: tuple[Measurement, ...] = (
         # fired — to ExposureAnalyzer, which reads each step's topk candidates.
         subject=SUBJECT_TARGET_DISTRIBUTION,
         subject_under_surrogate=SUBJECT_TARGET_OUTPUT_TEXT,
-        label="Exposure ◇",
         # CORRECTED (was ""): same omission as semantic_centroid_veer_cosine —
         # the row consumed the proxy basis without declaring it.
         surrogate_group="output",
@@ -646,7 +647,6 @@ MEASUREMENT_REGISTRY: tuple[Measurement, ...] = (
         # otherwise, so this quantity is absent rather than proxied on any
         # backend that cannot generate them itself. No surrogate path exists.
         subject=SUBJECT_TARGET_OUTPUT_TEXT,
-        label="Continuity",
     ),
 )
 

@@ -157,7 +157,6 @@ def test_the_overlap_companion_is_a_registered_measurement():
     assert OVERLAP_KEY in MEASUREMENT_KEYS
     row = MEASUREMENT_BY_KEY[OVERLAP_KEY]
     assert row.unit == "fraction of shared top-K token ids"
-    assert row.label is None
     # And the divergence's own definition points the reader at it, so the
     # bound cannot be read without the number that quantifies it.
     assert OVERLAP_KEY in MEASUREMENT_BY_KEY[SHIFT_KEY].definition
@@ -176,10 +175,10 @@ def test_a_saturated_run_reports_its_zero_overlap_alongside_the_ceiling():
 # ---------------------------------------------------------------------------
 
 
-def test_shift_is_registered_with_its_canonical_label():
+def test_shift_is_registered_with_its_triple_and_unit():
     assert SHIFT_KEY in MEASUREMENT_KEYS
     row = MEASUREMENT_BY_KEY[SHIFT_KEY]
-    assert row.label == "Shift ◆"
+    assert row.name == "Output step-to-step JSD (bits)"
     assert row.unit == "bits"
     assert row.resolution == "per-step"
     assert row.functional == "information-theoretic"
@@ -187,15 +186,22 @@ def test_shift_is_registered_with_its_canonical_label():
     assert row.subject == "target-distribution"
 
 
-def test_the_entropy_delta_row_is_still_not_labelled_shift():
+def test_the_entropy_delta_row_does_not_share_the_step_jsd_name():
     """|H(i) − H(i−1)| is a different quantity and must not carry the name.
 
     Two steps can hold identical entropy over completely different token sets:
-    the entropy delta would read 0 where Shift reads 1 bit.
+    the entropy delta would read 0 where the step JSD reads 1 bit.
+
+    This used to be a check on the coined shorthand — that only one row wore
+    "Shift ◆". The shorthand is gone (SIGNAL_SET_VERSION history, hif-v3.3) and
+    the conflation it guarded against is not, so the guard now reads the field
+    that survived: one quantity, one name, and no row named for another's.
     """
-    assert MEASUREMENT_BY_KEY["output_entropy_step_delta_bits"].label is None
-    labels = {m: MEASUREMENT_BY_KEY[m].label for m in MEASUREMENT_KEYS}
-    assert [k for k, v in labels.items() if v == "Shift ◆"] == [SHIFT_KEY]
+    delta = MEASUREMENT_BY_KEY["output_entropy_step_delta_bits"]
+    shift = MEASUREMENT_BY_KEY[SHIFT_KEY]
+    assert delta.name != shift.name
+    names = [MEASUREMENT_BY_KEY[m].name for m in MEASUREMENT_KEYS]
+    assert len(names) == len(set(names)), "two rows claim the same name"
 
 
 def test_a_profile_emits_shift_and_its_overlap():

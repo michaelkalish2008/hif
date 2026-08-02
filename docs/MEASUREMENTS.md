@@ -34,7 +34,7 @@ Three families of quantity were removed, and this document records why so they d
 - **The `levels` block (low/medium/high) and the verdict/equilibrium flags.** Assigning a level is an inference requiring a null distribution this project never established. The decision rule built on the previous levels measured a ~43% false-positive rate on pairs of runs known to be identical.
 - **Duplicate names.** `continuity` was `1 − sensitivity` computed from the same JS divergences, and the `wager` aggregate was byte-for-byte the same computation as `surprise`. Reporting one measurement twice under two names inflates the apparent dimensionality of the signal set. Each quantity now appears exactly once in the measurement set.
 
-Source of truth: `MEASUREMENT_REGISTRY` in `hif/profile/registry.py` — one row per measurement carrying its key, name, label, unit, definition, triple, and subject — printed in full by `hif schema`.
+Source of truth: `MEASUREMENT_REGISTRY` in `hif/profile/registry.py` — one row per measurement carrying its key, name, unit, definition, triple, and subject — printed in full by `hif schema`.
 
 ## Subject — whose behaviour the number describes
 
@@ -111,26 +111,26 @@ All distribution and semantic metrics are computed once per generation step over
 
 The measurement set is defined once, in `MEASUREMENT_REGISTRY` in `hif/profile/registry.py`, and extracted by `measurements(profile)` (`hif/profile/measure.py`) — run `hif schema` for the current set. The same function feeds the CLI table and the machine record, so a number shown in a terminal and a number in a JSONL line can never diverge. Each is a triple: observable × functional × resolution; the record carries the run-level scalar, and rows with `per-step` / `per-position` resolution also have a trace in Part 2.
 
-| Key | Label | Unit | Resolution | Subject | Requires |
-|-----|-------|------|------------|---------|----------|
-| `input_entropy_shift_bits` | — | bits | aggregate | `target-distribution` → `prompt-only` | teacher forcing (or `--surrogate`) + perturbation variants |
-| `input_entropy_std_bits` | Stability | bits | aggregate | `target-distribution` → `prompt-only` | teacher forcing (or `--surrogate`) + ≥ 2 perturbation variants |
-| `perturbation_jsd_bits` | Sensitivity | bits | aggregate | `target-distribution` | perturbation variants + top-k logprobs |
-| `io_correlation_r` | — | dimensionless | aggregate | `target-distribution` → `mixed` | ≥ 2 perturbation variants with both sides measured |
-| `io_cosine_similarity` | — | dimensionless | aggregate | `target-output-text` | ≥ 1 perturbation variant + an embedding encoder |
-| `prompt_surprisal_excess_bits` | Wager ▲ | bits | per-position | `target-distribution` → `prompt-only` | teacher forcing (or `--surrogate`) |
-| `candidate_cluster_entropy_bits` | — | bits | per-step | `target-distribution` → `target-output-text` | top-k logprobs + an embedding encoder |
-| `output_entropy_bits` | Entropy ● | bits | per-step | `target-distribution` → `target-output-text` | top-k logprobs |
-| `output_entropy_step_delta_bits` | — | bits | per-step | `target-distribution` → `target-output-text` | top-k logprobs, ≥ 2 steps |
-| `output_step_jsd_bits` | Shift ◆ | bits | per-step | `target-distribution` | top-k logprobs (real distributions, not the selected token alone), ≥ 2 steps |
-| `output_step_topk_overlap_fraction` | — | fraction of shared top-K token ids | per-step | `target-distribution` | same as `output_step_jsd_bits` |
-| `semantic_centroid_veer_cosine` | Veer ◈ | cosine distance | per-step | `target-distribution` → `target-output-text` | `semantic_field.enabled` + an embedding encoder |
-| `attention_entropy_output_bits` | Spread ■ | bits | per-position | `target-output-text` | the attention-analysis stage (`--diagnostics`); any backend |
-| `attention_entropy_input_bits` | Horizon | bits | per-position | `prompt-only` (every backend) | the attention-analysis stage (`--diagnostics`); any backend |
-| `counterfactual_exposure_fraction` | Exposure ◇ | fraction of steps | per-step | `target-distribution` → `target-output-text` | top-k logprobs + an embedding encoder |
-| `branch_pairwise_cosine_similarity` | Continuity | dimensionless | aggregate | `target-output-text` | trajectory analysis with ≥ 2 branches + an embedding encoder |
+| Key | Name | Unit | Resolution | Subject | Requires |
+|-----|------|------|------------|---------|----------|
+| `input_entropy_shift_bits` | Input entropy shift (bits) | bits | aggregate | `target-distribution` → `prompt-only` | teacher forcing (or `--surrogate`) + perturbation variants |
+| `input_entropy_std_bits` | Input entropy shift spread (bits) | bits | aggregate | `target-distribution` → `prompt-only` | teacher forcing (or `--surrogate`) + ≥ 2 perturbation variants |
+| `perturbation_jsd_bits` | Perturbation JSD (bits) | bits | aggregate | `target-distribution` | perturbation variants + top-k logprobs |
+| `io_correlation_r` | Input/output correlation (r) | dimensionless | aggregate | `target-distribution` → `mixed` | ≥ 2 perturbation variants with both sides measured |
+| `io_cosine_similarity` | Input/output cosine similarity | dimensionless | aggregate | `target-output-text` | ≥ 1 perturbation variant + an embedding encoder |
+| `prompt_surprisal_excess_bits` | Prompt surprisal excess (bits) | bits | per-position | `target-distribution` → `prompt-only` | teacher forcing (or `--surrogate`) |
+| `candidate_cluster_entropy_bits` | Candidate cluster entropy (bits) | bits | per-step | `target-distribution` → `target-output-text` | top-k logprobs + an embedding encoder |
+| `output_entropy_bits` | Output entropy (bits) | bits | per-step | `target-distribution` → `target-output-text` | top-k logprobs |
+| `output_entropy_step_delta_bits` | Output entropy step delta (bits) | bits | per-step | `target-distribution` → `target-output-text` | top-k logprobs, ≥ 2 steps |
+| `output_step_jsd_bits` | Output step-to-step JSD (bits) | bits | per-step | `target-distribution` | top-k logprobs (real distributions, not the selected token alone), ≥ 2 steps |
+| `output_step_topk_overlap_fraction` | Output step-to-step top-K overlap (fraction) | fraction of shared top-K token ids | per-step | `target-distribution` | same as `output_step_jsd_bits` |
+| `semantic_centroid_veer_cosine` | Semantic centroid veer (cosine distance) | cosine distance | per-step | `target-distribution` → `target-output-text` | `semantic_field.enabled` + an embedding encoder |
+| `attention_entropy_output_bits` | Output attention-row entropy (bits) | bits | per-position | `target-output-text` | the attention-analysis stage (`--diagnostics`); any backend |
+| `attention_entropy_input_bits` | Input attention-row entropy (bits) | bits | per-position | `prompt-only` (every backend) | the attention-analysis stage (`--diagnostics`); any backend |
+| `counterfactual_exposure_fraction` | Counterfactual exposure (fraction of steps) | fraction of steps | per-step | `target-distribution` → `target-output-text` | top-k logprobs + an embedding encoder |
+| `branch_pairwise_cosine_similarity` | Branch pairwise cosine similarity | dimensionless | aggregate | `target-output-text` | trajectory analysis with ≥ 2 branches + an embedding encoder |
 
-A label is a canonical shorthand carried over from the framework's instrument vocabulary; a measurement without one has no established shorthand, and none was invented for it.
+Each row has exactly one name, and it names the quantity in the terms the quantity is computed in. Rows carried a second, coined name until `hif-v3.3` — "Stability", "Sensitivity", "Wager ▲", "Entropy ●", "Shift ◆", "Veer ◈", "Spread ■", "Horizon", "Exposure ◇", "Continuity" — and the coined one is the one that went wrong: "Stability" sat on `input_entropy_std_bits`, a standard deviation, where a *higher* number means *less* stable. A name that inverts the reading direction of its own number is worse than no name. The quantities here have accepted names already — Shannon entropy, Jensen-Shannon divergence, Pearson r, cosine similarity, surprisal — so the key and the name now say the same thing at two registers, and no glossary sits between a reader and a number. Chart glyphs are a display concern and live in `hif/viz/registry.py`.
 
 The Subject column reads `declared` → `under surrogate`: the first value holds when the target's own machinery produced the quantity, the second when the surrogate named by the row's `surrogate_group` stood in. A single value means the subject does not change. See [Subject](#subject--whose-behaviour-the-number-describes).
 
@@ -150,7 +150,7 @@ where H(Pᵢ) = −∑ₜ pₜ log₂ pₜ  (teacher-forced full-vocabulary entr
 
 **Unit and range.** Bits. Unbounded above. `0` means the perturbations moved input-side entropy not at all.
 
-**Not inverted, not normalised.** This replaces the former "Input Stability" (`1 − mean|Δ stability_score|`), which saturated at exactly 1.0 in the regime that mattered and divided by `log₂(vocab_size)`. It carries no label for the same reason: the historical name named the inverted score, not this quantity.
+**Not inverted, not normalised.** This replaces the former "Input Stability" (`1 − mean|Δ stability_score|`), which saturated at exactly 1.0 in the regime that mattered and divided by `log₂(vocab_size)`. The historical name named the inverted score, not this quantity, which is one of the reasons no coined name survives on any row (see Part 1).
 
 **Absent when** there are no perturbed input-side analyses — the backend cannot teacher-force and no surrogate was supplied. Computed in `hif/metrics/stability.py::compute_stability_metrics`.
 
@@ -158,7 +158,7 @@ where H(Pᵢ) = −∑ₜ pₜ log₂ pₜ  (teacher-forced full-vocabulary entr
 
 ### `input_entropy_std_bits`
 
-**Zone.** Input side, under perturbation. Label: **Stability**.
+**Zone.** Input side, under perturbation.
 
 **Definition.** Sample standard deviation of the per-variant input entropy shifts — the spread of the model's entropy response across perturbations, where `input_entropy_shift_bits` is its mean.
 
@@ -176,7 +176,7 @@ input_entropy_std_bits = std_v( | μ[H(Pᵢ)]_variant_v − μ[H(Pᵢ)]_baseline
 
 ### `perturbation_jsd_bits`
 
-**Zone.** Perturbation. Label: **Sensitivity**.
+**Zone.** Perturbation.
 
 **Definition.** Mean Jensen-Shannon divergence between the baseline output distribution and each paraphrase variant's, averaged across generators and generation steps.
 
@@ -240,7 +240,7 @@ over all `(input, output)` pairs: baseline plus one per perturbation variant.
 
 ### `prompt_surprisal_excess_bits`
 
-**Zone.** Selection, input side. Label: **Wager ▲** — the per-position trace is in Part 2.
+**Zone.** Selection, input side. The per-position trace is in Part 2.
 
 **Definition.** Mean excess surprisal over per-position entropy across teacher-forced prompt positions.
 
@@ -277,7 +277,7 @@ When `sᵢ > H(Pᵢ)` the actual token was more surprising than the distribution
 
 ### `output_entropy_bits`
 
-**Zone.** Output side. Label: **Entropy ●** — the per-step trace is in Part 2.
+**Zone.** Output side. The per-step trace is in Part 2.
 
 **Definition.** Mean over generation steps of the Shannon entropy of the per-step top-K output distribution (`DistributionMetrics.entropy_bits`).
 
@@ -297,7 +297,7 @@ output_entropy_step_delta_bits = mean_{i≥2} | H_nucleus(step i) − H_nucleus(
 
 Nucleus entropy (95% mass, renormalised) is used rather than raw top-K entropy so the trace is comparable across backends regardless of how many logprobs each exposes.
 
-**Not Shift.** This is deliberately *not* labelled Shift (◆). Shift is `output_step_jsd_bits`, the next section — the change in *where the mass sits*; this is the step-to-step change in the *amount* of uncertainty. Two consecutive steps can carry identical entropy over completely disjoint token sets, in which case this quantity reads `0` where Shift reads its `1`-bit ceiling. They are not substitutes and never share a label.
+**Not the step-to-step JSD.** That is `output_step_jsd_bits`, the next section — the change in *where the mass sits*; this is the step-to-step change in the *amount* of uncertainty. Two consecutive steps can carry identical entropy over completely disjoint token sets, in which case this quantity reads `0` where the step JSD reads its `1`-bit ceiling. They are not substitutes, and no name is shared between them.
 
 **Unit and range.** Bits. Unbounded above.
 
@@ -307,7 +307,7 @@ Nucleus entropy (95% mass, renormalised) is used rather than raw top-K entropy s
 
 ### `output_step_jsd_bits`
 
-**Zone.** Output side, step-local. Label: **Shift ◆** — the per-step trace is in Part 2.
+**Zone.** Output side, step-local. The per-step trace is in Part 2.
 
 **Definition.** Mean over transitions of the Jensen-Shannon divergence between *consecutive* generation steps' output distributions. The target's own distributions throughout; no surrogate is involved.
 
@@ -329,7 +329,7 @@ The two steps' top-K distributions are aligned over the union of their token ids
 
 ### `output_step_topk_overlap_fraction`
 
-**Zone.** Output side, step-local. No label — it has no established shorthand in the framework's instrument vocabulary, and none was invented.
+**Zone.** Output side, step-local.
 
 **Definition.** Mean over the same transitions of the Jaccard overlap between consecutive steps' top-K candidate token-id sets.
 
@@ -347,7 +347,7 @@ output_step_topk_overlap_fraction = mean_{j≥2} [ |A_{j−1} ∩ A_j| / |A_{j�
 
 ### `semantic_centroid_veer_cosine`
 
-**Zone.** Output side, geometric. Label: **Veer ◈** — the per-step trace is in Part 2.
+**Zone.** Output side, geometric. The per-step trace is in Part 2.
 
 **Definition.** Mean step-to-step displacement of the candidate cloud's probability-weighted semantic centroid in embedding space.
 
@@ -367,7 +367,7 @@ Each candidate is embedded with up to `context_window` (default 5) already-gener
 
 ### `attention_entropy_output_bits` / `attention_entropy_input_bits`
 
-**Zone.** Attention (an independent reader's, not the generating model's). Labels: **Spread ■** (output side) and **Horizon** (input side) — the per-position traces are in Part 2.
+**Zone.** Attention (an independent reader's, not the generating model's). The per-position traces, for both the output and input side, are in Part 2.
 
 **Definition.** Mean Shannon entropy of the causal-prefix attention row, at each output position and at each input position respectively.
 
@@ -388,7 +388,7 @@ Hᵢ = −∑ⱼ≤ᵢ āᵢⱼ log₂ āᵢⱼ
 
 ### `counterfactual_exposure_fraction`
 
-**Zone.** Output side, geometric. Label: **Exposure ◇** — the per-step reading is in Part 2.
+**Zone.** Output side, geometric. The per-step reading is in Part 2.
 
 **Definition.** The fraction of analysed generation steps at which a probabilistically accessible alternative token would have pulled the response toward a different meaning.
 
@@ -410,7 +410,7 @@ Defaults: `p_min = 0.01`, `τ = 0.3`. The shared context is the *full* generated
 
 ### `branch_pairwise_cosine_similarity`
 
-**Zone.** Trajectory — the stochastic branch cloud. Label: **Continuity**.
+**Zone.** Trajectory — the stochastic branch cloud.
 
 **Definition.** Mean pairwise cosine similarity between the trajectory branch embeddings: the trajectory stage re-samples the generation from a branch point several times, embeds each branch's text, and averages the cosine similarity over all pairs.
 
@@ -444,7 +444,7 @@ The traces with a chart live in the viz registry (`hif/viz/registry.py`, `kind="
 | — | Horizon | Attention-row entropy per prompt position | `attention_entropy_input_bits` | The attention-analysis stage (`--diagnostics`) — any backend |
 | ◇ | Exposure | Fraction of steps where an accessible alternative diverged in meaning | `counterfactual_exposure_fraction` | Top-k probs + an embedding encoder |
 
-Horizon carries no glyph in the registry and is labelled *Input attention entropy* there; the ▼ symbol it once used is not in the code and is not used below.
+The input-side attention row carries no glyph in the measurement registry; the ▼ symbol it once used is not in the code and is not used below.
 
 Reading these traces simultaneously — across vocabulary space, embedding (semantic) space, and context-position space — is the multi-register practice the framework is designed to support. Shift (◆) and Veer (◈) are twins at the same resolution: Shift reads the step-to-step change in the distribution's *spread* (vocabulary space); Veer reads the step-to-step change in its *semantic location* (embedding space).
 

@@ -1223,8 +1223,10 @@ def schema(
     """Print the measurement registry: every key with its full row.
 
     Each measurement is emitted as its complete registry row — key, name,
-    label, unit, definition, and its triple (observable, functional,
-    resolution). This is the contract for `hif profile --json`, `hif suite`
+    unit, definition, and its triple (observable, functional, resolution).
+    A row carries one name and no coined shorthand; see the
+    SIGNAL_SET_VERSION history in hif/profile/registry.py (hif-v3.3).
+    This is the contract for `hif profile --json`, `hif suite`
     and `hif batch` records, and the machine-readable mirror of
     docs/MEASUREMENTS.md. Every measurement is in natural units; there is no
     normalised variant and no level.
@@ -1268,7 +1270,6 @@ def schema(
             "measurements": {
                 m.key: {
                     "name": m.name,
-                    "label": m.label,
                     "unit": m.unit,
                     "definition": m.definition,
                     "observable": m.observable,
@@ -1285,7 +1286,7 @@ def schema(
 
     table = Table(title="hif measurement set", show_header=True)
     table.add_column("Key", style="bold", no_wrap=True)
-    table.add_column("Label")
+    table.add_column("Name")
     table.add_column("Unit")
     table.add_column("Resolution")
     table.add_column("Subject")
@@ -1295,7 +1296,7 @@ def schema(
         if m.subject_under_surrogate is not None:
             subject = f"{m.subject} → {m.subject_under_surrogate} (surrogate)"
         table.add_row(
-            m.key, m.label or "—", m.unit, m.resolution, subject, m.definition
+            m.key, m.name, m.unit, m.resolution, subject, m.definition
         )
     console.print(table)
     console.print("\n[bold]Subject[/bold] — whose behaviour the number describes:")
