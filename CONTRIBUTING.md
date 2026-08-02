@@ -2,7 +2,9 @@
 
 There is one contribution path in this project: **adding a measurement**. It
 is deliberately small — five steps, two files, one registry row — and this
-document is the whole of it. (Bug fixes are always welcome and need no
+document is the whole of it. (Its subject is declared in the same row: a
+quantity that turns out to be about the prompt rather than about the model is
+still welcome, it just lands in a different block of the record. Step 2.) (Bug fixes are always welcome and need no
 ceremony; everything below is about growing the measurement set without
 growing its confusion.)
 
@@ -46,7 +48,7 @@ reason of one line:
   variants), return `None` and let the key be **omitted** from the record. A
   fabricated `0.0` or `1.0` is a measurement claim; "no evidence" is not.
 
-### 2. Declare its triple
+### 2. Declare its triple — and its subject
 
 Decide, before writing the registry row:
 
@@ -59,6 +61,42 @@ Decide, before writing the registry row:
   scalar summarises a within-run trace at that granularity, `aggregate` when
   the quantity exists only at whole-run level. Do not invent a new resolution
   value for a quantity that fits an existing one.
+- **subject** — one of `SUBJECTS`: *whose behaviour the number describes*. The
+  triple says what was measured; the subject says who it is about, and the two
+  are not the same question. See the Subject section of
+  [docs/MEASUREMENTS.md](docs/MEASUREMENTS.md) for the enum and the principle.
+
+Answer the subject question by asking what moves the number, not what runs in
+the pipeline:
+
+- Does it come from the target's own forward pass? → `target-distribution`.
+- Does a fixed local instrument (embedder, analysis encoder, teacher-forcing
+  surrogate) read text the *target actually produced*? → `target-output-text`.
+  A proxy on the target's real data is a reading instrument, and legitimate.
+- Does it couple a target-derived series with one derived from something else?
+  → `mixed`. Do not lump it with either side; a correlation cannot be
+  attributed to one of its two series.
+- Can the number be computed without the target running at all? → `prompt-only`.
+
+Then declare **`subject_under_surrogate`** if a surrogate can change the
+answer: it is what `subject` becomes when the surrogate named by the row's
+`surrogate_group` stands in, and `None` when the subject does not change.
+Subject is backend-dependent for most input-side and output-side rows, and
+must be modelled that way rather than pinned to one value that is wrong on
+half the backends.
+
+**A measurement whose subject is `prompt-only` does not go in the measurement
+set.** It is emitted in the record's `prompt_measurements` block, alongside
+the reference model that produced it — `measurements()` filters it out
+automatically once the row declares the subject, so the only thing you must
+get right is the declaration. A prompt-only quantity is still worth having:
+it is comparable across targets precisely because the target does not enter
+it. It is simply not a fact about the target, and the record must not be able
+to imply that it is. A caveat flag is not a substitute for absence here — that
+was the exact failure this field exists to prevent, and the prompt-only
+measurements in the predecessor audit showed zero variance across every
+model-side change tested, which is what "cannot see the model" looks like in
+data.
 
 ### 3. Check it passes the Significance Gate
 
@@ -95,7 +133,14 @@ Row conventions:
 - **`definition`** — one or two sentences: what it is, its bound (or that it
   is unbounded), and when it is absent.
 - **`surrogate_group`** — `"input"` or `"output"` if the value can come from a
-  teacher-forcing surrogate on restricted backends, else `""`.
+  teacher-forcing surrogate on restricted backends, else `""`. This is a claim
+  about the computation, so check it against `hif/profile/builder.py` rather
+  than against intuition: three rows had it wrong before the subject field
+  forced the audit — one flagged a proxy that never ran, two consumed the
+  proxy basis without declaring it.
+- **`subject`** and **`subject_under_surrogate`** — from step 2. A row that
+  declares `subject_under_surrogate` must also declare a `surrogate_group`,
+  or the degradation can never fire; the registry invariants enforce this.
 
 ### 5. Add a test
 
@@ -111,7 +156,11 @@ Two kinds, both cheap:
   (not `0.0`) when the evidence is missing.
 - **The registry invariants** in `tests/unit/test_measurement_registry.py`
   cover your row automatically (key uniqueness, complete row, valid triple,
+  valid subject, a declared degradation that can actually fire, and
   emitted-implies-registered). You do not need to touch them — just run them.
+  They also assert that `measurements()` and `prompt_measurements()` partition
+  the run's values, so a prompt-only row lands in the right block by
+  construction.
 
 Then run the whole suite: `.venv/bin/python -m pytest`.
 
@@ -163,6 +212,8 @@ Measurement(
     observable="input distribution",
     functional="information-theoretic",
     resolution="aggregate",
+    subject=SUBJECT_TARGET_DISTRIBUTION,
+    subject_under_surrogate=SUBJECT_PROMPT_ONLY,
     label="Stability",
     surrogate_group="input",
 ),

@@ -48,13 +48,15 @@ An open-weight HF causal LM — default `unsloth/Llama-3.2-1B`, see `SURROGATE_C
 - **Input-side recovery.** Teacher-forced over the prompt to produce `InputSideAnalysis` when `model.supports_teacher_forcing` is False. Recorded as `findings.surrogate_model_name`.
 - **Output-distribution recovery.** Teacher-forced over prompt + continuation when the target backend's own per-step distribution is degenerate (Anthropic returns the selected token only). Recorded as `findings.output_distribution_surrogate_name`.
 
-The two are independent and are reported separately, because a measurement computed through a surrogate describes the surrogate reading the target's text — not the target's own computation. The CLI table stars measurements sourced this way, and `signals_record()` emits both names under `surrogate`.
+The two are independent, are reported separately, and — crucially — do **not** have the same standing. Output-distribution recovery teacher-forces the surrogate over text the target actually generated: a reading instrument on the target's real output, whose value still moves when the target's output moves. Input-side recovery teacher-forces the surrogate over the *prompt*, which the target never touched: nothing the target did enters the result.
+
+That difference is declared per registry row as the measurement's **subject** (`hif/profile/signals.py`), and enforced in the record. Output-recovered quantities stay in `measurements` with subject `target-output-text` and are starred in the CLI table. Input-recovered quantities have subject `prompt-only` on that backend and leave `measurements` entirely for a top-level `prompt_measurements` block naming the reference model — a flag would say "a caveated number about this model", and only "this model produced no number" is true. `io_correlation_r` is the exception in between: it couples the surrogate's prompt reading with the target's own output response, so it stays in `measurements` with subject `mixed`. `signals_record()` still emits both surrogate names under `surrogate`. See docs/MEASUREMENTS.md § Subject.
 
 ---
 
 ## Measurements and Formulas
 
-A run reports a set of scalar **measurements**, each in its natural unit (bits, cosine distance, Pearson *r*, a fraction). They are defined once, in `MEASUREMENT_REGISTRY` in `hif/profile/signals.py` — run `hif schema` for the current set — and derived from the low-level distribution, semantic, sensitivity, and perturbation-response metrics computed at each generation step. `hif schema` prints every registry row in full; `signals_record()` emits the values under `measurements`, with the matching unit strings under `units` on request.
+A run reports a set of scalar **measurements**, each in its natural unit (bits, cosine distance, Pearson *r*, a fraction). They are defined once, in `MEASUREMENT_REGISTRY` in `hif/profile/signals.py` — run `hif schema` for the current set — and derived from the low-level distribution, semantic, sensitivity, and perturbation-response metrics computed at each generation step. `hif schema` prints every registry row in full; `signals_record()` emits the values under `measurements`, with the matching unit strings under `units` on request. `measurements` carries measurements of the model named in the record and nothing else — quantities whose subject on the active backend is `prompt-only` go under `prompt_measurements` instead (§ Teacher-forcing surrogate above).
 
 Absent measurements are omitted from the record, never pinned to a default: a backend that cannot teacher-force produces no `input_entropy_shift_bits`, and that is a different statement from a measured zero.
 
@@ -158,7 +160,8 @@ hif/
   profile/
     schema.py              # BehavioralRangeProfile and all sub-schemas; Findings
     builder.py             # build_profile() — orchestrates the full pipeline; generate_findings()
-    signals.py             # MEASUREMENTS, MEASUREMENT_UNITS, measurements(), signals_record()
+    signals.py             # MEASUREMENT_REGISTRY (triple + subject), measurements(),
+                           # prompt_measurements(), signals_record()
     render_json.py         # render_json() → profile.json
     render_markdown.py     # render_technical(), render_public() → Markdown
 
@@ -255,7 +258,7 @@ The full pipeline, as orchestrated by `build_profile()` in `hif/profile/builder.
     - **11c.** Attention analysis (`config.attention.enabled`, off by default; set by `--diagnostics`) → `TextAttentionAnalysis`.
     - **11d.** Within-generation semantic field (`config.semantic_field.enabled`, off by default; set by `--diagnostics`) → `SemanticFieldReading` (Veer).
 12. **Profile assembly** — `BehavioralRangeProfile` constructed from all of the above plus `ModelIdentity` and `PromptRecord` metadata, and the effective embedder recorded into the persisted config. Raw traces are attached only under the traceability opt-in.
-13. **Measurement extraction** — `hif/profile/signals.py::measurements()` reduces the profile to the flat measurement dict; `signals_record()` wraps it with provenance for `--json`, `suite`, and `batch`.
+13. **Measurement extraction** — `hif/profile/signals.py::measurements()` reduces the profile to the flat measurement dict, splitting off the prompt-only quantities by subject; `signals_record()` wraps both with provenance for `--json`, `suite`, and `batch`.
 14. **Rendering (optional)** — `render_json()` writes the full profile as JSON; `render_technical()` and `render_public()` write Markdown reports. Nothing is written unless an output directory is requested — the privacy-first default writes nothing.
 15. **Charts (optional)** — `generate_signal_plots()` renders the registry's signal charts plus a combined dashboard index.
 

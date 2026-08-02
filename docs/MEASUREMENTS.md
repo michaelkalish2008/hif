@@ -34,7 +34,36 @@ Three families of quantity were removed, and this document records why so they d
 - **The `levels` block (low/medium/high) and the verdict/equilibrium flags.** Assigning a level is an inference requiring a null distribution this project never established. The decision rule built on the previous levels measured a ~43% false-positive rate on pairs of runs known to be identical.
 - **Duplicate names.** `continuity` was `1 − sensitivity` computed from the same JS divergences, and the `wager` aggregate was byte-for-byte the same computation as `surprise`. Reporting one measurement twice under two names inflates the apparent dimensionality of the signal set. Each quantity now appears exactly once in the measurement set.
 
-Source of truth: `MEASUREMENT_REGISTRY` in `hif/profile/signals.py` — one row per measurement carrying its key, name, label, unit, definition, and triple — printed in full by `hif schema`.
+Source of truth: `MEASUREMENT_REGISTRY` in `hif/profile/signals.py` — one row per measurement carrying its key, name, label, unit, definition, triple, and subject — printed in full by `hif schema`.
+
+## Subject — whose behaviour the number describes
+
+The triple says *what* was measured and at what granularity. It does not say *who it is about*, and for a while the record could not express that at all. Every row now declares a **subject**, and the distinction it draws is the one that decides whether a number belongs in the measurement set.
+
+**The principle.** A proxy applied to the target model's actual input or output is a reading instrument on real data — legitimate. A proxy whose own behaviour stands in for the target's is a different subject wearing the target's name — not legitimate. The test is not "was a proxy involved" but "whose behaviour moves the number". A surrogate teacher-forced over text the target actually generated still moves when the target's output moves: it is a fact about the target, read indirectly. A surrogate teacher-forced over the prompt does not: nothing the target did enters it.
+
+**The enum**, one line each (`hif schema` prints the same legend):
+
+| Subject | Meaning |
+|---|---|
+| `target-distribution` | the target model's own probability distributions — its forward pass over its input or over its own generation |
+| `target-output-text` | a fixed local instrument (embedder or analysis encoder) reading text the target actually generated |
+| `mixed` | a target-derived series coupled with a series derived from something other than the target; the target participates but does not solely determine the number |
+| `prompt-only` | the prompt text alone under a fixed reference model — no data the target produced enters |
+
+**Subject is backend-dependent, and is modelled as such.** A row declares the subject it has when the target's own machinery produced the quantity, plus `subject_under_surrogate` — what that becomes once the surrogate named by its `surrogate_group` stands in. `effective_subject()` resolves the pair against the surrogates a given run actually used, so the answer is the run's rather than a static value that would be wrong on half the backends. On an `[F]` backend `prompt_surprisal_excess_bits` is `target-distribution`; on `[P]` with `--surrogate` the same key is `prompt-only`.
+
+**The consequence: absent, not flagged.** When a measurement's computation never touches the target's data on the active backend, it is **omitted from `measurements`** and reported in a separate top-level `prompt_measurements` block carrying its own subject declaration and the reference model that produced each value. A flag would say "here is a caveated number about this model"; absence says "this model produced no number". Only the second is true. This is the absent-not-pinned rule extended from *cannot measure* to *measured something else*.
+
+The prompt-only quantities are not worthless — "how surprising is this prompt under a fixed reference model" is a real question, and its answer is comparable across targets *precisely because* the target does not enter it. That is why they are reported rather than dropped, and why they are reported somewhere other than the model's measurement set.
+
+**The empirical case.** In the predecessor project's audit, the prompt-only measurements showed **exactly zero variance across every model-side change tested** — they were deterministic in prompt text, surrogate weights, and seed. They could not see the model. The same signature reproduces here: profiling `gpt2` and `gpt2-medium` on the same prompt with `--diagnostics` moves every target-side number and leaves `attention_entropy_input_bits` bit-identical (`1.6677721955190443` in both).
+
+**`io_correlation_r` is the genuine mixed case**, and is classified as such rather than lumped either way. Under a surrogate it is the Pearson r between a surrogate-read per-variant input entropy shift and the *target's own* per-variant JSD. The target's data does enter, so the quantity stays in `measurements`; but a correlation cannot be attributed to one of its two series, so its subject degrades to `mixed` and the CLI marks the row. On `[F]` both series are the target's and the subject is `target-distribution`.
+
+**One row is prompt-only on every backend, `[F]` included:** `attention_entropy_input_bits` (Horizon). Attention here is not the target's — `hif/analysis/attention.py` runs a bidirectional analysis encoder over text as an object, and never accesses the generation mechanism of the model under analysis. The output-side row reads the target's actual generated continuation and is therefore `target-output-text`; the input-side row reads the prompt, so it is a function of prompt text and encoder weights alone. No access tier can make it a measurement of the target.
+
+This section is the companion to [Why measure behaviour at all on closed models](#why-measure-behaviour-at-all-on-closed-models) below. That one concedes how little a closed surface exposes and commits to reporting absence rather than approximation when the surface cannot support a quantity; this one draws the line the concession implies — a number produced by something other than the target is not a degraded reading of the target, and the record must not be able to say it is.
 
 ## Backend Access
 
@@ -46,9 +75,9 @@ Access is a property of what the backend exposes, not of the model. `hif/models/
 | `[T-k]` truncated | `openai`, `openai-vlm`, `gemini`, `ollama` | Top-k logprobs only; output entropy is a lower bound; no teacher forcing, no attention |
 | `[P]` proxy | `anthropic` | Selected token only; distribution measurements degenerate unless a `--surrogate` reads the output text under teacher forcing |
 
-The input-side measurements (`input_entropy_shift_bits`, `prompt_surprisal_excess_bits`, `io_correlation_r`) require teacher forcing. On a backend that cannot teacher-force they are either **absent from the record entirely**, or — with `--surrogate` — computed by a small local open-weight model reading the same prompt, and flagged as such via `findings.surrogate_model_name`. A surrogate reading describes the surrogate, not the target model.
+The input-side measurements (`input_entropy_shift_bits`, `input_entropy_std_bits`, `prompt_surprisal_excess_bits`) require teacher forcing. On a backend that cannot teacher-force they are either **absent from the record entirely**, or — with `--surrogate` — computed by a small local open-weight model reading the same prompt. In the second case they describe the prompt under that reference model, not the target: their subject is `prompt-only`, so they leave `measurements` for the `prompt_measurements` block (see [Subject](#subject--whose-behaviour-the-number-describes)). `io_correlation_r` needs the same teacher forcing but keeps the target's output response as half its computation, so it stays in `measurements` with subject `mixed`. `hif models` prints, per backend, which measurements degrade this way.
 
-Absent is never zero. A measurement the run produced no evidence for is omitted from `measurements`, because "no evidence" and "measured zero" are different statements.
+Absent is never zero. A measurement the run produced no evidence for is omitted from `measurements`, because "no evidence" and "measured zero" are different statements. Absent also covers *measured something else*: a quantity whose subject on this backend is the prompt is omitted rather than emitted with a caveat.
 
 ### Why measure behaviour at all on closed models
 
@@ -71,24 +100,26 @@ All distribution and semantic metrics are computed once per generation step over
 
 The measurement set is defined once, in `MEASUREMENT_REGISTRY` in `hif/profile/signals.py`, and extracted by `measurements(profile)` — run `hif schema` for the current set. The same function feeds the CLI table and the machine record, so a number shown in a terminal and a number in a JSONL line can never diverge. Each is a triple: observable × functional × resolution; the record carries the run-level scalar, and rows with `per-step` / `per-position` resolution also have a trace in Part 2.
 
-| Key | Label | Unit | Resolution | Requires |
-|-----|-------|------|------------|----------|
-| `input_entropy_shift_bits` | — | bits | aggregate | teacher forcing (or `--surrogate`) + perturbation variants |
-| `input_entropy_std_bits` | Stability | bits | aggregate | teacher forcing (or `--surrogate`) + ≥ 2 perturbation variants |
-| `perturbation_jsd_bits` | Sensitivity | bits | aggregate | perturbation variants + top-k logprobs |
-| `io_correlation_r` | — | dimensionless | aggregate | ≥ 2 perturbation variants with both sides measured |
-| `io_cosine_similarity` | — | dimensionless | aggregate | ≥ 1 perturbation variant + an embedding encoder |
-| `prompt_surprisal_excess_bits` | Wager ▲ | bits | per-position | teacher forcing (or `--surrogate`) |
-| `candidate_cluster_entropy_bits` | — | bits | per-step | top-k logprobs + an embedding encoder |
-| `output_entropy_bits` | Entropy ● | bits | per-step | top-k logprobs |
-| `output_entropy_step_delta_bits` | — | bits | per-step | top-k logprobs, ≥ 2 steps |
-| `semantic_centroid_veer_cosine` | Veer ◈ | cosine distance | per-step | `semantic_field.enabled` + an embedding encoder |
-| `attention_entropy_output_bits` | Spread ■ | bits | per-position | attention capture |
-| `attention_entropy_input_bits` | Horizon | bits | per-position | attention capture |
-| `counterfactual_exposure_fraction` | Exposure ◇ | fraction of steps | per-step | top-k logprobs + an embedding encoder |
-| `branch_pairwise_cosine_similarity` | Continuity | dimensionless | aggregate | trajectory analysis with ≥ 2 branches + an embedding encoder |
+| Key | Label | Unit | Resolution | Subject | Requires |
+|-----|-------|------|------------|---------|----------|
+| `input_entropy_shift_bits` | — | bits | aggregate | `target-distribution` → `prompt-only` | teacher forcing (or `--surrogate`) + perturbation variants |
+| `input_entropy_std_bits` | Stability | bits | aggregate | `target-distribution` → `prompt-only` | teacher forcing (or `--surrogate`) + ≥ 2 perturbation variants |
+| `perturbation_jsd_bits` | Sensitivity | bits | aggregate | `target-distribution` | perturbation variants + top-k logprobs |
+| `io_correlation_r` | — | dimensionless | aggregate | `target-distribution` → `mixed` | ≥ 2 perturbation variants with both sides measured |
+| `io_cosine_similarity` | — | dimensionless | aggregate | `target-output-text` | ≥ 1 perturbation variant + an embedding encoder |
+| `prompt_surprisal_excess_bits` | Wager ▲ | bits | per-position | `target-distribution` → `prompt-only` | teacher forcing (or `--surrogate`) |
+| `candidate_cluster_entropy_bits` | — | bits | per-step | `target-distribution` → `target-output-text` | top-k logprobs + an embedding encoder |
+| `output_entropy_bits` | Entropy ● | bits | per-step | `target-distribution` → `target-output-text` | top-k logprobs |
+| `output_entropy_step_delta_bits` | — | bits | per-step | `target-distribution` → `target-output-text` | top-k logprobs, ≥ 2 steps |
+| `semantic_centroid_veer_cosine` | Veer ◈ | cosine distance | per-step | `target-distribution` → `target-output-text` | `semantic_field.enabled` + an embedding encoder |
+| `attention_entropy_output_bits` | Spread ■ | bits | per-position | `target-output-text` | attention capture |
+| `attention_entropy_input_bits` | Horizon | bits | per-position | `prompt-only` (every backend) | attention capture |
+| `counterfactual_exposure_fraction` | Exposure ◇ | fraction of steps | per-step | `target-distribution` → `target-output-text` | top-k logprobs + an embedding encoder |
+| `branch_pairwise_cosine_similarity` | Continuity | dimensionless | aggregate | `target-output-text` | trajectory analysis with ≥ 2 branches + an embedding encoder |
 
 A label is a canonical shorthand carried over from the framework's instrument vocabulary; a measurement without one has no established shorthand, and none was invented for it.
+
+The Subject column reads `declared` → `under surrogate`: the first value holds when the target's own machinery produced the quantity, the second when the surrogate named by the row's `surrogate_group` stood in. A single value means the subject does not change. See [Subject](#subject--whose-behaviour-the-number-describes).
 
 ---
 
@@ -294,6 +325,8 @@ Hᵢ = −∑ⱼ≤ᵢ āᵢⱼ log₂ āᵢⱼ
 
 **Source.** `profile.attention_capture`, a `TextAttentionAnalysis` produced by the DistilBERT reader in `hif/analysis/attention.py`, already aggregated across heads and layers. Extracted by `hif/viz/signals/_attention.py::row_entropy_trace`.
 
+**Subject — the two sides differ, and it matters.** The reader is the same for both, but the text it reads is not. `attention_entropy_output_bits` reads the target's *actual generated continuation*: a fixed instrument on the target's real output, so its subject is `target-output-text` and it moves when the target's output moves. `attention_entropy_input_bits` reads the *prompt*, so it is a function of prompt text and encoder weights alone — subject `prompt-only`, on every backend including `[F]`, and reported in the `prompt_measurements` block rather than in `measurements`. It is a real measurement of the prompt under a reference encoder; it is not a measurement of the target, and no access tier can make it one. See [Subject](#subject--whose-behaviour-the-number-describes).
+
 **Absent when** attention analysis did not run (`config.attention.enabled` is False by default).
 
 ---
@@ -480,7 +513,9 @@ where `d_t = max_v dist(e(tok_t), e(v))` over candidates `v` in the top-K with `
 
 where `ā_{i,0:i}` is the mean-head, mean-layer attention row at prompt position `i` over its causal prefix, normalized to a probability distribution, and the entropy is normalized by `log₂(seq_len)` to bound the result to `[0, 1]`.
 
-**What it shows.** Self-attention diffuseness per prompt position. Low Horizon: the position's attention is concentrated on a few prior tokens. High Horizon: attention is spread broadly across the prefix. This is an internal measure — it reads the generating model's own attention, the same way Spread (■) does, just averaged across all layers rather than restricted to the middle layer, and over prompt positions rather than generated ones.
+**What it shows.** Self-attention diffuseness per prompt position. Low Horizon: the position's attention is concentrated on a few prior tokens. High Horizon: attention is spread broadly across the prefix.
+
+**Correction.** This section previously described Horizon as "an internal measure — it reads the generating model's own attention". It does not, and never did in this codebase: `AttentionAnalyzer` is a bidirectional analysis encoder applied to text as an object, and the input side reads the prompt. Its subject is `prompt-only` — see Part 1 and [Subject](#subject--whose-behaviour-the-number-describes). The normalised `/ log₂(seq_len)` form above is also historical; the registry reports raw bits.
 
 **Expected range.** `[0, 1]`.
 
@@ -504,7 +539,7 @@ The instruments expose different dimensions of the same computational event. Use
 
 **Shift (◆) + Entropy (●).** Large Shift at a step where Entropy is already low indicates an abrupt pivot in a committed distribution — the model changed direction sharply while staying confident. Large Shift at high-Entropy steps is more expected (uncertain distributions reorganize more freely).
 
-**Horizon (▼) + Spread (■).** Both read the model's own attention, at different granularities: Horizon averages across all layers per prompt position, Spread isolates the middle layer per generated token. Divergence between the two — high Horizon (diffuse averaged-layer attention) alongside low Spread (focused middle-layer attention) — suggests the middle layer is doing more targeted work than the layer average implies.
+**Horizon (▼) + Spread (■).** Both come from the same analysis encoder, but they do not have the same subject, so this is not a within-model comparison: Horizon reads the prompt (subject `prompt-only`) and Spread reads the target's generated continuation (subject `target-output-text`). Read together they say how the encoder's attention structure differs between what was asked and what came back — a property of the pair of texts, not a property of the model's internals. Any reading that treats a Horizon/Spread divergence as evidence about the model's layers is unsupported.
 
 ---
 

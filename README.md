@@ -14,7 +14,7 @@ hif profile gpt2 "Explain why the sky appears blue." --json
 
 ```json
 {
-  "schema_version": "record-v3",
+  "schema_version": "record-v4",
   "model": "gpt2",
   "backend": "hf",
   "regime": "ordinary_conversation",
@@ -94,6 +94,15 @@ Run `hif models` for the authoritative per-backend list. Measurements a backend
 cannot support are **absent from the record with a stated reason** — never zero,
 never a default, never silently borrowed from elsewhere.
 
+On closed backends, `--surrogate` recovers some input-side quantities by
+teacher-forcing a small local model over the *prompt* — which means those
+numbers describe the prompt under a reference model, not the model you asked
+about, and nothing the target did enters them. They are reported in a separate
+`prompt_measurements` block naming that reference model, never inside
+`measurements`, because a caveat flag would still read as a fact about your
+model. `hif schema` gives every measurement's subject; docs/MEASUREMENTS.md
+§ Subject gives the rule.
+
 A fair objection: behavioural measurement of a closed model is of limited
 value. Conceded — but on a closed model the API response is the entire
 observable surface (no weights, no full logits, no attention, no teacher
@@ -120,10 +129,14 @@ Known limitations, stated plainly:
 - **The signal set is smaller than it looks.** Effective dimensionality across the
   measurements is roughly 3. Several are correlated; treating them as independent
   evidence will mislead you.
-- **On `[T-k]` and `[P]` backends, some measurements describe a local surrogate
+- **On `[T-k]` and `[P]` backends, some quantities describe a local surrogate
   rather than the model you asked about.** They are computed from prompt text and
-  a local reader, and cannot observe a hosted model's internals. Check
-  `hif models` before drawing conclusions about an API model.
+  a local reader, and cannot observe a hosted model's internals — in the
+  predecessor project's audit they showed exactly zero variance across every
+  model-side change tested. Those quantities are no longer part of the
+  measurement set on those backends; they are reported separately, with their
+  reference model named. Check `hif models` before drawing conclusions about an
+  API model.
 - **`output_entropy_bits` is a lower bound** whenever the distribution is
   truncated to top-k, and is not comparable across backends with different k.
 - **No thresholds, no levels, no verdicts.** Deciding what a value *means*

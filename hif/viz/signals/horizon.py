@@ -14,6 +14,14 @@ meaning-cloud (candidate clustering) lives under Exposure ◇, where it belongs.
 
 Backing data: ``profile.attention`` (prompt self-attention) — requires attention
 capture (open HuggingFace models).
+
+SUBJECT: prompt-only. The attention here is the *analysis encoder's*, not the
+profiled model's (hif/analysis/attention.py never accesses the generating
+model's attention weights), and this side reads the prompt. The value is a
+function of prompt text and encoder weights alone, so it cannot vary with the
+profiled model at all — chart it as a property of the prompt, never as evidence
+about the model. The corresponding record value lives in `prompt_measurements`,
+not `measurements`. See docs/MEASUREMENTS.md § Subject.
 """
 
 from __future__ import annotations
