@@ -99,7 +99,17 @@ def _load_config_file(path: Path) -> "RunConfig":
     # RunConfig tolerates unknown fields (forward compatibility for embedded
     # profile JSON), so a typo'd table ([perturbaton]) would be silently
     # dropped here — reject unknown top-level keys explicitly instead.
-    unknown = sorted(set(data) - set(RunConfig.model_fields))
+    # Validation aliases (e.g. the pre-rename [hallucination] table for
+    # [exposure]) are accepted: pydantic honours them, so this guard must too.
+    from pydantic import AliasChoices
+
+    valid_keys: set[str] = set(RunConfig.model_fields)
+    for _field in RunConfig.model_fields.values():
+        if isinstance(_field.validation_alias, AliasChoices):
+            valid_keys.update(
+                a for a in _field.validation_alias.choices if isinstance(a, str)
+            )
+    unknown = sorted(set(data) - valid_keys)
     if unknown:
         err_console.print(
             f"[red]Unknown key(s) in --config-file {path}: "
@@ -1072,11 +1082,11 @@ def _print_verbose_stats(p) -> None:
         table.add_row("mean_output_entropy (bits)", f"{sum(ents) / len(ents):.6g}")
         table.add_row("max_output_entropy (bits)", f"{max(ents):.6g}")
         table.add_row("min_output_entropy (bits)", f"{min(ents):.6g}")
-    exp = getattr(p, "exposure", None) or getattr(p, "hallucination", None)
+    exp = getattr(p, "exposure", None)
     if exp is not None and getattr(exp, "candidates", None):
         table.add_row(
             "exposure (divergent steps / analysed)",
-            f"{len(exp.high_risk_steps)}/{len(exp.candidates)}",
+            f"{len(exp.exposed_steps)}/{len(exp.candidates)}",
         )
     table.add_row("center entropy_ratio (out/in)",
                   _fmt_optional(p.center.entropy_ratio))

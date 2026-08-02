@@ -11,8 +11,8 @@ case (a confident, narrow model aimed wrong); a confident response can still be
 wrong and this reading will not show it. Copy here must never imply "danger",
 "hallucination", or a correctness claim — only counterfactual semantic exposure.
 
-Backing data: ``profile.hallucination`` (module name historical; the surface
-signal is Exposure) — top-K probabilities + an embedding encoder.
+Backing data: ``profile.exposure`` (runtime type ExposureProfile) — top-K
+probabilities + an embedding encoder.
 """
 
 from __future__ import annotations
@@ -35,27 +35,25 @@ _HIGH = AMBER
 
 
 def _coerce(profile):
-    """profile.exposure is typed Any: a ExposureProfile when built in-memory,
+    """profile.exposure is typed Any: an ExposureProfile when built in-memory,
     but a plain dict when the profile was loaded from JSON. Coerce to the typed
-    model so both paths work; return None if absent/malformed. (Falls back to the
-    pre-rename `hallucination` attribute for older in-memory profiles.)"""
-    hall = getattr(profile, "exposure", None)
-    if hall is None:
-        hall = getattr(profile, "hallucination", None)
-    if hall is None:
+    model so both paths work; return None if absent/malformed. (Validation
+    aliases on ExposureProfile accept pre-rename JSON keys.)"""
+    exp = getattr(profile, "exposure", None)
+    if exp is None:
         return None
-    if isinstance(hall, dict):
+    if isinstance(exp, dict):
         try:
             from hif.analysis.exposure import ExposureProfile
-            return ExposureProfile.model_validate(hall)
+            return ExposureProfile.model_validate(exp)
         except Exception:  # noqa: BLE001
             return None
-    return hall
+    return exp
 
 
 def available(profile: BehavioralRangeProfile) -> str | None:
-    hall = _coerce(profile)
-    if hall is None or not getattr(hall, "candidates", None):
+    exp = _coerce(profile)
+    if exp is None or not getattr(exp, "candidates", None):
         return NEEDS_EXPOSURE
     return None
 
@@ -73,25 +71,25 @@ def generate(profile, output_path: Path, formats: list[str] = ["html"]) -> dict[
     if reason:
         return save_fig(na_figure(LABEL, GLYPH, reason), output_path, formats)
 
-    hall = _coerce(profile)
+    exp = _coerce(profile)
     model_name = profile.model.name
-    candidates = hall.candidates
-    exposed_steps = set(hall.high_risk_steps)  # high-exposure (diffusion + distant) steps
+    candidates = exp.candidates
+    exposed_steps = set(exp.exposed_steps)  # high-exposure (diffusion + distant) steps
 
     x_labels = [f"{c.step}: {c.selected_token!r}" for c in candidates]
     distances = [c.semantic_distance for c in candidates]
-    alt_probs = [c.hallucinated_prob for c in candidates]
-    prob_gaps = [c.selected_prob - c.hallucinated_prob for c in candidates]
+    alt_probs = [c.divergent_prob for c in candidates]
+    prob_gaps = [c.selected_prob - c.divergent_prob for c in candidates]
     sizes = [max(10, int(p * 70)) for p in alt_probs]
 
     hover = [
         f"<b>Step {c.step} — chose {c.selected_token!r}</b><br>"
-        f"Most divergent accessible alternative: <b>{c.hallucinated_token!r}</b><br>"
-        f"  alternative probability: {c.hallucinated_prob:.3f} (rank #{c.prob_rank} in top-K)<br>"
+        f"Most divergent accessible alternative: <b>{c.divergent_token!r}</b><br>"
+        f"  alternative probability: {c.divergent_prob:.3f} (rank #{c.prob_rank} in top-K)<br>"
         f"  semantic distance: {c.semantic_distance:.3f} "
         f"({'high' if c.semantic_distance >= 0.4 else 'moderate' if c.semantic_distance >= 0.25 else 'low'} divergence)<br>"
         f"  candidate cloud: {c.cloud_phenomenon}<br>"
-        f"chosen-token probability: {c.selected_prob:.3f} · gap {c.selected_prob - c.hallucinated_prob:.3f}"
+        f"chosen-token probability: {c.selected_prob:.3f} · gap {c.selected_prob - c.divergent_prob:.3f}"
         + ("<br><b>high-exposure step</b>" if c.step in exposed_steps else "")
         for c in candidates
     ]
@@ -127,10 +125,10 @@ def generate(profile, output_path: Path, formats: list[str] = ["html"]) -> dict[
         hovertext=hover, hoverinfo="text", showlegend=False,
     ), row=2, col=1)
 
-    exposure_scalar = getattr(hall, "exposure", 0.0)
-    mean_dist = hall.mean_semantic_distance
-    n_exposed = len(hall.high_risk_steps)
-    diff_pct = int(hall.diffusion_zone_ratio * 100)
+    exposure_scalar = getattr(exp, "exposure", 0.0)
+    mean_dist = exp.mean_semantic_distance
+    n_exposed = len(exp.exposed_steps)
+    diff_pct = int(exp.diffusion_zone_ratio * 100)
 
     fig.update_layout(**dark_layout(
         title=signal_title(

@@ -858,7 +858,7 @@ def _all_measured_values(p) -> dict[str, float]:
     # --- counterfactual exposure: present only when the divergence analysis
     # ran and found accessible alternatives. A point mass has none by
     # construction, which is absence of evidence, not a measured zero.
-    exp = getattr(p, "exposure", None) or getattr(p, "hallucination", None)
+    exp = getattr(p, "exposure", None)
     if exp is not None and getattr(exp, "candidates", None) and not point_mass_cloud:
         out["counterfactual_exposure_fraction"] = exp.exposure
 

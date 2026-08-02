@@ -37,19 +37,19 @@ runner = CliRunner()
 def _candidate(step: int, distance: float, phenomenon: str = "diffusion") -> ExposureCandidate:
     return ExposureCandidate(
         step=step, selected_token="a", selected_prob=0.5,
-        hallucinated_token="b", hallucinated_prob=0.1,
+        divergent_token="b", divergent_prob=0.1,
         prob_rank=1, semantic_distance=distance,
         cloud_phenomenon=phenomenon, cloud_position_2d=[],
     )
 
 
-def _synthetic_profile(n_candidates: int, high_risk: list[int]) -> ExposureProfile:
+def _synthetic_profile(n_candidates: int, exposed: list[int]) -> ExposureProfile:
     return ExposureProfile(
         candidates=[_candidate(i, 0.5) for i in range(n_candidates)],
-        high_risk_steps=high_risk,
+        exposed_steps=exposed,
         mean_semantic_distance=0.5,
         diffusion_zone_ratio=1.0,
-        exposure=len(high_risk) / n_candidates,
+        exposure=len(exposed) / n_candidates,
         embedder="fake-embedder",
     )
 
@@ -67,13 +67,13 @@ class TestExposureScalar:
     def test_old_profiles_default_to_zero_exposure_and_no_embedder(self):
         # Back-compat: profiles serialized before these fields existed.
         hp = ExposureProfile(
-            candidates=[], high_risk_steps=[],
+            candidates=[], exposed_steps=[],
             mean_semantic_distance=0.0, diffusion_zone_ratio=0.0,
         )
         assert hp.exposure == 0.0
         assert hp.embedder is None
 
-    def test_analyzer_exposure_is_high_risk_fraction_of_analyzed_steps(self):
+    def test_analyzer_exposure_is_exposed_fraction_of_analyzed_steps(self):
         steps = [
             _make_output_step(i, f"tok{i}", [(f"tok{i}", 0.5), (f"alt{i}", 0.2)])
             for i in range(4)
@@ -86,7 +86,7 @@ class TestExposureScalar:
         assert profile.candidates, "analysis should produce candidates"
         assert 0.0 <= profile.exposure <= 1.0
         assert profile.exposure == pytest.approx(
-            len(profile.high_risk_steps) / len(profile.candidates)
+            len(profile.exposed_steps) / len(profile.candidates)
         )
 
     def test_empty_analysis_yields_zero_exposure(self):
@@ -118,7 +118,7 @@ class TestExposureCli:
     def test_measurement_absent_when_no_candidates(self):
         p = _make_profile()
         p.exposure = ExposureProfile(
-            candidates=[], high_risk_steps=[],
+            candidates=[], exposed_steps=[],
             mean_semantic_distance=0.0, diffusion_zone_ratio=0.0,
         )
         values = cli._measurements(p)

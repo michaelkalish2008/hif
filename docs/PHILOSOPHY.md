@@ -308,7 +308,7 @@ INPUT SIDE    — distributional structure of the prompt, token by token
      ↓
    CENTER      — transformation diagnostics (entropy ratio, HIF perplexity, equilibrium)
      ↓
-OUTPUT SIDE   — per-step generation trace: distributions, semantic clouds, hallucination
+OUTPUT SIDE   — per-step generation trace: distributions, semantic clouds, exposure
      ↓
  TRAJECTORY   — branched stochastic rollout across B paths × R steps
 ```

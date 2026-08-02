@@ -113,8 +113,8 @@ class TestExposureCandidateSchema:
             step=3,
             selected_token=" the",
             selected_prob=0.4,
-            hallucinated_token=" a",
-            hallucinated_prob=0.1,
+            divergent_token=" a",
+            divergent_prob=0.1,
             prob_rank=2,
             semantic_distance=0.65,
             cloud_phenomenon="diffusion",
@@ -122,7 +122,7 @@ class TestExposureCandidateSchema:
         )
         assert c.step == 3
         assert c.selected_token == " the"
-        assert c.hallucinated_token == " a"
+        assert c.divergent_token == " a"
         assert c.semantic_distance == pytest.approx(0.65)
         assert c.cloud_phenomenon == "diffusion"
         assert c.cloud_position_2d == [0.3, -0.2]
@@ -134,8 +134,8 @@ class TestExposureCandidateSchema:
             step=0,
             selected_token="hello",
             selected_prob=0.5,
-            hallucinated_token="hi",
-            hallucinated_prob=0.05,
+            divergent_token="hi",
+            divergent_prob=0.05,
             prob_rank=3,
             semantic_distance=0.3,
             cloud_phenomenon="convergence",
@@ -150,18 +150,18 @@ class TestExposureProfileSchema:
 
         c = ExposureCandidate(
             step=0, selected_token="a", selected_prob=0.5,
-            hallucinated_token="b", hallucinated_prob=0.1,
+            divergent_token="b", divergent_prob=0.1,
             prob_rank=1, semantic_distance=0.4,
             cloud_phenomenon="diffusion", cloud_position_2d=[],
         )
         hp = ExposureProfile(
             candidates=[c],
-            high_risk_steps=[0],
+            exposed_steps=[0],
             mean_semantic_distance=0.4,
             diffusion_zone_ratio=1.0,
         )
         assert len(hp.candidates) == 1
-        assert hp.high_risk_steps == [0]
+        assert hp.exposed_steps == [0]
         assert hp.diffusion_zone_ratio == pytest.approx(1.0)
 
     def test_empty_profile_is_valid(self):
@@ -169,7 +169,7 @@ class TestExposureProfileSchema:
 
         hp = ExposureProfile(
             candidates=[],
-            high_risk_steps=[],
+            exposed_steps=[],
             mean_semantic_distance=0.0,
             diffusion_zone_ratio=0.0,
         )
@@ -230,7 +230,7 @@ class TestExposureAnalyzer:
         analyzer = ExposureAnalyzer(embedder=embedder, min_prob=min_prob)
         return analyzer.analyze(trace, sem_metrics, distance_threshold=distance_threshold)
 
-    def test_returns_hallucination_profile(self):
+    def test_returns_exposure_profile(self):
         from hif.analysis.exposure import ExposureProfile
 
         steps = [
@@ -277,14 +277,14 @@ class TestExposureAnalyzer:
         for c in result.candidates:
             assert 0.0 <= c.semantic_distance <= 2.0
 
-    def test_high_risk_steps_are_subset_of_candidate_steps(self):
+    def test_exposed_steps_are_subset_of_candidate_steps(self):
         steps = [
             _make_output_step(i, f"t{i}", [(f"t{i}", 0.5), (f"h{i}", 0.3)])
             for i in range(6)
         ]
         result = self._run(steps)
         candidate_steps = {c.step for c in result.candidates}
-        for s in result.high_risk_steps:
+        for s in result.exposed_steps:
             assert s in candidate_steps
 
     def test_diffusion_ratio_in_unit_interval(self):
@@ -302,7 +302,7 @@ class TestExposureAnalyzer:
         ]
         result = self._run(steps, min_prob=0.01)
         # "bye" (prob=0.001) should be excluded
-        assert all(c.hallucinated_token != "bye" for c in result.candidates)
+        assert all(c.divergent_token != "bye" for c in result.candidates)
 
     def test_cloud_position_from_embeddings_2d(self):
         embeddings_2d = [[0.1, 0.2], [0.3, 0.4], [0.5, 0.6]]
@@ -318,12 +318,12 @@ class TestExposureAnalyzer:
 
 
 # ---------------------------------------------------------------------------
-# plot_hallucination
+# The Exposure chart
 # ---------------------------------------------------------------------------
 
 
-def _make_minimal_profile_for_hallucination(hallucination_data):
-    """Build a minimal BehavioralRangeProfile with hallucination data."""
+def _make_minimal_profile_for_exposure(exposure_data):
+    """Build a minimal BehavioralRangeProfile with exposure data."""
     import numpy as np
 
     from hif.config import (
@@ -428,12 +428,12 @@ def _make_minimal_profile_for_hallucination(hallucination_data):
             trajectory=TrajectoryConfig(n_branches=1, rollout_steps=2),
             perturbation=PerturbationConfig(n_variants=1, generators=["synonym"]),
         ),
-        hallucination=hallucination_data,
+        exposure=exposure_data,
     )
 
 
 class TestExposurePlot:
-    """The Exposure ◇ chart (hif.viz), which replaced the old plot_hallucination.
+    """The Exposure ◇ chart (hif.viz), which replaced the old hallucination plot.
 
     Unlike the old plot (which returned {} when there was no data), the new
     engine ALWAYS renders a file — a labeled 'not available' placeholder when the
@@ -443,7 +443,7 @@ class TestExposurePlot:
     def test_renders_placeholder_when_no_exposure(self, tmp_path):
         from hif.viz.signals import exposure
 
-        profile = _make_minimal_profile_for_hallucination(None)
+        profile = _make_minimal_profile_for_exposure(None)
         assert exposure.available(profile) is not None  # unavailable → reason given
         result = exposure.generate(profile, tmp_path / "exposure")
         assert result["html"].exists() and result["html"].stat().st_size > 0
@@ -453,9 +453,9 @@ class TestExposurePlot:
         from hif.viz.signals import exposure
 
         hp = ExposureProfile(
-            candidates=[], high_risk_steps=[], mean_semantic_distance=0.0, diffusion_zone_ratio=0.0
+            candidates=[], exposed_steps=[], mean_semantic_distance=0.0, diffusion_zone_ratio=0.0
         )
-        profile = _make_minimal_profile_for_hallucination(hp)
+        profile = _make_minimal_profile_for_exposure(hp)
         assert exposure.available(profile) is not None
         result = exposure.generate(profile, tmp_path / "exposure")
         assert result["html"].exists() and result["html"].stat().st_size > 0
@@ -467,20 +467,132 @@ class TestExposurePlot:
         candidates = [
             ExposureCandidate(
                 step=i, selected_token=f"t{i}", selected_prob=0.5,
-                hallucinated_token=f"h{i}", hallucinated_prob=0.1,
+                divergent_token=f"h{i}", divergent_prob=0.1,
                 prob_rank=1, semantic_distance=0.4,
                 cloud_phenomenon="diffusion", cloud_position_2d=[0.1, 0.2],
             )
             for i in range(3)
         ]
         hp = ExposureProfile(
-            candidates=candidates, high_risk_steps=[1],
+            candidates=candidates, exposed_steps=[1],
             mean_semantic_distance=0.4, diffusion_zone_ratio=1.0,
         )
-        profile = _make_minimal_profile_for_hallucination(hp)
+        profile = _make_minimal_profile_for_exposure(hp)
         assert exposure.available(profile) is None  # data present → available
         result = exposure.generate(profile, tmp_path / "exposure")
         assert result["html"].exists()
         assert result["html"].suffix == ".html"
         # The Exposure surface must never use factuality/danger language.
         assert "hallucin" not in result["html"].read_text().lower()
+
+
+# ---------------------------------------------------------------------------
+# Back-compat: the retired hallucination vocabulary must stay READABLE
+# ---------------------------------------------------------------------------
+
+
+class TestOldVocabularyAliases:
+    """Archived profile JSON (pre-0.10.0) carries the retired names
+    (hallucinated_token/-_prob, high_risk_steps, config.hallucination).
+    Validation aliases accept them on read; everything newly emitted carries
+    only the exposure vocabulary. These tests are the contract that `hif
+    render` keeps loading the archived corpus.
+    """
+
+    def test_exposure_profile_loads_old_json_keys(self):
+        from hif.analysis.exposure import ExposureProfile
+
+        old = {
+            "candidates": [
+                {
+                    "step": 0,
+                    "selected_token": " the",
+                    "selected_prob": 0.4,
+                    "hallucinated_token": " a",
+                    "hallucinated_prob": 0.1,
+                    "prob_rank": 2,
+                    "semantic_distance": 0.65,
+                    "cloud_phenomenon": "diffusion",
+                    "cloud_position_2d": [],
+                }
+            ],
+            "high_risk_steps": [0],
+            "mean_semantic_distance": 0.65,
+            "diffusion_zone_ratio": 1.0,
+            "exposure": 1.0,
+        }
+        hp = ExposureProfile.model_validate(old)
+        assert hp.exposed_steps == [0]
+        assert hp.candidates[0].divergent_token == " a"
+        assert hp.candidates[0].divergent_prob == pytest.approx(0.1)
+
+    def test_new_dumps_carry_only_the_exposure_vocabulary(self):
+        from hif.analysis.exposure import ExposureCandidate, ExposureProfile
+
+        hp = ExposureProfile(
+            candidates=[
+                ExposureCandidate(
+                    step=0, selected_token="a", selected_prob=0.5,
+                    divergent_token="b", divergent_prob=0.1,
+                    prob_rank=1, semantic_distance=0.4,
+                    cloud_phenomenon="diffusion", cloud_position_2d=[],
+                )
+            ],
+            exposed_steps=[0], mean_semantic_distance=0.4,
+            diffusion_zone_ratio=1.0,
+        )
+        dumped = hp.model_dump_json()
+        assert "hallucinated" not in dumped
+        assert "high_risk" not in dumped
+        assert "divergent_token" in dumped and "exposed_steps" in dumped
+
+    def test_run_config_accepts_the_old_hallucination_table(self):
+        from hif.config import RunConfig
+
+        cfg = RunConfig.model_validate(
+            {"hallucination": {"enabled": False, "min_prob": 0.05}}
+        )
+        assert cfg.exposure.enabled is False
+        assert cfg.exposure.min_prob == pytest.approx(0.05)
+        assert "hallucination" not in cfg.model_dump()
+
+    def test_full_profile_json_roundtrip_from_old_vocabulary(self):
+        """A profile dumped today, rewritten to the archived vocabulary, must
+        validate — the minimal stand-in for the 2.6 GB archived corpus."""
+        import json
+
+        from hif.analysis.exposure import ExposureCandidate, ExposureProfile
+        from hif.profile.schema import BehavioralRangeProfile
+
+        hp = ExposureProfile(
+            candidates=[
+                ExposureCandidate(
+                    step=0, selected_token="a", selected_prob=0.5,
+                    divergent_token="b", divergent_prob=0.1,
+                    prob_rank=1, semantic_distance=0.4,
+                    cloud_phenomenon="diffusion", cloud_position_2d=[],
+                )
+            ],
+            exposed_steps=[0], mean_semantic_distance=0.4,
+            diffusion_zone_ratio=1.0, exposure=1.0,
+        )
+        profile = _make_minimal_profile_for_exposure(hp)
+        data = json.loads(profile.model_dump_json())
+        # Rewrite to the archived shape: old exposure keys, old config table.
+        exp = data.pop("exposure")
+        exp["high_risk_steps"] = exp.pop("exposed_steps")
+        for c in exp["candidates"]:
+            c["hallucinated_token"] = c.pop("divergent_token")
+            c["hallucinated_prob"] = c.pop("divergent_prob")
+        data["hallucination"] = exp
+        data["config"]["hallucination"] = data["config"].pop("exposure")
+        loaded = BehavioralRangeProfile.model_validate(data)
+        assert loaded.config.exposure.enabled is True
+        # profile.exposure is lazy-typed Any: JSON loads leave it a dict, and
+        # the typed coercion (with aliases) happens at the consumer.
+        from hif.viz.signals.exposure import _coerce
+
+        coerced = _coerce(loaded)
+        assert coerced is not None
+        assert coerced.exposed_steps == [0]
+        assert coerced.candidates[0].divergent_token == "b"

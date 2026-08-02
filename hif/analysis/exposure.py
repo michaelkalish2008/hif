@@ -1,21 +1,32 @@
-"""Hallucination analysis — distributional adjacency and semantic divergence.
+"""Counterfactual exposure analysis — distributional adjacency and semantic
+distance of accessible alternatives.
 
-Methodological position
------------------------
-Within the horizon of possibility, hallucination is not random: it is a
-structurally intelligible move within the model's own distributional space.
-At each generation step the model's top-K candidates form a meaning-cloud.
-The *selected* token is one point in that cloud; a *hallucinated* token is a
-different point that is simultaneously:
+What is computed
+----------------
+At each generation step the model's top-K candidates form a cloud of
+accessible continuations. The *selected* token is one point in that cloud.
+For each step, this analysis finds the alternative candidate that is
+simultaneously:
 
-1. **Distributionally adjacent** — it has nonzero probability, meaning it sits
-   within the model's horizon at that step.
-2. **Semantically divergent** — it is far from the selected token in embedding
-   space, meaning the two tokens pull the continuation in different directions.
+1. **Distributionally adjacent** — its probability clears a floor
+   (min_prob), meaning it was practically accessible at that step, and
+2. **Semantically distant** — its context string embeds far from the selected
+   token's in the analysis encoder's space, meaning selecting it would have
+   pulled the continuation toward a different meaning.
 
-The combination of high distributional adjacency (the hallucination was
-probabilistically accessible) and high semantic distance (it would have changed
-meaning significantly) is what makes a step "high-risk" for hallucination.
+A step is counted as *exposed* when its most divergent accessible alternative
+is semantically distant (distance ≥ threshold) inside a *diffuse* candidate
+cloud. The scalar reading (`exposure`, surfaced as
+`counterfactual_exposure_fraction`) is the fraction of analysed steps so
+counted: how often the response's meaning was exposed to sampling chance.
+
+This is a description of the run's own distributional possibility space —
+what the model COULD accessibly have said and how far away in meaning that
+was. It is not an inference about what the model was doing, and it is
+explicitly NOT a factuality or correctness judgment: only diffusion-zone
+steps are counted, so the convergence case (a model that is confident and
+narrow but aimed wrong) is excluded by construction, and a confident response
+can still be wrong. See docs/MEASUREMENTS.md § counterfactual_exposure_fraction.
 
 This analysis reuses the already-computed semantic embeddings from the
 per-step output trace — no new model inference is required.  The embedding
@@ -23,12 +34,18 @@ model's cache ensures that candidate context strings embedded during semantic
 metric computation are retrieved without re-encoding.
 
 The cloud phenomenon at each step (convergence / clustering / divergence /
-diffusion) tells you *what kind* of hallucination risk is present:
+diffusion) says what kind of possibility space the alternative sat in:
 
-- **Diffusion zone**: the model was already in a high-entropy state — the
-  hallucination was probabilistically cheap and semantically varied.
-- **Convergence zone**: the model was confident but aimed wrong — the
-  hallucination is the road not taken at a narrow fork.
+- **Diffusion zone**: a high-entropy step — semantically varied alternatives
+  were probabilistically cheap.
+- **Convergence zone**: a narrow fork — the alternative was the road not
+  taken from a confident state (not counted toward exposure; see above).
+
+Vocabulary note: the fields here were renamed from a "hallucination"/"risk"
+vocabulary (hallucinated_token/-_prob, high_risk_steps) that framed the
+computation as detecting a model failure it does not detect. Validation
+aliases accept the old names so archived profile JSON keeps loading; new
+artifacts carry only the exposure vocabulary (profile schema 0.10.0).
 """
 
 from __future__ import annotations
@@ -36,7 +53,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import numpy as np
-from pydantic import BaseModel
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 from hif.utils.logging import get_logger
 
@@ -52,7 +69,7 @@ logger = get_logger(__name__)
 # Analysis constants (documented defaults)
 #
 # IMPORTANT: all distance-based values here are EMBEDDER-SPACE-DEPENDENT.
-# Cosine distances (and therefore the high-risk flagging and any scalar
+# Cosine distances (and therefore the exposed-step counting and any scalar
 # derived from it) are only comparable between profiles computed with the
 # same embedding model. ExposureProfile records the `embedder` name so
 # consumers can refuse cross-encoder comparisons.
@@ -64,7 +81,7 @@ logger = get_logger(__name__)
 DEFAULT_MIN_PROB = 0.01
 
 #: Cosine distance (embedder-space-dependent) above which the most divergent
-#: accessible alternative marks a step as high-risk.
+#: accessible alternative marks a step as exposed.
 DEFAULT_DISTANCE_THRESHOLD = 0.3
 
 # Cloud-phenomenon classifier cutoffs (see _cloud_phenomenon). These bound
@@ -87,13 +104,27 @@ class ExposureCandidate(BaseModel):
     Represents the token that, had it been selected, would have pulled the
     continuation furthest from the actual path — while remaining within the
     model's distributional horizon at that step.
+
+    populate_by_name lets the analyzer construct by field name while the
+    validation aliases keep pre-rename profile JSON (hallucinated_token /
+    hallucinated_prob) loadable.
     """
+
+    model_config = ConfigDict(populate_by_name=True)
 
     step: int
     selected_token: str          # token the model actually produced
     selected_prob: float         # probability of the selected token
-    hallucinated_token: str      # most semantically distant top-K alternative
-    hallucinated_prob: float     # probability of the hallucinated token
+    # Most semantically distant accessible top-K alternative, and its
+    # probability. (Aliases: renamed from hallucinated_token/-_prob — the old
+    # names claimed the alternative was a hallucination, which nothing here
+    # measures.)
+    divergent_token: str = Field(
+        validation_alias=AliasChoices("divergent_token", "hallucinated_token"),
+    )
+    divergent_prob: float = Field(
+        validation_alias=AliasChoices("divergent_prob", "hallucinated_prob"),
+    )
     prob_rank: int               # position in top-K (0 = highest prob)
     semantic_distance: float     # cosine distance from selected token in embedding space [0, 2]
     cloud_phenomenon: str        # convergence | clustering | divergence | diffusion
@@ -101,25 +132,32 @@ class ExposureCandidate(BaseModel):
 
 
 class ExposureProfile(BaseModel):
-    """Per-step hallucination risk profile.
+    """Per-step counterfactual exposure profile.
 
-    Maps the distributional possibility space at each generation step onto a
-    risk landscape: where is the model's horizon wide, and where would a
-    semantically divergent alternative have been easiest to slip in?
+    Maps the distributional possibility space at each generation step: where
+    the candidate cloud was wide, and how far in meaning an accessible
+    alternative sat from the token actually selected.
     """
 
+    model_config = ConfigDict(populate_by_name=True)
+
     candidates: list[ExposureCandidate]
-    high_risk_steps: list[int]       # diffusion-zone steps with distance > threshold
+    # Diffusion-zone steps whose most divergent accessible alternative cleared
+    # the distance threshold. (Alias: renamed from high_risk_steps — "risk"
+    # asserted a hazard judgment this analysis does not make.)
+    exposed_steps: list[int] = Field(
+        validation_alias=AliasChoices("exposed_steps", "high_risk_steps"),
+    )
     mean_semantic_distance: float    # average best-candidate distance across steps
     diffusion_zone_ratio: float      # fraction of steps classified as diffusion
-    # Scalar reading value ("Exposure"): fraction of analyzed steps flagged
-    # high-risk — len(high_risk_steps) / n analyzed steps, in [0, 1].
+    # Scalar reading value ("Exposure"): fraction of analyzed steps counted
+    # exposed — len(exposed_steps) / n analyzed steps, in [0, 1].
     # Chosen over a weighted composite because it is directly localizable (each
     # counted step is inspectable) and its threshold is explicit
     # (DEFAULT_DISTANCE_THRESHOLD + diffusion-zone membership). It measures
     # counterfactual semantic exposure, NOT factuality.
     exposure: float = 0.0
-    # Name of the embedding model used to compute semantic distances. Scores
+    # Name of the embedding model used to compute semantic distances. Distances
     # are NOT comparable across encoders. None on profiles written before this
     # field existed.
     embedder: str | None = None
@@ -170,7 +208,7 @@ class ExposureAnalyzer:
         semantic_metrics: list[SemanticMetrics],
         distance_threshold: float = DEFAULT_DISTANCE_THRESHOLD,
     ) -> ExposureProfile:
-        """Run hallucination analysis on an output trace.
+        """Run counterfactual exposure analysis on an output trace.
 
         For each step finds the top-K candidate that is maximally semantically
         distant from the selected token while satisfying a minimum probability
@@ -183,7 +221,8 @@ class ExposureAnalyzer:
         semantic_metrics:
             Pre-computed semantic metrics, one per output step.
         distance_threshold:
-            Cosine distance above which a candidate is flagged as high-risk.
+            Cosine distance at or above which a diffusion-zone step is
+            counted as exposed.
 
         Returns
         -------
@@ -246,7 +285,7 @@ class ExposureAnalyzer:
 
             phenomenon = _cloud_phenomenon(sem)
 
-            # Cloud position of the hallucinated token (index into pre-projected 2D)
+            # Cloud position of the divergent alternative (index into pre-projected 2D)
             cloud_pos: list[float] = []
             if sem.embeddings_2d and best_rank < len(sem.embeddings_2d):
                 cloud_pos = list(sem.embeddings_2d[best_rank])
@@ -255,8 +294,8 @@ class ExposureAnalyzer:
                 step=i,
                 selected_token=step.selected_token_str,
                 selected_prob=step.topk[0].prob if step.topk else 0.0,
-                hallucinated_token=best_entry.token_str,
-                hallucinated_prob=best_entry.prob,
+                divergent_token=best_entry.token_str,
+                divergent_prob=best_entry.prob,
                 prob_rank=best_rank,
                 semantic_distance=best_dist,
                 cloud_phenomenon=phenomenon,
@@ -268,14 +307,14 @@ class ExposureAnalyzer:
         if not candidates:
             return ExposureProfile(
                 candidates=[],
-                high_risk_steps=[],
+                exposed_steps=[],
                 mean_semantic_distance=0.0,
                 diffusion_zone_ratio=0.0,
                 exposure=0.0,
                 embedder=embedder_name,
             )
 
-        high_risk = [
+        exposed = [
             c.step for c in candidates
             if c.cloud_phenomenon == "diffusion" and c.semantic_distance >= distance_threshold
         ]
@@ -284,21 +323,22 @@ class ExposureAnalyzer:
         diffusion_ratio = n_diffusion / len(candidates)
 
         logger.info(
-            "Hallucination check: %d of %d steps flagged high-risk (mean divergence %.2f)",
-            len(high_risk),
+            "Exposure: %d of %d steps had a semantically divergent accessible "
+            "alternative in a diffuse cloud (mean distance %.2f)",
+            len(exposed),
             len(candidates),
             mean_dist,
         )
         logger.debug(
-            "Hallucination detail: diffusion zone=%.0f%% of steps",
+            "Exposure detail: diffusion zone=%.0f%% of steps",
             diffusion_ratio * 100,
         )
 
         return ExposureProfile(
             candidates=candidates,
-            high_risk_steps=high_risk,
+            exposed_steps=exposed,
             mean_semantic_distance=mean_dist,
             diffusion_zone_ratio=diffusion_ratio,
-            exposure=len(high_risk) / len(candidates),
+            exposure=len(exposed) / len(candidates),
             embedder=embedder_name,
         )

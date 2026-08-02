@@ -3,7 +3,7 @@
 from pathlib import Path
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 
 class ModelConfig(BaseModel):
@@ -85,10 +85,18 @@ class OutputConfig(BaseModel):
     plot_format: list[str] = ["html"]
 
 
-class HallucinationConfig(BaseModel):
+class ExposureConfig(BaseModel):
+    """Counterfactual exposure analysis (hif.analysis.exposure).
+
+    Renamed from HallucinationConfig — the analysis measures the semantic
+    distance of accessible alternatives, not hallucination; see the module
+    docstring of hif/analysis/exposure.py. RunConfig accepts the old
+    `hallucination` key on read so archived profile JSON and old TOML config
+    files keep loading."""
+
     enabled: bool = True
     min_prob: float = 0.01          # minimum candidate probability to consider
-    distance_threshold: float = 0.3  # cosine distance above which a step is flagged high-risk
+    distance_threshold: float = 0.3  # cosine distance at/above which a diffusion-zone step counts as exposed
 
 
 class SemanticFieldConfig(BaseModel):
@@ -126,6 +134,11 @@ class TraceabilityConfig(BaseModel):
 
 
 class RunConfig(BaseModel):
+    # populate_by_name lets callers construct by field name (exposure=) while
+    # the validation alias keeps the pre-rename `hallucination` key loadable
+    # from archived profile JSON and old TOML config files.
+    model_config = ConfigDict(populate_by_name=True)
+
     model: ModelConfig = Field(default_factory=ModelConfig)
     embedding: EmbeddingConfig = Field(default_factory=EmbeddingConfig)
     cluster: ClusterConfig = Field(default_factory=ClusterConfig)
@@ -134,7 +147,10 @@ class RunConfig(BaseModel):
     perturbation: PerturbationConfig = Field(default_factory=PerturbationConfig)
     output: OutputConfig = Field(default_factory=OutputConfig)
     attention: AttentionConfig = Field(default_factory=AttentionConfig)
-    hallucination: HallucinationConfig = Field(default_factory=HallucinationConfig)
+    exposure: ExposureConfig = Field(
+        default_factory=ExposureConfig,
+        validation_alias=AliasChoices("exposure", "hallucination"),
+    )
     semantic_field: SemanticFieldConfig = Field(default_factory=SemanticFieldConfig)
     # Defaults (disabled), so RunConfig JSON embedded in pre-0.7.0 profiles
     # still validates unchanged.

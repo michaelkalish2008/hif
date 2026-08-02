@@ -225,7 +225,18 @@ class BehavioralRangeProfile(BaseModel):
     #   still carries the key and loads unchanged: pydantic ignores unknown
     #   fields on validation, so removal is read-compatible in the direction
     #   that matters (old artifact → new code).
-    schema_version: str = "0.9.0"
+    # 0.10.0 (current): the exposure vocabulary replaces the last hallucination
+    #   remnants in persisted keys. ExposureCandidate.hallucinated_token/-_prob
+    #   → divergent_token/-_prob, ExposureProfile.high_risk_steps →
+    #   exposed_steps, and RunConfig.hallucination → RunConfig.exposure
+    #   (ExposureConfig). All four carry validation aliases accepting the old
+    #   names, so archived profile JSON and old TOML config files load
+    #   unchanged; newly written artifacts emit only the new names. The
+    #   analysis was renamed because it measures the semantic distance of
+    #   accessible alternatives — not hallucination (docs/MEASUREMENTS.md
+    #   § counterfactual_exposure_fraction: "This is not a factuality
+    #   judgment").
+    schema_version: str = "0.10.0"
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     model: ModelIdentity
     prompt: PromptRecord

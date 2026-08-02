@@ -477,27 +477,27 @@ def build_profile(
         output_distribution_surrogate_name=output_distribution_surrogate_name,
     )
 
-    # 11b. Optional hallucination analysis (uses cached embeddings — cheap).
-    # Reads step.topk for its candidate alternatives, so it needs the same
-    # semantic_steps substitution as distribution/semantic metrics above —
+    # 11b. Optional counterfactual exposure analysis (uses cached embeddings
+    # — cheap). Reads step.topk for its candidate alternatives, so it needs the
+    # same semantic_steps substitution as distribution/semantic metrics above —
     # otherwise it silently finds zero candidates on degenerate backends.
-    hallucination_profile = None
-    if config.hallucination.enabled:
+    exposure_profile = None
+    if config.exposure.enabled:
         from hif.analysis.exposure import ExposureAnalyzer
 
-        logger.debug("Running hallucination analysis...")
-        hall_analyzer = ExposureAnalyzer(
+        logger.debug("Running exposure analysis...")
+        exposure_analyzer = ExposureAnalyzer(
             embedder=embedder,
-            min_prob=config.hallucination.min_prob,
+            min_prob=config.exposure.min_prob,
         )
         exposure_trace = (
             output_trace if semantic_steps is output_trace.steps
             else output_trace.model_copy(update={"steps": semantic_steps})
         )
-        hallucination_profile = hall_analyzer.analyze(
+        exposure_profile = exposure_analyzer.analyze(
             output_trace=exposure_trace,
             semantic_metrics=semantic_metrics,
-            distance_threshold=config.hallucination.distance_threshold,
+            distance_threshold=config.exposure.distance_threshold,
         )
 
     # 11d. Within-generation semantic field (Veer ◈) — per-step semantic-centroid
@@ -594,7 +594,7 @@ def build_profile(
         findings=findings,
         config=config,
         attention_capture=attention_analysis,
-        exposure=hallucination_profile,
+        exposure=exposure_profile,
         semantic_field=semantic_field_reading,
         raw_traces=raw_traces,
         provenance=provenance,
@@ -1002,20 +1002,20 @@ def _build_profile_mm(
         surrogate_model_name=surrogate_model.name if used_surrogate else None,
     )
 
-    # Optional hallucination analysis (text-side outputs only)
-    hallucination_profile = None
-    if config.hallucination.enabled:
+    # Optional counterfactual exposure analysis (text-side outputs only)
+    exposure_profile = None
+    if config.exposure.enabled:
         from hif.analysis.exposure import ExposureAnalyzer
 
-        logger.debug("Running hallucination analysis...")
-        hall_analyzer = ExposureAnalyzer(
+        logger.debug("Running exposure analysis...")
+        exposure_analyzer = ExposureAnalyzer(
             embedder=embedder,
-            min_prob=config.hallucination.min_prob,
+            min_prob=config.exposure.min_prob,
         )
-        hallucination_profile = hall_analyzer.analyze(
+        exposure_profile = exposure_analyzer.analyze(
             output_trace=output_trace,
             semantic_metrics=semantic_metrics,
-            distance_threshold=config.hallucination.distance_threshold,
+            distance_threshold=config.exposure.distance_threshold,
         )
 
     # Within-generation semantic field (Veer ◈) — mm path uses the raw output
@@ -1111,7 +1111,7 @@ def _build_profile_mm(
         findings=findings,
         config=config,
         attention_capture=attention_analysis,
-        exposure=hallucination_profile,
+        exposure=exposure_profile,
         semantic_field=semantic_field_reading,
         input_part_map=prepared.part_map,
         region_sensitivity=region_sensitivity,

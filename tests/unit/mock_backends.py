@@ -42,7 +42,7 @@ from hif.config import (
     AttentionConfig,
     ClusterConfig,
     GenerationConfig,
-    HallucinationConfig,
+    ExposureConfig,
     ModelConfig,
     PerturbationConfig,
     RunConfig,
@@ -467,5 +467,5 @@ def contract_config(backend: str, *, n_variants: int = 4) -> RunConfig:
         cluster=ClusterConfig(method="kmeans", n_clusters=3),
         attention=AttentionConfig(enabled=True),
         semantic_field=SemanticFieldConfig(enabled=True),
-        hallucination=HallucinationConfig(enabled=True),
+        exposure=ExposureConfig(enabled=True),
     )

@@ -254,7 +254,7 @@ The full pipeline, as orchestrated by `build_profile()` in `hif/profile/builder.
    - **9b.** `compute_similarity_metrics()` over the (input, output) text pairs → `SimilarityMetrics`. Skipped when there are no variants.
 10. **MetricBundle assembly** — distribution, semantic, sensitivity, stability, similarity, field.
 11. **Findings** — `generate_findings()` collects run provenance only: `similarity_trend_slope` plus the two surrogate model names. No levels, no verdict, no summary sentence.
-    - **11b.** Exposure analysis (`config.hallucination.enabled`, on by default) → `ExposureProfile`.
+    - **11b.** Exposure analysis (`config.exposure.enabled`, on by default) → `ExposureProfile`.
     - **11c.** Attention analysis (`config.attention.enabled`, off by default; set by `--diagnostics`) → `TextAttentionAnalysis`.
     - **11d.** Within-generation semantic field (`config.semantic_field.enabled`, off by default; set by `--diagnostics`) → `SemanticFieldReading` (Veer).
 12. **Profile assembly** — `BehavioralRangeProfile` constructed from all of the above plus `ModelIdentity` and `PromptRecord` metadata, and the effective embedder recorded into the persisted config. Raw traces are attached only under the traceability opt-in.
