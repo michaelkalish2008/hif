@@ -22,6 +22,7 @@ from hif.metrics.similarity import SimilarityMetrics
 from hif.metrics.stability import StabilityMetrics
 from hif.models.mm import InputPartMap
 from hif.perturbation.base import PerturbationTrace
+from hif.profile.provenance import RunProvenance
 
 if TYPE_CHECKING:
     from hif.analysis.attention import TextAttentionAnalysis
@@ -209,7 +210,14 @@ class BehavioralRangeProfile(BaseModel):
     #   retroactively recomputable. Both default (None / disabled), so 0.6.0
     #   profile JSON still validates unchanged and disabled-mode artifacts are
     #   unchanged apart from the two defaulted fields.
-    schema_version: str = "0.7.0"
+    # 0.8.0 (current): added provenance (RunProvenance, default None) — which
+    #   model actually filled each role in the run (teacher forcing, output
+    #   distributions, attention analysis) plus the degradation flags. It turns
+    #   every registry row's `subject` declaration into a claim the record path
+    #   checks rather than repeats; see hif/profile/provenance.py. Defaults to
+    #   None, so 0.7.0 profile JSON still validates unchanged — and a profile
+    #   without it is simply unchecked, never assumed compliant.
+    schema_version: str = "0.8.0"
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     model: ModelIdentity
     prompt: PromptRecord
@@ -257,3 +265,7 @@ class BehavioralRangeProfile(BaseModel):
     # Opt-in raw trace capture (0.7.0). None unless config.traceability.enabled
     # — the sanctioned exception to compute-and-discard; see RawTraces docstring.
     raw_traces: Optional[RawTraces] = None
+    # Which model filled each role in this run, recorded as the pipeline ran
+    # (0.8.0). The evidence behind every measurement's declared subject; the
+    # record path refuses to emit a record whose declarations contradict it.
+    provenance: Optional[RunProvenance] = None

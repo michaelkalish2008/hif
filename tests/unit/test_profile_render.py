@@ -21,7 +21,7 @@ class TestRenderJsonRoundtrip:
         raw = out.read_text()
         data = json.loads(raw)
 
-        assert data["schema_version"] == "0.7.0"
+        assert data["schema_version"] == "0.8.0"
         assert data["model"]["name"] == "mock-model"
         assert data["prompt"]["text"] == "hello world"
 

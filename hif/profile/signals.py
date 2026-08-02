@@ -58,12 +58,19 @@ from typing import Optional
 # schema_version and `hif schema` prints it on demand. The field-descriptor
 # blocks are renamed to the names docs/MEASUREMENTS.md Part 4 gives them:
 # `field` -> `perturbation_field`, `branch_field` -> `trajectory_branch_field`.
-# record-v4 (current): every measurement declares a SUBJECT (whose behaviour
+# record-v4: every measurement declares a SUBJECT (whose behaviour
 # the number describes), and quantities whose subject on the active backend is
 # `prompt-only` are no longer emitted inside `measurements` with a surrogate
 # flag — they move to a separate top-level `prompt_measurements` block naming
 # the reference model that produced them. See the "Subject" section below.
-RECORD_SCHEMA_VERSION = "record-v4"
+# record-v5 (current): a `provenance` block carries which model actually filled
+# each role in the run (teacher forcing, output distributions, attention
+# analysis) plus the degradation flags, so a published profile carries the
+# evidence behind its subject declarations rather than only the claim. The
+# record path cross-checks every emitted measurement against it and refuses to
+# emit a record that contradicts it (hif/profile/provenance.py). Absent — like
+# any other absent block — on a profile built before the block existed.
+RECORD_SCHEMA_VERSION = "record-v5"
 
 # Version of the measurement set this package computes. Minor bumps within a
 # major family are additive supersets (see cli._signal_set_family), so
@@ -86,7 +93,18 @@ RECORD_SCHEMA_VERSION = "record-v4"
 # backends, which is an absence rule on an already-optional key rather than a
 # change of set membership — a hif-v3 artifact from such a backend carries a
 # number a hif-v3.1 run declines to produce, and declining is the correction.
-SIGNAL_SET_VERSION = "hif-v3.1"
+# hif-v3.2 (current): the same absence rule now covers the candidate-cloud
+# quantities on a selected-only backend with no surrogate recovery
+# (output_entropy_bits, output_entropy_step_delta_bits,
+# candidate_cluster_entropy_bits, and the two analyses built on the same cloud).
+# hif/models/capabilities.py already declared them unproducible there and the
+# CLI already refused `--metric` for them; `measurements()` emitted 0.0 anyway,
+# because a point mass has exactly one candidate and the entropy of a cloud of
+# one is zero by construction. That is a fabricated measurement claim under the
+# absent-not-pinned rule. No key was removed from the set — the rule is an
+# absence condition on already-optional keys, so `hif compare` still intersects
+# across the v3 family.
+SIGNAL_SET_VERSION = "hif-v3.2"
 
 
 def profile_hash(model_name: str, prompt: str, seed: int) -> str:
@@ -733,6 +751,14 @@ def _all_measured_values(p) -> dict[str, float]:
     selected_only = output_distribution_degenerate(
         getattr(p.output_side, "steps", None) or []
     )
+    # Did the step-6b recovery rebuild a real candidate cloud from the target's
+    # actual continuation? Without it, every "cloud" on a selected-only backend
+    # is a single token, and every quantity read off the cloud answers a
+    # question about a set of one rather than the question its key names.
+    _f = getattr(p, "findings", None)
+    point_mass_cloud = selected_only and not getattr(
+        _f, "output_distribution_surrogate_name", None
+    )
 
     # --- perturbation response (input side, output side, and their coupling)
     if st.input_entropy_shift_bits is not None:
@@ -764,15 +790,15 @@ def _all_measured_values(p) -> dict[str, float]:
         out["prompt_surprisal_excess_bits"] = mean_excess
 
     # --- candidate-cloud semantics
-    if m.semantic:
+    if m.semantic and not point_mass_cloud:
         ces = [s.cluster_entropy for s in m.semantic]
         out["candidate_cluster_entropy_bits"] = sum(ces) / len(ces)
 
     # --- output distribution
-    if m.distribution:
+    if m.distribution and not point_mass_cloud:
         ents = [d.entropy_bits for d in m.distribution]
         out["output_entropy_bits"] = sum(ents) / len(ents)
-    if m.distribution and len(m.distribution) >= 2:
+    if m.distribution and len(m.distribution) >= 2 and not point_mass_cloud:
         # Nucleus entropy (95% mass, renormalised) so the trace is comparable
         # across backends regardless of how many logprobs each exposes.
         nents = [d.nucleus_entropy_bits for d in m.distribution]
@@ -792,14 +818,24 @@ def _all_measured_values(p) -> dict[str, float]:
         out["output_step_jsd_bits"] = _shift.mean_jsd_bits
         out["output_step_topk_overlap_fraction"] = _shift.mean_overlap_fraction
 
-    # --- semantic field (Veer): present only when semantic_field analysis ran
+    # --- semantic field (Veer): present only when semantic_field analysis ran.
+    # Absent on a point-mass cloud: the "candidate cloud's centroid" would be
+    # the selected token's own embedding, so the number would be the selected
+    # token's path through embedding space — a different quantity under this
+    # key's definition.
     sf = getattr(p, "semantic_field", None)
-    if sf is not None and getattr(sf, "mean_veer", None) is not None:
+    if (
+        sf is not None
+        and getattr(sf, "mean_veer", None) is not None
+        and not point_mass_cloud
+    ):
         out["semantic_centroid_veer_cosine"] = sf.mean_veer
 
-    # --- counterfactual exposure: present only when the divergence analysis ran
+    # --- counterfactual exposure: present only when the divergence analysis
+    # ran and found accessible alternatives. A point mass has none by
+    # construction, which is absence of evidence, not a measured zero.
     exp = getattr(p, "exposure", None) or getattr(p, "hallucination", None)
-    if exp is not None and getattr(exp, "candidates", None):
+    if exp is not None and getattr(exp, "candidates", None) and not point_mass_cloud:
         out["counterfactual_exposure_fraction"] = exp.exposure
 
     # --- trajectory continuity, in its natural unit (mean pairwise cosine
@@ -999,10 +1035,30 @@ def signals_record(
 
     Round-trip rule: every value here is the same number the terminal table
     displays, sourced from the same function.
+
+    Raises
+    ------
+    ProvenanceMismatch
+        When a measurement's declared subject contradicts what the run
+        actually did. See hif/profile/provenance.py::check_provenance for why
+        this ends the run rather than warning.
     """
+    from hif.profile.provenance import ProvenanceMismatch, check_provenance
+
     f = profile.findings
 
     output_text = "".join(s.selected_token_str for s in profile.output_side.steps)
+
+    # The contract check: every emitted measurement's declared subject against
+    # what the run actually did. A mismatch means this record would attribute a
+    # number to the wrong model, so no record is produced at all.
+    violations = check_provenance(profile)
+    if violations:
+        raise ProvenanceMismatch(
+            "measurement subjects contradict what the run recorded:\n  - "
+            + "\n  - ".join(violations)
+        )
+    provenance = getattr(profile, "provenance", None)
 
     # Quantities whose subject on this backend is the prompt rather than the
     # target are reported in their own block, never inside `measurements`.
@@ -1037,6 +1093,15 @@ def signals_record(
                 f, "output_distribution_surrogate_name", None
             ),
         },
+        # What actually ran, per role — the evidence behind every subject
+        # above. Omitted (never emitted empty or guessed) on a profile built
+        # before the block existed: an unchecked record must not look like a
+        # checked one.
+        **(
+            {"provenance": provenance.model_dump()}
+            if provenance is not None
+            else {}
+        ),
         "output_text": output_text,
         "output_tokens": len(profile.output_side.generated_ids),
         "input_tokens": len(profile.input_side.prompt_token_ids),

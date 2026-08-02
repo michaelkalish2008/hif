@@ -632,20 +632,25 @@ def profile(
     if metric is not None:
         # Mirror the colon auto-route so the guard reflects the real backend.
         _effective_backend = "ollama" if (backend == "hf" and ":" in model_name) else backend
-        from hif.models.capabilities import INPUT_SIDE_METRICS, metric_support
+        from hif.models.capabilities import metric_support
         # The attention rows are gated on the analysis STAGE, not the backend
         # (nothing reads the target's attention). --diagnostics turns it on;
         # so can a --config file, which is why both are consulted here.
         _attention_on = bool(diagnostics) or bool(
             base_config is not None and base_config.attention.enabled
         )
+        # A teacher-forcing surrogate changes what a restricted backend can
+        # produce (input-side rows, and the candidate-cloud rows it rebuilds
+        # from the target's actual continuation), so the guard is asked the
+        # question the run will actually face. Which surrogate recovery applies
+        # to which measurement is capabilities.py's to know, not the CLI's —
+        # this used to be an ad-hoc exemption here for the input-side set only,
+        # which silently refused `--metric output_entropy_bits --surrogate` on
+        # a selected-only backend that produces it perfectly well.
         _reason = metric_support(
-            metric, _effective_backend, attention_enabled=_attention_on
+            metric, _effective_backend,
+            attention_enabled=_attention_on, surrogate=bool(surrogate),
         )
-        # A teacher-forcing surrogate recovers the input-side signals on backends
-        # that can't teacher-force, so don't fail-fast on those when --surrogate is set.
-        if _reason is not None and surrogate and metric in INPUT_SIDE_METRICS:
-            _reason = None
         if _reason is not None:
             err_console.print(
                 f"[red]Cannot compute --metric {metric} on --backend "

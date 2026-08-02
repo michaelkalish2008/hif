@@ -26,6 +26,7 @@ from hif.metrics.stability import StabilityMetrics, compute_stability_metrics
 from hif.models.base import Model
 from hif.models.mm import MultimodalInput, MultimodalModel
 from hif.perturbation import get_generator
+from hif.profile.provenance import RunProvenance
 from hif.profile.schema import (
     BehavioralRangeProfile,
     Findings,
@@ -137,13 +138,18 @@ def build_profile(
     # 1. Seed everything
     seed_everything(seed)
 
-    # 2. Input-side analysis
+    # 2. Input-side analysis. Whichever branch runs, record WHICH model read
+    # the prompt — that identity is what every input-side row's declared
+    # subject is a claim about (hif/profile/provenance.py).
+    input_teacher_forcing_model: str | None = None
     if model.supports_teacher_forcing:
         logger.debug("Running input-side analysis...")
+        input_teacher_forcing_model = model.name
         input_analysis = analyze_input_side(
             model, prompt, top_k=config.generation.top_k
         )
     elif surrogate_model is not None:
+        input_teacher_forcing_model = surrogate_model.name
         logger.debug(
             "Running input-side analysis via surrogate (%s) for %s...",
             surrogate_model.name, model.name,
@@ -558,6 +564,22 @@ def build_profile(
             branch_traces=list(trajectory.branches),
         )
 
+    # 12c. Run provenance — which model filled each role, and what degraded.
+    # Recorded from the stages themselves, not inferred from the result: this
+    # is the evidence every declared `subject` is checked against.
+    provenance = RunProvenance(
+        generation_model=model.name,
+        input_teacher_forcing_model=input_teacher_forcing_model,
+        output_distribution_model=(
+            output_distribution_surrogate_name or model.name
+        ),
+        attention_analysis_model=_attention_analysis_model(attention_analysis),
+        output_distribution_selected_only=output_distribution_degenerate(
+            output_trace.steps
+        ),
+        trajectory_analysis_ran=bool(trajectory.branches),
+    )
+
     # 13. Return full profile (persist the embedder that actually ran — a
     # fallback changes what the similarity/exposure numbers mean)
     config = _record_effective_embedder(config, embedder)
@@ -576,7 +598,25 @@ def build_profile(
         exposure=hallucination_profile,
         semantic_field=semantic_field_reading,
         raw_traces=raw_traces,
+        provenance=provenance,
     )
+
+
+def _attention_analysis_model(attention_analysis) -> str | None:
+    """The encoder the attention stage actually loaded, or None if it skipped.
+
+    Read off the map the stage produced rather than off the config, so a
+    fallback or an override is recorded as what ran. This is never the target
+    model: the analyser is a separate bidirectional encoder reading text as an
+    object, which is exactly why the attention rows are available on every
+    backend and why one of them can never be about the target.
+    """
+    if attention_analysis is None:
+        return None
+    try:
+        return attention_analysis.input_analysis.attention_map.analysis_model
+    except AttributeError:
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -648,12 +688,15 @@ def _build_profile_mm(
     text_concat = mm_input.text_concat
 
     # 3. Input-side analysis — text positions only (Risk rule 3)
+    input_teacher_forcing_model: str | None = None
     if model.supports_teacher_forcing:
         logger.debug("Running input-side analysis over text positions...")
+        input_teacher_forcing_model = model.name
         input_analysis = analyze_input_side_mm(
             model, prepared, text_concat, top_k=config.generation.top_k
         )
     elif surrogate_model is not None:
+        input_teacher_forcing_model = surrogate_model.name
         # Same proxy technique as the text path: teacher-force the surrogate
         # over the concatenated TEXT parts. Risk rule 3 already restricts
         # input-side analysis to text positions on full-access mm backends,
@@ -1075,6 +1118,21 @@ def _build_profile_mm(
         input_part_map=prepared.part_map,
         region_sensitivity=region_sensitivity,
         raw_traces=raw_traces,
+        # Same roles as the text path. The mm path runs no output-distribution
+        # surrogate recovery and no trajectory rollouts (Risk rule 6), so both
+        # facts are recorded as they are rather than left to be inferred.
+        provenance=RunProvenance(
+            generation_model=model.name,
+            input_teacher_forcing_model=input_teacher_forcing_model,
+            output_distribution_model=model.name,
+            attention_analysis_model=_attention_analysis_model(
+                attention_analysis
+            ),
+            output_distribution_selected_only=output_distribution_degenerate(
+                output_trace.steps
+            ),
+            trajectory_analysis_ran=bool(trajectory.branches),
+        ),
     )
 
 

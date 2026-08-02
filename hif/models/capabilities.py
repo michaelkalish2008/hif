@@ -4,10 +4,11 @@ Different backends expose different amounts of the model's internals, which
 directly determines which measurements can be computed:
 
 - **Teacher forcing** (running the model forward over the prompt to get per-
-  position logits) is required for the input-side measurements:
-  input_entropy_shift_bits, prompt_surprisal_excess_bits, io_correlation_r.
-  Only local open-weight backends (hf, tlens, hf-vlm) can do it. Hosted APIs
-  and Ollama cannot.
+  position logits) is required for the input-side measurements and for the
+  trajectory rollouts behind branch_pairwise_cosine_similarity. Only local
+  open-weight backends (hf, tlens, hf-vlm) can do it. Hosted APIs and Ollama
+  cannot. A `--surrogate` recovers the input-side rows (by reading the prompt,
+  which makes their subject prompt-only) but never the trajectory rows.
 - **The attention-analysis stage** is required for attention_entropy_input_bits
   and attention_entropy_output_bits. It is NOT a backend capability: neither
   measurement reads the target model's attention, and no backend has ever been
@@ -65,9 +66,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-# Measurement groupings by what data they require.
+# Measurement groupings by what data they require. Every registry key belongs
+# to exactly one group — tests/unit/test_access_tier_matrix.py asserts it, so a
+# new measurement cannot be added without saying what it needs. A key missing
+# from all four groups would silently be reported available on every backend,
+# which is how `input_entropy_std_bits` came to be promised on Anthropic.
 INPUT_SIDE_METRICS = frozenset({
-    "input_entropy_shift_bits", "prompt_surprisal_excess_bits", "io_correlation_r",
+    "input_entropy_shift_bits", "input_entropy_std_bits",
+    "prompt_surprisal_excess_bits", "io_correlation_r",
 })
 ATTENTION_METRICS = frozenset({
     "attention_entropy_input_bits", "attention_entropy_output_bits",
@@ -79,14 +85,27 @@ OUTPUT_SIDE_METRICS = frozenset({
     "io_cosine_similarity", "semantic_centroid_veer_cosine",
     "counterfactual_exposure_fraction",
 })
+# Quantities read off trajectory branches — rollouts the TARGET generates from
+# its own context. builder.py step 5 runs the stage only when the target can
+# teacher-force and returns an empty branch list otherwise, so these are absent
+# rather than proxied on a backend that cannot. No surrogate recovers them: a
+# proxy's rollouts would be the proxy's behaviour, not a reading of the
+# target's.
+TRAJECTORY_METRICS = frozenset({"branch_pairwise_cosine_similarity"})
 
 # Output-side measurements that a selected-only backend cannot produce AT ALL,
 # because their input is a real per-step distribution and a point mass is not
 # one. Split into two reasons, because the two absences are different:
 #
-#   _NEEDS_DISTRIBUTION   entropy-shaped quantities computed over one step's
-#                         candidates. A point mass gives 0.0 by construction.
-#   _NEEDS_TWO_DISTRIBUTIONS
+#   NEEDS_DISTRIBUTION    quantities computed over one step's candidate cloud.
+#                         A point mass is a cloud of one: the entropies are 0.0
+#                         by construction, the candidate-cloud centroid is just
+#                         the selected token's embedding, and counterfactual
+#                         exposure has no alternative to find. A --surrogate
+#                         DOES rescue these — step 6b rebuilds `semantic_steps`
+#                         by teacher-forcing the proxy over the target's actual
+#                         continuation, which is what they all read.
+#   NEEDS_TWO_DISTRIBUTIONS
 #                         divergences between two distributions. Between two
 #                         point masses the JSD is 0 when the tokens agree and
 #                         exactly 1 bit when they differ — a token-agreement
@@ -95,14 +114,27 @@ OUTPUT_SIDE_METRICS = frozenset({
 #                         first group, no --surrogate rescues these: the
 #                         surrogate recovery in builder.py step 6b rebuilds
 #                         `semantic_steps`, which these never read.
-_NEEDS_DISTRIBUTION = frozenset({
+NEEDS_DISTRIBUTION = frozenset({
     "candidate_cluster_entropy_bits", "output_entropy_bits",
-    "output_entropy_step_delta_bits",
+    "output_entropy_step_delta_bits", "counterfactual_exposure_fraction",
+    "semantic_centroid_veer_cosine",
 })
-_NEEDS_TWO_DISTRIBUTIONS = frozenset({
+NEEDS_TWO_DISTRIBUTIONS = frozenset({
     "perturbation_jsd_bits", "output_step_jsd_bits",
     "output_step_topk_overlap_fraction",
+    # io_correlation_r is here because of what it correlates: one of its two
+    # series IS the per-variant perturbation JSD. On a selected-only backend
+    # that series is a token-disagreement rate, so the correlation is between
+    # entropy shifts and token disagreement — a different quantity under a key
+    # whose definition names the JSD. A --surrogate does not rescue it either:
+    # the recovery rebuilds `semantic_steps`, and the sensitivity metrics this
+    # reduces are computed from the raw traces before it.
+    "io_correlation_r",
 })
+
+# Historical private names, kept so nothing that imported them breaks.
+_NEEDS_DISTRIBUTION = NEEDS_DISTRIBUTION
+_NEEDS_TWO_DISTRIBUTIONS = NEEDS_TWO_DISTRIBUTIONS
 
 TEACHER_FORCING_BACKENDS = frozenset({"hf", "tlens", "hf-vlm"})
 # Backends whose logprobs degenerate to the selected token only.
@@ -223,6 +255,7 @@ def metric_support(
     backend: str,
     *,
     attention_enabled: bool | None = None,
+    surrogate: bool = False,
 ) -> str | None:
     """Return None if `metric` can be produced here, else a reason + the fix.
 
@@ -230,16 +263,52 @@ def metric_support(
     --backend ollama`: that measurement is input-side, ollama has no teacher
     forcing.
 
-    `attention_enabled` is the one requirement that is not a property of the
-    backend. Pass the run's effective `config.attention.enabled` to have the
-    attention rows gated on the stage that actually produces them; leave it
-    `None` (the default, used by the static `hif models` table) to answer the
-    backend question alone, which for those two rows is always "yes".
+    Two requirements here are not properties of the backend:
+
+    `attention_enabled` — pass the run's effective `config.attention.enabled`
+    to have the attention rows gated on the stage that actually produces them;
+    leave it `None` (the default, used by the static `hif models` table) to
+    answer the backend question alone, which for those two rows is always
+    "yes".
+
+    `surrogate` — whether the run has a teacher-forcing proxy. A surrogate
+    changes what a restricted backend can PRODUCE, not what the numbers are
+    about: it recovers the input-side rows by reading the prompt (so they are
+    produced, and reported in `prompt_measurements` because their subject
+    becomes prompt-only), and it recovers the candidate-cloud rows by
+    teacher-forcing over the target's actual continuation. It recovers neither
+    the distribution divergences (which read the raw trace) nor the trajectory
+    rows (which need the target to roll out its own branches). Availability and
+    subject are answered separately — see the module docstring.
     """
     info = BACKENDS.get(backend)
     if info is None:
         return f"Unknown backend {backend!r}."
 
+    if metric in TRAJECTORY_METRICS and not info.teacher_forcing:
+        return (
+            f"'{metric}' is read off trajectory branches — rollouts the target "
+            f"generates from its own context, which requires teacher forcing "
+            f"the '{backend}' backend cannot do.\n"
+            f"  Fix: use an open-weight model, e.g. `--backend hf` with `gpt2`. "
+            f"--surrogate does NOT recover this one: a proxy's rollouts would "
+            f"be the proxy's behaviour, not a reading of the target's."
+        )
+    if (
+        metric in INPUT_SIDE_METRICS
+        and surrogate
+        and not info.teacher_forcing
+        # …unless the metric ALSO reads a divergence between two output
+        # distributions, which no surrogate recovers. Checked before the
+        # shortcut so a selected-only backend still refuses io_correlation_r.
+        and not (
+            info.logprobs == "selected-only" and metric in NEEDS_TWO_DISTRIBUTIONS
+        )
+    ):
+        # Produced, by teacher-forcing the proxy over the prompt. The target
+        # contributes nothing, so the value lands in `prompt_measurements` —
+        # available, and not a measurement of the target.
+        return None
     if metric in INPUT_SIDE_METRICS and not info.teacher_forcing:
         return (
             f"'{metric}' is an input-side measurement — it requires teacher "
@@ -262,16 +331,21 @@ def metric_support(
             f"  Fix: pass --diagnostics (or set `[attention] enabled = true` in "
             f"a --config file) to run the stage."
         )
-    if info.logprobs == "selected-only" and metric in _NEEDS_DISTRIBUTION:
+    if (
+        info.logprobs == "selected-only"
+        and metric in NEEDS_DISTRIBUTION
+        and not surrogate
+    ):
         return (
             f"'{metric}' needs a token distribution, but the '{backend}' backend "
             f"returns only the selected token (no logprobs), so it degenerates.\n"
             f"  Fix: use a backend with logprobs (hf, openai, ollama), pass "
             f"--surrogate, or pick a measurement that does not need one."
         )
-    if info.logprobs == "selected-only" and metric in _NEEDS_TWO_DISTRIBUTIONS:
+    if info.logprobs == "selected-only" and metric in NEEDS_TWO_DISTRIBUTIONS:
         return (
-            f"'{metric}' is a divergence between two token distributions, but "
+            f"'{metric}' is computed from a divergence between two token "
+            f"distributions, but "
             f"the '{backend}' backend returns only the selected token. Between "
             f"two point masses the divergence is 0 when the tokens agree and "
             f"exactly 1 bit when they differ — a token-agreement rate, not the "
@@ -285,12 +359,22 @@ def metric_support(
     return None
 
 
+ALL_GROUPED_METRICS = (
+    INPUT_SIDE_METRICS | ATTENTION_METRICS | OUTPUT_SIDE_METRICS
+    | TRAJECTORY_METRICS
+)
+
+
 def signals_available(
-    backend: str, *, attention_enabled: bool | None = None
+    backend: str,
+    *,
+    attention_enabled: bool | None = None,
+    surrogate: bool = False,
 ) -> dict[str, bool]:
     """Map each measurement key → whether `backend` can produce it."""
-    all_metrics = INPUT_SIDE_METRICS | ATTENTION_METRICS | OUTPUT_SIDE_METRICS
     return {
-        m: metric_support(m, backend, attention_enabled=attention_enabled) is None
-        for m in sorted(all_metrics)
+        m: metric_support(
+            m, backend, attention_enabled=attention_enabled, surrogate=surrogate
+        ) is None
+        for m in sorted(ALL_GROUPED_METRICS)
     }
