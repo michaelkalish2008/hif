@@ -349,8 +349,8 @@ class TestSchemaCompat:
         assert loaded.input_part_map is None
         assert loaded.region_sensitivity is None
 
-    def test_new_default_schema_version_is_0_8_0(self):
-        assert _make_profile().schema_version == "0.8.0"
+    def test_new_default_schema_version_is_0_9_0(self):
+        assert _make_profile().schema_version == "0.9.0"
 
     def test_serialized_profile_contains_no_pixels(self):
         profile = _make_profile()

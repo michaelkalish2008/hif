@@ -85,7 +85,6 @@ def _make_position_record(pos: int, entropy: float) -> PositionRecord:
 
 
 def _make_input_analysis(
-    volatility: float,
     prompt: str = "test",
     mean_entropy: float = 2.0,
     max_entropy: float = 10.0,
@@ -98,7 +97,6 @@ def _make_input_analysis(
         mean_surprisal=1.0,
         mean_entropy=mean_entropy,
         max_entropy=max_entropy,
-        volatility_score=volatility,
     )
 
 
@@ -280,9 +278,9 @@ class TestComputeStabilityMetrics:
         """Baseline and perturbed identical → the measured response is 0, in
         both natural units. Zero here is a real measurement (there WERE
         perturbations, they just moved nothing), never the absent marker."""
-        baseline = _make_input_analysis(volatility=0.5, mean_entropy=2.0)
+        baseline = _make_input_analysis(mean_entropy=2.0)
         perturbed = [
-            _make_input_analysis(volatility=0.5, mean_entropy=2.0) for _ in range(3)
+            _make_input_analysis(mean_entropy=2.0) for _ in range(3)
         ]
         sensitivities = [self._make_sensitivity(0.0) for _ in range(3)]
         result = compute_stability_metrics(baseline, perturbed, sensitivities)
@@ -293,11 +291,11 @@ class TestComputeStabilityMetrics:
         """input_entropy_shift_bits is the mean |Δ mean_entropy| in bits —
         unbounded above and NOT inverted; perturbation_jsd_bits is base-2 JSD,
         genuinely bounded to [0, 1]."""
-        baseline = _make_input_analysis(volatility=0.3, mean_entropy=2.0)
+        baseline = _make_input_analysis(mean_entropy=2.0)
         perturbed = [
-            _make_input_analysis(volatility=0.5, mean_entropy=3.0),   # Δ 1.0
-            _make_input_analysis(volatility=0.7, mean_entropy=8.0),   # Δ 6.0
-            _make_input_analysis(volatility=0.2, mean_entropy=1.0),   # Δ 1.0
+            _make_input_analysis(mean_entropy=3.0),   # Δ 1.0
+            _make_input_analysis(mean_entropy=8.0),   # Δ 6.0
+            _make_input_analysis(mean_entropy=1.0),   # Δ 1.0
         ]
         sensitivities = [
             self._make_sensitivity(0.1),
@@ -318,8 +316,8 @@ class TestComputeStabilityMetrics:
         assert 0.0 <= result.perturbation_jsd_bits <= 1.0
 
     def test_returns_perturbation_response_instance(self):
-        baseline = _make_input_analysis(volatility=0.5)
-        perturbed = [_make_input_analysis(volatility=0.5)]
+        baseline = _make_input_analysis()
+        perturbed = [_make_input_analysis()]
         sensitivities = [self._make_sensitivity(0.0)]
         result = compute_stability_metrics(baseline, perturbed, sensitivities)
         assert isinstance(result, PerturbationResponse)
@@ -328,15 +326,15 @@ class TestComputeStabilityMetrics:
         assert StabilityMetrics is PerturbationResponse
 
     def test_n_perturbations_correct(self):
-        baseline = _make_input_analysis(volatility=0.5)
-        perturbed = [_make_input_analysis(volatility=0.5 + 0.1 * i) for i in range(4)]
+        baseline = _make_input_analysis()
+        perturbed = [_make_input_analysis() for i in range(4)]
         sensitivities = [self._make_sensitivity(0.05 * i) for i in range(4)]
         result = compute_stability_metrics(baseline, perturbed, sensitivities)
         assert result.n_perturbations == 4
 
     def test_empty_perturbations_absent_not_pinned(self):
         """No evidence at all → every component ABSENT (None), never fake 1.0/0.0."""
-        baseline = _make_input_analysis(volatility=0.5)
+        baseline = _make_input_analysis()
         result = compute_stability_metrics(baseline, [], [])
         assert result.input_entropy_shift_bits is None
         assert result.perturbation_jsd_bits is None
@@ -347,7 +345,7 @@ class TestComputeStabilityMetrics:
         """Sensitivity results without perturbed input analyses (partial-access
         models; media perturbation on non-teacher-forcing backends): the output
         response is real, the input-side quantities are absent."""
-        baseline = _make_input_analysis(volatility=0.5)
+        baseline = _make_input_analysis()
         sensitivities = [self._make_sensitivity(0.2), self._make_sensitivity(0.4)]
         result = compute_stability_metrics(baseline, [], sensitivities)
         assert result.input_entropy_shift_bits is None
@@ -357,11 +355,11 @@ class TestComputeStabilityMetrics:
 
     def test_full_access_varying_inputs_real_values(self):
         """Aligned input + output series → all three quantities computed."""
-        baseline = _make_input_analysis(volatility=0.3, mean_entropy=2.0)
+        baseline = _make_input_analysis(mean_entropy=2.0)
         perturbed = [
-            _make_input_analysis(volatility=0.35, mean_entropy=2.1),
-            _make_input_analysis(volatility=0.6, mean_entropy=5.0),
-            _make_input_analysis(volatility=0.31, mean_entropy=2.05),
+            _make_input_analysis(mean_entropy=2.1),
+            _make_input_analysis(mean_entropy=5.0),
+            _make_input_analysis(mean_entropy=2.05),
         ]
         sensitivities = [
             self._make_sensitivity(0.05),
@@ -379,8 +377,8 @@ class TestComputeStabilityMetrics:
         assert result.input_output_correlation > 0.9
 
     def test_higher_js_raises_reported_jsd(self):
-        baseline = _make_input_analysis(volatility=0.5)
-        perturbed = [_make_input_analysis(volatility=0.5)]
+        baseline = _make_input_analysis()
+        perturbed = [_make_input_analysis()]
         # max JS in bits (log2) is 1.0; use 0.8 as "high"
         sensitivities_high = [self._make_sensitivity(0.8)]
         sensitivities_low = [self._make_sensitivity(0.0)]
@@ -391,7 +389,7 @@ class TestComputeStabilityMetrics:
         assert result_high.perturbation_jsd_bits == pytest.approx(0.8)
 
     def test_optional_fields_none_by_default(self):
-        baseline = _make_input_analysis(volatility=0.5)
+        baseline = _make_input_analysis()
         result = compute_stability_metrics(baseline, [], [])
         assert result.temperature_robustness is None
         assert result.prompt_order_robustness is None

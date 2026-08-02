@@ -185,7 +185,7 @@ class BehavioralRangeProfile(BaseModel):
     # 0.2.0: added metrics.distribution[].nucleus_entropy_bits,
     #   findings.similarity_level, findings.similarity_trend. Profiles written
     #   under 0.1.0 do not have these fields and will fail validation.
-    # 0.3.0 (current): multimodal M1 — added prompt.modality (default "text"),
+    # 0.3.0: multimodal M1 — added prompt.modality (default "text"),
     #   prompt.input_parts (default []), input_part_map (default None),
     #   region_sensitivity (default None), perturbations[].traces (default []).
     #   All new fields default, so 0.2.0 profile JSON still validates
@@ -202,7 +202,7 @@ class BehavioralRangeProfile(BaseModel):
     #   the within-generation semantic field instrument (Veer): per-step semantic-
     #   centroid displacement + field-spread change. Derived scalars only. Defaults
     #   to None, so 0.5.0 profile JSON still validates unchanged.
-    # 0.7.0 (current): added raw_traces (RawTraces, default None) and
+    # 0.7.0: added raw_traces (RawTraces, default None) and
     #   config.traceability (TraceabilityConfig, default disabled) — opt-in raw
     #   trace capture: per-perturbation-variant OutputSideTraces and per-branch
     #   trajectory traces, persisted ONLY when config.traceability.enabled so
@@ -210,14 +210,22 @@ class BehavioralRangeProfile(BaseModel):
     #   retroactively recomputable. Both default (None / disabled), so 0.6.0
     #   profile JSON still validates unchanged and disabled-mode artifacts are
     #   unchanged apart from the two defaulted fields.
-    # 0.8.0 (current): added provenance (RunProvenance, default None) — which
+    # 0.8.0: added provenance (RunProvenance, default None) — which
     #   model actually filled each role in the run (teacher forcing, output
     #   distributions, attention analysis) plus the degradation flags. It turns
     #   every registry row's `subject` declaration into a claim the record path
     #   checks rather than repeats; see hif/profile/provenance.py. Defaults to
     #   None, so 0.7.0 profile JSON still validates unchanged — and a profile
     #   without it is simply unchecked, never assumed compliant.
-    schema_version: str = "0.8.0"
+    # 0.9.0 (current): REMOVED input_side.volatility_score
+    #   (mean_entropy / log2(vocab_size)) — the normaliser the measurement set
+    #   banned, still computed and persisted under a *_score name. Nothing in
+    #   hif read it. read input_side.mean_entropy (bits) with
+    #   input_side.max_entropy as labelled context instead. Older profile JSON
+    #   still carries the key and loads unchanged: pydantic ignores unknown
+    #   fields on validation, so removal is read-compatible in the direction
+    #   that matters (old artifact → new code).
+    schema_version: str = "0.9.0"
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     model: ModelIdentity
     prompt: PromptRecord

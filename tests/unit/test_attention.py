@@ -470,7 +470,6 @@ def _make_minimal_profile_with_attention(attention_data):
         mean_surprisal=3.0,
         mean_entropy=5.0,
         max_entropy=16.0,
-        volatility_score=0.5,
     )
     output_trace = OutputSideTrace(
         steps=[_step(i) for i in range(3)],

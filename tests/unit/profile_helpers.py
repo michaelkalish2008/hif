@@ -67,7 +67,6 @@ def _make_step(step: int, token_probs: dict[int, float]) -> StepRecord:
 
 
 def _make_input_analysis(
-    volatility: float = 0.5,
     mean_entropy: float = 5.0,
     max_entropy: float = 16.0,
     surprisal: float = 3.0,
@@ -91,7 +90,6 @@ def _make_input_analysis(
         mean_surprisal=surprisal,
         mean_entropy=mean_entropy,
         max_entropy=max_entropy,
-        volatility_score=volatility,
     )
 
 
@@ -213,7 +211,6 @@ def _make_run_config() -> RunConfig:
 
 
 def _make_profile(
-    volatility: float = 0.5,
     cluster_entropy: float = 1.0,
     mean_js: float = 0.05,
     perturbation_jsd_bits: float = 0.1,
@@ -222,7 +219,7 @@ def _make_profile(
     """Build a minimal but valid BehavioralRangeProfile with synthetic data."""
     from hif.profile.schema import PerturbationRecord
 
-    input_analysis = _make_input_analysis(volatility=volatility)
+    input_analysis = _make_input_analysis()
     output_trace = _make_output_trace()
     center = _make_center(
         prompt_output_cosine_distance=prompt_output_cosine_distance

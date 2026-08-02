@@ -368,7 +368,7 @@ def _make_minimal_profile_for_hallucination(hallucination_data):
     )
     input_analysis = InputSideAnalysis(
         positions=[pos], prompt_token_ids=[0, 1], prompt_text="hello world",
-        mean_surprisal=3.0, mean_entropy=5.0, max_entropy=16.0, volatility_score=0.5,
+        mean_surprisal=3.0, mean_entropy=5.0, max_entropy=16.0,
     )
     output_trace = OutputSideTrace(
         steps=[_step(i) for i in range(3)],

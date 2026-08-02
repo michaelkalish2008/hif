@@ -172,7 +172,6 @@ def build_profile(
             mean_surprisal=0.0,
             mean_entropy=0.0,
             max_entropy=max_entropy,
-            volatility_score=0.0,
         )
 
     # 3. Output trace
@@ -727,7 +726,6 @@ def _build_profile_mm(
             mean_surprisal=0.0,
             mean_entropy=0.0,
             max_entropy=max_entropy,
-            volatility_score=0.0,
         )
 
     # 4. Output trace via generate_prepared

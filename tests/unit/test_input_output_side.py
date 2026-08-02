@@ -52,10 +52,16 @@ class TestAnalyzeInputSide:
             )
             assert len(pos.top_k_alternatives) <= 50
 
-    def test_volatility_score_in_range(self, gpt2_model: HFModel):
+    def test_mean_entropy_is_raw_bits_with_labelled_context(self, gpt2_model: HFModel):
+        """mean_entropy stays in raw bits next to max_entropy as labelled
+        metadata — never divided by it. (Replaces a [0, 1] range test on the
+        removed `volatility_score` normaliser, the exact anti-pattern
+        CONTRIBUTING.md's step-5 example warns against copying.)"""
         prompt = "Once upon a time in a land far away"
         result = analyze_input_side(gpt2_model, prompt, top_k=20)
-        assert 0.0 <= result.volatility_score <= 1.0
+        assert result.mean_entropy > 0.0
+        assert result.max_entropy == math.log2(gpt2_model.vocab_size)
+        assert not hasattr(result, "volatility_score")
 
     def test_teacher_forcing_guard(self):
         """Model with supports_teacher_forcing=False must raise NotImplementedError."""

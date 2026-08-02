@@ -175,7 +175,7 @@ class TestSchema:
         assert rec.prompt_hash == hashlib.sha256(text.encode()).hexdigest()
 
     def test_behavioral_range_profile_schema_version(self):
-        assert _make_profile().schema_version == "0.8.0"
+        assert _make_profile().schema_version == "0.9.0"
 
     def test_behavioral_range_profile_created_at_is_datetime(self):
         assert isinstance(_make_profile().created_at, datetime)

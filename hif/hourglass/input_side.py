@@ -24,12 +24,14 @@ class InputSideAnalysis(BaseModel):
     prompt_text: str
     mean_surprisal: float
     mean_entropy: float
-    max_entropy: float      # log2(vocab_size) — theoretical maximum for this tokenizer
-    # DEPRECATED, retained only so older profile JSON still validates. This is
-    # mean_entropy / log2(vocab_size): a behavioural number divided by a piece
-    # of tokenizer metadata. Nothing in hif computes from it any more — read
-    # mean_entropy (bits) instead.
-    volatility_score: float
+    # log2(vocab_size) — the theoretical maximum entropy for this tokenizer.
+    # Metadata, honestly labelled: legitimate context for reading mean_entropy,
+    # never a denominator. A `volatility_score` field
+    # (mean_entropy / max_entropy) was removed in profile schema 0.9.0 — it was
+    # the project's canonical normaliser mistake, a behavioural number divided
+    # by tokenizer metadata. Older profile JSON still carries the key; pydantic
+    # ignores unknown fields on load, so those artifacts validate unchanged.
+    max_entropy: float
 
 
 def mean_surprisal_excess(positions: list["PositionRecord"]) -> float | None:
@@ -141,8 +143,6 @@ def analyze_input_side(
         mean_surprisal = 0.0
         mean_entropy = 0.0
 
-    volatility_score = mean_entropy / max_entropy if max_entropy > 0 else 0.0
-
     return InputSideAnalysis(
         positions=positions,
         prompt_token_ids=token_ids,
@@ -150,7 +150,6 @@ def analyze_input_side(
         mean_surprisal=mean_surprisal,
         mean_entropy=mean_entropy,
         max_entropy=max_entropy,
-        volatility_score=volatility_score,
     )
 
 
@@ -164,8 +163,8 @@ def analyze_input_side_mm(
 
     Entropy/surprisal are computed ONLY over positions in
     prepared.part_map.text_positions() — patch/placeholder positions have no
-    meaningful vocab distribution and are excluded from mean_entropy/
-    volatility (MULTIMODAL.md Design §2 and Risk rule 3).
+    meaningful vocab distribution and are excluded from the aggregate means
+    (MULTIMODAL.md Design §2 and Risk rule 3).
 
     Args:
         model: A MultimodalModel with supports_teacher_forcing == True.
@@ -239,8 +238,6 @@ def analyze_input_side_mm(
         mean_surprisal = 0.0
         mean_entropy = 0.0
 
-    volatility_score = mean_entropy / max_entropy if max_entropy > 0 else 0.0
-
     return InputSideAnalysis(
         positions=positions,
         prompt_token_ids=token_ids,
@@ -248,5 +245,4 @@ def analyze_input_side_mm(
         mean_surprisal=mean_surprisal,
         mean_entropy=mean_entropy,
         max_entropy=max_entropy,
-        volatility_score=volatility_score,
     )

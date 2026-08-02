@@ -138,7 +138,6 @@ class TestBuildProfileStructure:
         assert profile.input_side.positions == []
         assert profile.input_side.mean_entropy == 0.0
         assert profile.input_side.mean_surprisal == 0.0
-        assert profile.input_side.volatility_score == 0.0
 
     def test_api_model_with_surrogate_computes_input_side(self):
         api_model = _make_mock_model()
@@ -154,7 +153,6 @@ class TestBuildProfileStructure:
         )
         assert len(profile.input_side.positions) > 0
         assert profile.input_side.mean_entropy > 0.0
-        assert profile.input_side.volatility_score >= 0.0
 
     def test_surrogate_run_record_keeps_prompt_only_out_of_measurements(self):
         """End-to-end through the real builder on a mock closed backend.

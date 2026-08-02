@@ -94,7 +94,6 @@ def _make_input_analysis() -> InputSideAnalysis:
         mean_surprisal=3.0,
         mean_entropy=5.0,
         max_entropy=16.0,
-        volatility_score=0.5,
     )
 
 
