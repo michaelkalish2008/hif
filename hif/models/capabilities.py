@@ -269,6 +269,19 @@ def metric_support(
             f"  Fix: use a backend with logprobs (hf, openai, ollama), pass "
             f"--surrogate, or pick a measurement that does not need one."
         )
+    if info.logprobs == "selected-only" and metric in _NEEDS_TWO_DISTRIBUTIONS:
+        return (
+            f"'{metric}' is a divergence between two token distributions, but "
+            f"the '{backend}' backend returns only the selected token. Between "
+            f"two point masses the divergence is 0 when the tokens agree and "
+            f"exactly 1 bit when they differ — a token-agreement rate, not the "
+            f"quantity this key names, so it is reported ABSENT rather than "
+            f"emitted under a definition it no longer satisfies.\n"
+            f"  Fix: use a backend with logprobs (hf, openai, ollama). "
+            f"--surrogate does NOT recover this one: it rebuilds the per-step "
+            f"basis the entropy measurements read, which this measurement does "
+            f"not use."
+        )
     return None
 
 

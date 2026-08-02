@@ -58,6 +58,25 @@ reason of one line:
   (backend can't teacher-force, an optional stage didn't run, too few
   variants), return `None` and let the key be **omitted** from the record. A
   fabricated `0.0` or `1.0` is a measurement claim; "no evidence" is not.
+- **Absent when the computation stops being the quantity.** The rule above
+  extends past "could not measure" to "measured something else". If a backend
+  degrades your inputs until the arithmetic answers a different question, the
+  key must be omitted, not emitted with a comment. Worked case: on a
+  selected-only backend the per-step distributions are point masses, so a JSD
+  between them is `0` when the tokens agree and `1` bit when they differ — a
+  token-disagreement rate. `perturbation_jsd_bits` and `output_step_jsd_bits`
+  go absent there. If you think the degraded quantity is worth reporting, it
+  needs its own registry row with a key that names what it actually is, and it
+  must pass the Significance Gate on its own; overloading the original key is
+  the failure the `subject` field was introduced to stop.
+- **A truncation-limited quantity is not the same thing.** A number that is
+  still the quantity, but bounded in a stated direction by top-K truncation, is
+  *reported* with the bound named in its `definition` — `output_entropy_bits`
+  is a lower bound and says so. Where the bound is large enough to need
+  quantifying, ship the bound as its own measurement rather than as a caveat
+  flag: `output_step_topk_overlap_fraction` is the resolution limit on
+  `output_step_jsd_bits`, and each definition names the other. A flag is an
+  adornment a consumer must know to look for; a registry row is a second fact.
 
 ### 2. Declare its triple — and its subject
 

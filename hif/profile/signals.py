@@ -296,7 +296,11 @@ MEASUREMENT_REGISTRY: tuple[Measurement, ...] = (
         definition=(
             "mean Jensen-Shannon divergence between the baseline output "
             "distribution and each perturbed variant's. Bounded to [0, 1] by "
-            "definition in log base 2."
+            "definition in log base 2. Absent on a backend that returns only "
+            "the selected token: two point masses have no distributional "
+            "overlap to diverge over, so the computation would report a "
+            "token-disagreement rate under a key that promises a divergence "
+            "between distributions."
         ),
         observable="output distribution",
         functional="information-theoretic",
@@ -304,9 +308,20 @@ MEASUREMENT_REGISTRY: tuple[Measurement, ...] = (
         # Always the target's own distributions. builder.py step 6 calls
         # compute_sensitivity_metrics(output_trace, variant_trace, ...) on the
         # RAW traces, before the step-6b surrogate recovery; nothing downstream
-        # re-derives the JSDs from `semantic_steps`. On a selected-only backend
-        # the traces are point masses, so the JSD degenerates to a coarse
-        # token-agreement signal — coarse, but still the target's.
+        # re-derives the JSDs from `semantic_steps`.
+        #
+        # ABSENCE, NOT A COMMENT. On a selected-only backend those raw traces
+        # are point masses: JSD between two point masses is 0 when the selected
+        # tokens agree and exactly 1 bit when they differ, so the mean is a
+        # token-disagreement rate — a different quantity, and the surrogate
+        # recovery that rescues the other output-side rows never reaches this
+        # one. This used to be documented in a comment here and emitted anyway,
+        # which is the failure the `subject` field was introduced to stop: a
+        # measurement that stopped describing what its definition says, still
+        # reported under the same key. `_all_measured_values` now omits it, and
+        # the token-agreement rate is NOT re-admitted under another key — it
+        # would have to pass the Significance Gate on its own, and no run has
+        # been shown to need it.
         subject=SUBJECT_TARGET_DISTRIBUTION,
         label="Sensitivity",  # the quantity the historical `sensitivity`
         # score was computed from (mean JS divergence per variant).
@@ -704,23 +719,38 @@ def _all_measured_values(p) -> dict[str, float]:
     subject field exists to prevent.
     """
     from hif.hourglass.input_side import mean_surprisal_excess
+    from hif.hourglass.output_side import output_distribution_degenerate
 
     out: dict[str, float] = {}
     m = p.metrics
     st = m.stability
+
+    # Did this backend return real distributions at generation time, or only
+    # the selected token? The perturbation JSDs were computed from the RAW
+    # baseline and variant traces (builder.py step 6, before any surrogate
+    # recovery), and every one of those traces came off the same backend as
+    # `output_side` — so this one check answers it for all of them.
+    selected_only = output_distribution_degenerate(
+        getattr(p.output_side, "steps", None) or []
+    )
 
     # --- perturbation response (input side, output side, and their coupling)
     if st.input_entropy_shift_bits is not None:
         out["input_entropy_shift_bits"] = st.input_entropy_shift_bits
     if getattr(st, "input_entropy_std_bits", None) is not None:
         out["input_entropy_std_bits"] = st.input_entropy_std_bits
-    if st.perturbation_jsd_bits is not None:
-        out["perturbation_jsd_bits"] = st.perturbation_jsd_bits
-    elif m.sensitivity:
-        # Fall back to the per-perturbation records when the aggregate is
-        # absent — same quantity, same unit.
-        js = [s.mean_js_divergence for s in m.sensitivity]
-        out["perturbation_jsd_bits"] = sum(js) / len(js)
+    # Absent, not degenerate: between two point masses the "divergence" is 0
+    # when the selected tokens agree and 1 bit when they differ, which is a
+    # token-disagreement rate and not what `perturbation_jsd_bits` promises.
+    # See the registry row.
+    if not selected_only:
+        if st.perturbation_jsd_bits is not None:
+            out["perturbation_jsd_bits"] = st.perturbation_jsd_bits
+        elif m.sensitivity:
+            # Fall back to the per-perturbation records when the aggregate is
+            # absent — same quantity, same unit.
+            js = [s.mean_js_divergence for s in m.sensitivity]
+            out["perturbation_jsd_bits"] = sum(js) / len(js)
     if st.input_output_correlation is not None:
         out["io_correlation_r"] = st.input_output_correlation
 

@@ -71,9 +71,11 @@ Access is a property of what the backend exposes, not of the model. `hif/models/
 
 | Access | Backends | What is available |
 |--------|----------|------------------|
-| `[F]` full | `hf`, `tlens`, `hf-vlm` | Full-vocabulary distributions, teacher forcing, attention capture — every measurement |
-| `[T-k]` truncated | `openai`, `openai-vlm`, `gemini`, `ollama` | Top-k logprobs only; output entropy is a lower bound; no teacher forcing, no attention |
-| `[P]` proxy | `anthropic` | Selected token only; distribution measurements degenerate unless a `--surrogate` reads the output text under teacher forcing |
+| `[F]` full | `hf`, `tlens`, `hf-vlm` | Full-vocabulary distributions and teacher forcing — every measurement |
+| `[T-k]` truncated | `openai`, `openai-vlm`, `gemini`, `ollama` | Top-k logprobs only; output entropy is a lower bound; no teacher forcing |
+| `[P]` proxy | `anthropic` | Selected token only. The entropy-shaped measurements degenerate unless a `--surrogate` reads the output text under teacher forcing; the distribution **divergences** (`perturbation_jsd_bits`, `output_step_jsd_bits`, `output_step_topk_overlap_fraction`) are absent outright, and no surrogate recovers them |
+
+The attention-row measurements are **not** in this table, and that is the point: they read an analysis encoder's attention over text (the prompt, or the target's generated continuation), never the target's own attention, so no backend has ever been asked to expose anything for them. They are available on every backend and gated only on the optional stage that produces them (`--diagnostics`). `hif/models/capabilities.py` once claimed the opposite and enforced the claim, which told users their backend could not produce a measurement it produces perfectly well.
 
 The input-side measurements (`input_entropy_shift_bits`, `input_entropy_std_bits`, `prompt_surprisal_excess_bits`) require teacher forcing. On a backend that cannot teacher-force they are either **absent from the record entirely**, or — with `--surrogate` — computed by a small local open-weight model reading the same prompt. In the second case they describe the prompt under that reference model, not the target: their subject is `prompt-only`, so they leave `measurements` for the `prompt_measurements` block (see [Subject](#subject--whose-behaviour-the-number-describes)). `io_correlation_r` needs the same teacher forcing but keeps the target's output response as half its computation, so it stays in `measurements` with subject `mixed`. `hif models` prints, per backend, which measurements degrade this way.
 
@@ -180,6 +182,8 @@ JSD(P ‖ Q) = ½ KL(P ‖ M) + ½ KL(Q ‖ M),  M = ½(P + Q),  logs base 2
 **Perturbation generators.** Default `["synonym", "tone", "reorder"]` with `n_variants = 2` each. `substitution` and `ambiguity` are implemented and selectable; LLM-backed paraphrasing is opt-in and requires an explicit endpoint.
 
 **Fallback.** When the aggregate is absent but per-perturbation `SensitivityMetrics` exist, `measurements()` averages `mean_js_divergence` over them — same quantity, same unit.
+
+**Absent when** the backend returns only the selected token (the `[P]` tier). This is the point-mass rule, and it is an absence rather than a caveat for the same reason a prompt-only quantity leaves `measurements`: *the computation stops being the one the key names.* The JSDs are taken over the RAW baseline and variant traces (`build_profile` step 6, before any surrogate recovery), so on a selected-only backend both sides are point masses. The divergence between two point masses is `0` when the selected tokens agree and exactly `1` bit when they differ — a **token-disagreement rate**, not a divergence between distributions. The rate is not re-admitted under another key either: it would have to pass the Significance Gate on its own, and nothing has shown a run that needs it. `--surrogate` does not rescue this measurement — the step-6b recovery rebuilds `semantic_steps`, which the sensitivity path never reads.
 
 ---
 
