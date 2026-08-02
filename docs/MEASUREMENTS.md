@@ -491,7 +491,7 @@ Spread is measured in context-position space; Entropy (●) is measured in vocab
 
 **Expected range.** `[0, log₂(i+1)]` bits — the ceiling grows with position as more prefix becomes available. The value is reported in raw bits and is deliberately **not** divided by `log₂(prefix length)`; read it against the position axis, not as a fraction.
 
-**Access.** Requires attention capture, which runs only when `AttentionConfig.enabled` is set — `hif profile --diagnostics` does so. The corresponding measurement `attention_entropy_output_bits` is additionally gated by `hif/models/capabilities.py` to the `hf`, `tlens`, and `hf-vlm` backends.
+**Access.** Requires the attention-analysis stage, which runs only when `AttentionConfig.enabled` is set — `hif profile --diagnostics` does so. That is the *only* requirement. The reader is an analysis encoder over the target's generated text, so `attention_entropy_output_bits` is available on every backend; `hif/models/capabilities.py` used to gate it to `hf`/`tlens`/`hf-vlm`, which was a false claim about the backend and has been removed.
 
 ---
 
@@ -572,7 +572,7 @@ where `ā_{i,0:i}` is the mean-head, mean-layer attention row at prompt position
 
 **Expected range.** `[0, 1]`.
 
-**Access.** Requires attention capture — open HuggingFace models only. Not available for API models.
+**Access.** Requires the attention-analysis stage (`--diagnostics`) and nothing else. Available on every backend, API models included — the encoder reads the prompt text, which does not come from the target at all.
 
 **Cross-reader extension (▼ₓ, opt-in).** A second, independent Horizon reading is available via `run_cross_reader: true` on the `/analyze` request: `Horizon_cross_k = JSD(ê_k, â_{k,0:k})`, where `ê` is Llama's entropy landscape (normalized to a distribution over positions) and `â_{k,0:k}` is DistilBERT's own attention row at position `k`, restricted to its causal prefix. Unlike the default Horizon above — which reads the *same* model that produced the entropy trace, so it can't diverge from it in the cross-reader sense — DistilBERT is bidirectional and has no knowledge of how Llama generated the text. This makes it a genuine second opinion: low JSD means an independent reader's attention pattern lines up with where Llama found the text difficult; high JSD means they diverge.
 

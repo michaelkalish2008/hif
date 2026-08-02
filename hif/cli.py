@@ -633,7 +633,15 @@ def profile(
         # Mirror the colon auto-route so the guard reflects the real backend.
         _effective_backend = "ollama" if (backend == "hf" and ":" in model_name) else backend
         from hif.models.capabilities import INPUT_SIDE_METRICS, metric_support
-        _reason = metric_support(metric, _effective_backend)
+        # The attention rows are gated on the analysis STAGE, not the backend
+        # (nothing reads the target's attention). --diagnostics turns it on;
+        # so can a --config file, which is why both are consulted here.
+        _attention_on = bool(diagnostics) or bool(
+            base_config is not None and base_config.attention.enabled
+        )
+        _reason = metric_support(
+            metric, _effective_backend, attention_enabled=_attention_on
+        )
         # A teacher-forcing surrogate recovers the input-side signals on backends
         # that can't teacher-force, so don't fail-fast on those when --surrogate is set.
         if _reason is not None and surrogate and metric in INPUT_SIDE_METRICS:
@@ -1198,7 +1206,9 @@ def models(
     Use this to answer "what can I test, and what will I get?" before running a
     profile. Signal availability depends on the backend: input-side signals
     (Stability, Surprise, I/O Correlation, Wager) need teacher forcing — open
-    models only; attention readings (Spread, Horizon) need attention capture.
+    models only. The attention readings (Spread, Horizon) do NOT depend on the
+    backend: they come from a separate analysis encoder reading text, so every
+    backend can produce them once --diagnostics runs that stage.
     Pass --list to check live model availability instead of static examples.
     Pass --surrogates to check --surrogate-model candidates instead.
     """
@@ -1224,10 +1234,9 @@ def models(
 
     for info in infos:
         tf = "[green]yes[/green]" if info.teacher_forcing else "[dim]no[/dim]"
-        at = "[green]yes[/green]" if info.attention else "[dim]no[/dim]"
         console.print(
             f"\n[bold]{info.name}[/bold]  [dim]({info.kind})[/dim]  "
-            f"teacher-forcing: {tf}  ·  attention: {at}  ·  logprobs: {info.logprobs}"
+            f"teacher-forcing: {tf}  ·  logprobs: {info.logprobs}"
         )
         console.print(f"  [dim]deps:[/dim]  {escape(info.deps)}")
         console.print(f"  [dim]setup:[/dim] {escape(info.setup)}")
@@ -1247,6 +1256,11 @@ def models(
         console.print(f"  [green]✓ signals:[/green] {', '.join(ok)}")
         if no:
             console.print(f"  [yellow]✗ unavailable:[/yellow] {', '.join(no)}")
+        console.print(
+            "  [dim]attention rows need --diagnostics, not a backend: they are "
+            "an analysis encoder's attention over text, so they are available "
+            "here as on every backend.[/dim]"
+        )
         _print_subject_degradation(info)
     console.print()
 
