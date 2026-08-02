@@ -1,20 +1,73 @@
-"""HI command-line interface."""
+"""HI command-line interface — the command surface.
+
+Every `hif` subcommand is defined here: its flags, its help text, the checks it
+runs before touching a model, and the order it does things in. The concerns the
+commands share live in siblings, so this file is the list of things a user can
+ask for and nothing else:
+
+    hif/cli_base.py    the typer app, the two consoles, shared option help
+    hif/cli_config.py  --config-file / CLI precedence -> RunConfig
+    hif/cli_load.py    backend resolution, model / embedder / surrogate loads
+    hif/cli_render.py  terminal presentation of a finished profile
+    hif/cli_compat.py  whether two artifacts may be compared at all
+
+`pyproject.toml` names `hif.cli:app` as the entry point, so this module stays
+the one that assembles the app.
+"""
 
 from __future__ import annotations
 
-import hashlib
 import json
-import re
 import sys
 import time
-from datetime import datetime, timezone
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Optional
 
 import typer
-from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
+
+from hif.cli_base import (
+    CHARTS_HELP,
+    TRACE_DIR_HELP,
+    UNITS_HELP,
+    _emit_json_line,
+    app,
+    console,
+    err_console,
+)
+from hif.cli_compat import (
+    _artifact_signal_set_version,
+    _modality_mismatch_exit,
+    _profile_modality,
+    _signal_set_family,
+    _signal_set_mismatch_exit,
+)
+from hif.cli_config import (
+    _check_mode,
+    _explicit_generation_params,
+    _load_config_file,
+    _make_run_config,
+)
+from hif.cli_load import (
+    _build_multimodal_input,
+    _check_surrogate_candidates,
+    _live_models_for_backend,
+    _load_embedder,
+    _load_model,
+    _load_surrogate,
+    _resolve_backend,
+    _resolve_validation_corpus,
+)
+from hif.cli_render import (
+    ABSENT_TEXT,
+    _print_latency,
+    _print_measurements,
+    _print_output_text,
+    _print_subject_degradation,
+    _print_verbose_io,
+    _print_verbose_stats,
+)
 
 # Canonical measurement extraction lives in hif/profile/measure.py so the CLI
 # tables and the SessionEngine record path report identical numbers; the
@@ -33,338 +86,16 @@ from hif.profile.registry import (
     MEASUREMENT_KEYS,
     MEASUREMENT_REGISTRY,
     MEASUREMENT_UNITS,
-    RESOLUTIONS,
     SIGNAL_SET_VERSION,
     SUBJECT_LEGEND,
-    SUBJECT_MIXED,
     SUBJECT_PROMPT_ONLY,
     run_subjects as _run_subjects,
 )
 
-app = typer.Typer(
-    name="hif",
-    help="Horizonal Interpretability — using the horizon of the possibility space to "
-    "describe model behaviour. Every measurement is reported in its natural unit "
-    "(bits, cosine distance, Pearson r, a fraction of steps); nothing is normalised, "
-    "inverted, or thresholded. Run `hif schema` for the full measurement set.",
-)
-# stdout is reserved for data. Every human-facing line — progress, warnings,
-# tables, errors — goes to stderr so `hif <cmd> ... | jq .` always parses.
-console = Console(stderr=True)
-err_console = console
-
-
-def _emit_json_line(record: dict) -> None:
-    """Write one JSONL record to stdout and flush.
-
-    stdout carries JSON and nothing else. Every data-producing command uses
-    this (or a single json.dumps for the one-document commands), so
-    `hif <cmd> ... 2>/dev/null | jq .` always parses.
-    """
-    sys.stdout.write(json.dumps(record) + "\n")
-    sys.stdout.flush()
 
 # ---------------------------------------------------------------------------
-# Sub-apps for command groups
+# The shared pipeline call
 # ---------------------------------------------------------------------------
-
-@app.callback()
-def _main() -> None:
-    """hif — Horizonal Interpretability CLI."""
-    from hif.utils.logging import configure_logging
-
-    # Default: results only. Commands that accept --verbose re-call
-    # configure_logging(verbose=True) to restore full internal chatter.
-    configure_logging(verbose=False)
-
-
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
-
-
-def _load_config_file(path: Path) -> "RunConfig":
-    """Parse a TOML --config-file into a RunConfig (pydantic-validated).
-
-    Table names mirror RunConfig fields ([generation], [perturbation],
-    [attention], [semantic_field], [trajectory], ...). Exit 3 on parse or
-    validation errors — a half-applied config silently changing what the
-    numbers mean is worse than no run at all.
-    """
-    import tomllib
-    from hif.config import RunConfig
-
-    try:
-        data = tomllib.loads(path.read_text())
-    except FileNotFoundError:
-        err_console.print(f"[red]--config-file not found: {path}[/red]")
-        raise typer.Exit(3)
-    except tomllib.TOMLDecodeError as exc:
-        err_console.print(f"[red]Could not parse --config-file {path}: {exc}[/red]")
-        raise typer.Exit(3)
-    # RunConfig tolerates unknown fields (forward compatibility for embedded
-    # profile JSON), so a typo'd table ([perturbaton]) would be silently
-    # dropped here — reject unknown top-level keys explicitly instead.
-    # Validation aliases (e.g. the pre-rename [hallucination] table for
-    # [exposure]) are accepted: pydantic honours them, so this guard must too.
-    from pydantic import AliasChoices
-
-    valid_keys: set[str] = set(RunConfig.model_fields)
-    for _field in RunConfig.model_fields.values():
-        if isinstance(_field.validation_alias, AliasChoices):
-            valid_keys.update(
-                a for a in _field.validation_alias.choices if isinstance(a, str)
-            )
-    unknown = sorted(set(data) - valid_keys)
-    if unknown:
-        err_console.print(
-            f"[red]Unknown key(s) in --config-file {path}: "
-            f"{', '.join(unknown)}. "
-            f"Valid tables: {', '.join(sorted(RunConfig.model_fields))}.[/red]"
-        )
-        raise typer.Exit(3)
-    try:
-        return RunConfig(**data)
-    except Exception as exc:
-        err_console.print(f"[red]Invalid --config-file {path}: {exc}[/red]")
-        raise typer.Exit(3)
-
-
-def _make_run_config(
-    model_name: str,
-    backend: str,
-    max_new_tokens: int,
-    top_k: int,
-    seed: int,
-    output_dir: Optional[Path],
-    diagnostics: bool = False,
-    base: "Optional[RunConfig]" = None,
-    explicit: frozenset = frozenset(),
-) -> "RunConfig":
-    """Assemble the RunConfig for a profile run.
-
-    `base` is a TOML-loaded RunConfig (--config-file); when present it wins
-    for everything EXCEPT the model identity (always from the CLI args) and
-    any generation knob the user passed explicitly on the command line
-    (`explicit` holds those parameter names, from typer's parameter sources).
-    --diagnostics only ever turns analyzers ON — it never disables one a
-    config file enabled.
-
-    Temperature precedence: the sampling adapters consume
-    ModelConfig.temperature (not GenerationConfig.temperature), so a
-    [generation] temperature set in the TOML is mirrored onto
-    cfg.model.temperature here. An explicit [model] temperature in the TOML
-    wins over the mirror; when neither was set, model.temperature stays None
-    (each backend's own default — 0 for OpenAI, unchanged sampling for HF).
-    GenerationConfig.temperature defaults to 1.0, so the mirror fires only
-    when the TOML actually set it (model_fields_set), never off the default —
-    mirroring the 1.0 default would silently change API-backend behavior.
-    """
-    from hif.config import (
-        AttentionConfig,
-        GenerationConfig,
-        ModelConfig,
-        OutputConfig,
-        RunConfig,
-        SemanticFieldConfig,
-    )
-
-    if base is not None:
-        cfg = base.model_copy(deep=True)
-        cfg.model = ModelConfig(name=model_name, backend=backend)
-        # Model identity (name/backend) always comes from the CLI args (see
-        # docstring), but a [model] base_url/api_key/dtype in the TOML — the
-        # only way to point an "openai"-backend arm at an OpenAI-compatible
-        # endpoint (Mistral, DeepSeek, Grok, local/vLLM) — has to survive the
-        # ModelConfig replacement above or the request silently goes to the
-        # real OpenAI API instead, asking it for a model name it's never
-        # heard of (404 "model does not exist").
-        if "base_url" in base.model.model_fields_set:
-            cfg.model.base_url = base.model.base_url
-        if "api_key" in base.model.model_fields_set:
-            cfg.model.api_key = base.model.api_key
-        if "dtype" in base.model.model_fields_set:
-            cfg.model.dtype = base.model.dtype
-        if "revision" in base.model.model_fields_set:
-            cfg.model.revision = base.model.revision
-        # Temperature plumbing (see docstring): [model] temperature wins;
-        # otherwise mirror an explicitly-set [generation] temperature onto
-        # the model config the sampling adapters actually read.
-        if "temperature" in base.model.model_fields_set:
-            cfg.model.temperature = base.model.temperature
-        elif "temperature" in base.generation.model_fields_set:
-            cfg.model.temperature = cfg.generation.temperature
-        if "max_new_tokens" in explicit:
-            cfg.generation.max_new_tokens = max_new_tokens
-        if "top_k" in explicit:
-            cfg.generation.top_k = top_k
-        if "seed" in explicit:
-            cfg.generation.seed = seed
-        if output_dir is not None:
-            cfg.output.output_dir = output_dir
-        if diagnostics:
-            cfg.attention.enabled = True
-            cfg.semantic_field.enabled = True
-        return cfg
-
-    return RunConfig(
-        model=ModelConfig(name=model_name, backend=backend),
-        generation=GenerationConfig(
-            max_new_tokens=max_new_tokens,
-            top_k=top_k,
-            seed=seed,
-        ),
-        # output_dir=None means "write nothing" (privacy-first default); the
-        # OutputConfig still needs a placeholder path — nothing consults it
-        # unless the CLI explicitly writes reports/charts under --output-dir.
-        output=OutputConfig(output_dir=output_dir or Path("outputs")),
-        # Spread/Horizon (Instrument readings) come from an independent
-        # DistilBERT text analyzer — backend-agnostic, so it's worth the
-        # extra load only when --diagnostics will actually show the readings.
-        attention=AttentionConfig(enabled=diagnostics),
-        # Veer (semantic field) re-embeds each step's candidate cloud —
-        # enabled under --diagnostics alongside the other instrument readings.
-        semantic_field=SemanticFieldConfig(enabled=diagnostics),
-    )
-
-
-def _load_dotenv() -> None:
-    """Load .env from the repo root (walks up from cwd). Silent if python-dotenv absent."""
-    try:
-        from dotenv import load_dotenv
-        load_dotenv(override=False)  # searches cwd upward; don't clobber shell env vars
-    except ImportError:
-        pass
-
-
-def _load_model(model_name: str, backend: str):
-    _load_dotenv()
-    from hif.config import ModelConfig
-    # Ollama-style names ("gemma3:4b-it-qat") contain a colon, which is invalid
-    # in HuggingFace repo ids — auto-route to the ollama backend rather than
-    # failing with an obscure repo-id validation error.
-    if backend == "hf" and ":" in model_name:
-        err_console.print(
-            f"[yellow]{model_name!r} looks like an Ollama model tag — using "
-            "--backend ollama. Pass --backend explicitly to override.[/yellow]"
-        )
-        backend = "ollama"
-    from hif.models.factory import load_model
-    try:
-        return load_model(ModelConfig(name=model_name, backend=backend))
-    except ValueError as exc:
-        console.print(f"[red]{exc}[/red]")
-        raise typer.Exit(1)
-
-
-def _load_embedder():
-    from hif.clustering.embed import EmbeddingModel
-    from hif.config import EmbeddingConfig
-    return EmbeddingModel(EmbeddingConfig())
-
-
-# Absent-signal rendering.
-#
-# StabilityMetrics components are Optional: None means the signal is ABSENT —
-# not measurable for this run (e.g. partial-access API backends have no
-# input-side series), which is deliberately distinct from a pinned/degenerate
-# value (the multimodal_v1 H1 defect, since fixed by the absent-not-pinned
-# rule in hif/metrics/stability.py). The CLI renders absent signals as
-# "n/a", never as numbers; non-None values print normally on text and
-# multimodal runs alike.
-# Absent means "this run produced no evidence for that quantity" — a backend
-# that cannot teacher-force, an analysis stage that did not run. It is
-# deliberately distinct from a measured value and is never rendered as a
-# number.
-ABSENT_TEXT = "absent (not measurable on this backend/run)"
-
-
-def _profile_modality(p) -> str:
-    return getattr(p.prompt, "modality", "text") or "text"
-
-
-def _build_multimodal_input(image_paths: list[Path], prompt: str):
-    """Validate image files and assemble a MultimodalInput (images first, then
-    text — matching the multimodal_v1 study construction). Exit 3 on any
-    unreadable/non-image file."""
-    from hif.models.mm import InputPart, MultimodalInput
-
-    parts = []
-    for path in image_paths:
-        if not path.exists():
-            err_console.print(f"[red]--input file not found: {path}[/red]")
-            raise typer.Exit(3)
-        try:
-            from PIL import Image
-
-            with Image.open(path) as img:
-                img.verify()
-        except Exception as exc:
-            err_console.print(
-                f"[red]--input {path} is not a readable image (PNG/JPEG): {exc}[/red]"
-            )
-            raise typer.Exit(3)
-        parts.append(InputPart.from_image_path(str(path)))
-    parts.append(InputPart.from_text(prompt))
-    return MultimodalInput(parts=parts)
-
-
-def _signal_set_family(version: str) -> str:
-    """Major family of a signal-set version: "hif-v1.1" -> "hif-v1".
-
-    Versions within one family are additive supersets: comparison proceeds
-    over the intersection of measurements present in both artifacts, naming
-    each exclusion. Different families are a true mismatch.
-    """
-    m = re.match(r"^(.*-v\d+)", version or "")
-    return m.group(1) if m else (version or "")
-
-
-def _artifact_signal_set_version(data: dict) -> str:
-    """Signal-set version recorded on a profile/baseline/prior JSON dict.
-
-    Priors and baselines record `protocol_version`; hosted profiles record
-    `signal_set_version`. Artifacts predating both read as "hif-v1"."""
-    return data.get("signal_set_version") or data.get("protocol_version") or "hif-v1"
-
-
-def _signal_set_mismatch_exit(baseline_version: str, candidate_version: str) -> None:
-    """Different major signal-set families: hard error, exit 2 (mirrors the
-    platform 409). Same-family minor differences never reach here — they
-    compare over the intersection instead."""
-    err_console.print(
-        f"[red]These artifacts were scored under different signal sets "
-        f'("{baseline_version}" vs "{candidate_version}"). Re-profile them '
-        "under the same HIF Signal Set version to compare.[/red]"
-    )
-    raise typer.Exit(2)
-
-
-def _modality_mismatch_exit(baseline_modality: str, candidate_modality: str) -> None:
-    """Cross-modality comparison is a different experimental condition, not a
-    difference in the model — hard error, exit 2."""
-    err_console.print(
-        f"[red]A {baseline_modality} profile is a different experimental "
-        f"condition than a {candidate_modality} profile. Re-profile both "
-        "under the same modality to compare.[/red]"
-    )
-    raise typer.Exit(2)
-
-
-def _load_surrogate(model_id: str):
-    """Load a small open-weight model to teacher-force the prompt+output when the
-    target backend can't (hosted APIs, Ollama).
-
-    Recovers the input-side signals (Stability, Surprise, I/O Correlation, Wager)
-    the target cannot expose — the same teacher-forcing "proxy" the study harness
-    uses. Defaults to Llama 3.2 1B (ungated mirror)."""
-    from hif.config import ModelConfig
-    from hif.models.hf import HFModel
-
-    console.print(f"  [dim]Loading teacher-forcing surrogate: {model_id}…[/dim]")
-    return HFModel(ModelConfig(
-        name=model_id, backend="hf", device="auto", dtype="bfloat16",
-    ))
 
 
 def _run_single_profile(
@@ -514,16 +245,9 @@ def profile(
         "Default off: compute-and-discard.",
     ),
     trace_dir: Optional[Path] = typer.Option(
-        None,
-        "--trace-dir",
-        help="Where --trace artifacts are written (default: <output-dir>/traces, "
-        "or ./traces when no --output-dir). Passing this implies --trace.",
+        None, "--trace-dir", help=TRACE_DIR_HELP
     ),
-    charts: bool = typer.Option(
-        False,
-        "--charts",
-        help="Generate plots + the combined dashboard locally (off by default).",
-    ),
+    charts: bool = typer.Option(False, "--charts", help=CHARTS_HELP),
     diagnostics: bool = typer.Option(
         False,
         "--diagnostics",
@@ -562,12 +286,7 @@ def profile(
         "effective-config notes, and full internal logging (pipeline + HTTP chatter)",
     ),
     output_json: bool = typer.Option(False, "--json", help="Output machine-readable JSON profile"),
-    units: bool = typer.Option(
-        False, "--units",
-        help="Include a per-measurement units block in each record. Constant per "
-             "signal_set_version and identical on every record, so off by default; "
-             "`hif schema` prints the same information without running a model.",
-    ),
+    units: bool = typer.Option(False, "--units", help=UNITS_HELP),
     truncate: Optional[int] = typer.Option(
         None,
         "--truncate",
@@ -606,14 +325,7 @@ def profile(
     base_config = _load_config_file(config_file) if config_file is not None else None
     # Which options the user passed explicitly (vs. their defaults) — these
     # override --config-file values in _make_run_config.
-    # Compare by enum NAME, not identity/equality: typer >=0.26 returns its
-    # own ParameterSource enum class rather than click's, so a cross-class
-    # `!=` against click.core.ParameterSource.DEFAULT is always True.
-    explicit = frozenset(
-        name for name in ("max_new_tokens", "top_k", "seed", "mode")
-        if (src := ctx.get_parameter_source(name)) is not None
-        and getattr(src, "name", None) != "DEFAULT"
-    )
+    explicit = _explicit_generation_params(ctx)
 
     # A --config-file [generation] seed wins over the CLI *default* (an
     # explicit --seed still beats the file) — the seed used for the run,
@@ -633,9 +345,7 @@ def profile(
         )
         raise typer.Exit(3)
 
-    if mode not in ("fast", "audit"):
-        err_console.print(f"[red]--mode must be 'fast' or 'audit', got {mode!r}[/red]")
-        raise typer.Exit(3)
+    _check_mode(mode)
 
     if metric is not None and metric not in MEASUREMENT_KEYS:
         err_console.print(
@@ -665,8 +375,10 @@ def profile(
     # the chosen backend, BEFORE loading the model or running the pipeline.
     # (This is what would have caught `--metric stability --backend ollama`.)
     if metric is not None:
-        # Mirror the colon auto-route so the guard reflects the real backend.
-        _effective_backend = "ollama" if (backend == "hf" and ":" in model_name) else backend
+        # The guard has to ask about the backend the run will really use, but
+        # must not print the auto-route notice a second time — _load_model
+        # prints it when it performs the route.
+        _effective_backend = _resolve_backend(model_name, backend, warn=False)
         from hif.models.capabilities import metric_support
         # The attention rows are gated on the analysis STAGE, not the backend
         # (nothing reads the target's attention). --diagnostics turns it on;
@@ -935,296 +647,6 @@ def profile(
         console.print(f"Outputs written to: [cyan]{output_dir}/[/cyan]")
 
 
-def _print_measurements(p) -> None:
-    """The measurement set, one row per quantity, in natural units.
-
-    There is no Level column and no Normalized column, by design. A level is
-    an inference requiring a null this project never established; the
-    normaliser (log2 of the vocabulary size) put tokenizer metadata into a
-    column labelled behaviour. Absent measurements are named and left absent.
-
-    Quantities whose subject on this run is the prompt rather than the model
-    get their own table below, for the same reason the record puts them in
-    their own block: they are not measurements of this model.
-    """
-    vals = _measurements(p)
-    subjects = _run_subjects(p)
-    input_surrogate = p.findings.surrogate_model_name
-    output_surrogate = p.findings.output_distribution_surrogate_name
-
-    # No Subject column: the whole table is one subject — this model. Rows
-    # that would have said something else are not in it. The one exception a
-    # reader must not miss is `mixed`, which is marked.
-    table = Table(title=f"Measurements — {p.model.name}", show_header=True)
-    table.add_column("Quantity", style="bold", no_wrap=True)
-    table.add_column("Value", justify="right")
-    table.add_column("Unit / definition")
-
-    any_mixed = False
-    for m in MEASUREMENT_REGISTRY:
-        subject = subjects.get(m.key)
-        if subject == SUBJECT_PROMPT_ONLY:
-            continue
-        starred = (m.surrogate_group == "input" and input_surrogate) or (
-            m.surrogate_group == "output" and output_surrogate
-        )
-        marks = " *" if starred else ""
-        if subject == SUBJECT_MIXED:
-            marks += " †"
-            any_mixed = True
-        v = vals.get(m.key)
-        table.add_row(
-            f"{m.name}{marks}",
-            ABSENT_TEXT if v is None else f"{v:.6g}",
-            m.unit,
-        )
-    console.print(table)
-
-    surrogate_names = sorted({n for n in (input_surrogate, output_surrogate) if n})
-    if surrogate_names:
-        names = ", ".join(repr(n) for n in surrogate_names)
-        console.print(
-            f"[dim]* computed via surrogate model {names} (teacher-forcing "
-            f"proxy) — a measurement of the surrogate over the target's text, "
-            f"not of the target model.[/dim]"
-        )
-    if any_mixed:
-        console.print(
-            "[dim]† subject 'mixed': couples a series derived from the target "
-            "with one derived from the surrogate, so it is a claim about the "
-            "pair rather than about the target alone.[/dim]"
-        )
-    console.print(
-        f"[dim]Similarity trend slope: {p.findings.similarity_trend_slope:+.6g} "
-        "(per-step input/output cosine similarity, OLS slope).[/dim]"
-    )
-    console.print(
-        "[dim]No thresholds, levels, or verdicts: this instrument describes "
-        "behaviour, it does not decide anything. Run `hif schema` for the full "
-        "unit definitions.[/dim]"
-    )
-    console.print()
-    _print_prompt_measurements(p, subjects)
-
-
-def _print_prompt_measurements(p, subjects: dict) -> None:
-    """Prompt-only quantities, kept out of the model's measurement table.
-
-    Printed only when the run produced any. These are real measurements — of
-    the prompt, under the reference model named beside each one. They are not
-    caveated facts about the model under test; nothing the model did enters
-    them, so they cannot vary with its behaviour.
-    """
-    from hif.profile.measure import _prompt_reference_model
-
-    vals = _prompt_measurements(p)
-    if not vals:
-        return
-
-    table = Table(title="Prompt measurements — not about this model", show_header=True)
-    table.add_column("Quantity", style="bold", no_wrap=True)
-    table.add_column("Value", justify="right")
-    table.add_column("Reference model", no_wrap=True)
-    table.add_column("Unit")
-
-    for m in MEASUREMENT_REGISTRY:
-        if m.key not in vals:
-            continue
-        ref = _prompt_reference_model(m.key, p)
-        table.add_row(m.name, f"{vals[m.key]:.6g}", ref or "unknown", m.unit)
-    console.print(table)
-    console.print(
-        "[dim]Subject: prompt-only. Computed from the prompt text under the "
-        "reference model shown, with no input from "
-        f"{p.model.name} — comparable across targets for exactly that reason, "
-        "and reported here rather than as a caveated measurement of the "
-        "model. See docs/MEASUREMENTS.md § Subject.[/dim]"
-    )
-    console.print()
-
-
-def _print_output_text(p) -> None:
-    """Always shown (not just --verbose): the model's full generated output text,
-    so a Hash/Findings result can be associated with what the model actually said."""
-    output_text = "".join(s.selected_token_str for s in p.output_side.steps)
-    console.print(f"[bold]Output[/bold] ({len(p.output_side.generated_ids)} tokens)")
-    console.print(f"[dim]{output_text}[/dim]")
-    console.print()
-
-
-def _print_verbose_io(p) -> None:
-    """--verbose: additionally show the model's input text and perturbation variants
-    (the output text itself is always shown — see _print_output_text)."""
-    console.print("[bold]Input[/bold]")
-    console.print(f"[dim]{p.prompt.text}[/dim]")
-    console.print()
-
-    if p.perturbations:
-        console.print("[bold]Perturbation variants[/bold]")
-        for rec in p.perturbations:
-            for i, variant in enumerate(rec.variants):
-                js = rec.sensitivity[i].mean_js_divergence if i < len(rec.sensitivity) else None
-                js_str = f"  [cyan]JSD={js:.4f}[/cyan]" if js is not None else ""
-                console.print(f"  ({rec.generator} #{i + 1}){js_str}")
-                console.print(f"  [dim]{variant[:200]}[/dim]")
-        console.print()
-
-
-def _fmt_duration(seconds: float) -> str:
-    """Format a duration in seconds as M:SS.mmm (e.g. 0:02.417, 1:07.031)."""
-    minutes = int(seconds // 60)
-    rem = seconds - minutes * 60
-    return f"{minutes}:{rem:06.3f}"
-
-
-def _print_latency(timings: dict[str, float]) -> None:
-    """--verbose: wall-clock timings for each pipeline stage."""
-    table = Table(title="Latency", show_header=True)
-    table.add_column("Stage", style="bold")
-    table.add_column("Duration", justify="right")
-    for stage, secs in timings.items():
-        table.add_row(stage, _fmt_duration(secs))
-    console.print(table)
-    console.print()
-
-
-def _print_verbose_stats(p) -> None:
-    """--verbose: the raw numbers behind the measurement table, plus the
-    effective-config notes that change what those numbers mean."""
-    table = Table(title="Stats", show_header=True)
-    table.add_column("Stat", style="bold")
-    table.add_column("Value", justify="right")
-
-    st = p.metrics.stability
-
-    def _fmt_optional(v) -> str:
-        # None = absent — never a number.
-        return ABSENT_TEXT if v is None else f"{v:.6g}"
-
-    table.add_row("n_perturbation_variants", str(st.n_perturbations))
-    table.add_row("input_mean_entropy (bits)", f"{p.input_side.mean_entropy:.6g}")
-    table.add_row("input_mean_surprisal (bits)", f"{p.input_side.mean_surprisal:.6g}")
-    table.add_row("max_entropy log2|V| (bits)", f"{p.input_side.max_entropy:.6g}")
-    if p.metrics.distribution:
-        ents = [d.entropy_bits for d in p.metrics.distribution]
-        table.add_row("mean_output_entropy (bits)", f"{sum(ents) / len(ents):.6g}")
-        table.add_row("max_output_entropy (bits)", f"{max(ents):.6g}")
-        table.add_row("min_output_entropy (bits)", f"{min(ents):.6g}")
-    exp = getattr(p, "exposure", None)
-    if exp is not None and getattr(exp, "candidates", None):
-        table.add_row(
-            "exposure (divergent steps / analysed)",
-            f"{len(exp.exposed_steps)}/{len(exp.candidates)}",
-        )
-    table.add_row("center entropy_ratio (out/in)",
-                  _fmt_optional(p.center.entropy_ratio))
-    table.add_row("prompt/output cosine distance",
-                  f"{p.center.prompt_output_cosine_distance:.6g}")
-    table.add_row("input_tokens", str(len(p.input_side.prompt_token_ids)))
-    table.add_row("output_tokens", str(len(p.output_side.generated_ids)))
-
-    # Effective-config notes: adjustments that change what the numbers mean.
-    requested_k = p.config.generation.top_k
-    effective_k = p.output_side.top_k
-    if effective_k != requested_k:
-        table.add_row("top-K", f"{effective_k} (backend max; {requested_k} requested)")
-    else:
-        table.add_row("top-K", str(effective_k))
-    table.add_row("embedder", p.config.embedding.model_name)
-
-    console.print(table)
-    console.print()
-
-
-def _live_models_for_backend(name: str) -> tuple[list[str] | None, str | None]:
-    """Query a backend's actual model catalog right now.
-
-    Returns (models, note). `models` is None when there's no live catalog to
-    query for this backend (e.g. any HF repo id is eligible) or the query
-    couldn't run (missing dep/credential/service) — `note` explains why.
-    Static `example_models` in capabilities.py illustrate the shape of a model
-    id but drift out of date as providers ship and retire models; this hits
-    the provider directly so `--list` never goes stale.
-    """
-    import os
-
-    if name == "anthropic":
-        api_key = os.environ.get("ANTHROPIC_API_KEY")
-        if not api_key:
-            return None, "ANTHROPIC_API_KEY not set — showing examples instead."
-        try:
-            from anthropic import Anthropic
-            client = Anthropic(api_key=api_key)
-            return [m.id for m in client.models.list(limit=100)], None
-        except Exception as exc:  # noqa: BLE001
-            return None, f"couldn't reach Anthropic's models API ({exc})."
-    if name in ("openai", "openai-vlm"):
-        api_key = os.environ.get("OPENAI_API_KEY")
-        if not api_key:
-            return None, "OPENAI_API_KEY not set — showing examples instead."
-        try:
-            from openai import OpenAI
-            client = OpenAI(api_key=api_key)
-            return sorted(m.id for m in client.models.list()), None
-        except Exception as exc:  # noqa: BLE001
-            return None, f"couldn't reach OpenAI's models API ({exc})."
-    if name == "gemini":
-        api_key = os.environ.get("GEMINI_API_KEY")
-        if not api_key:
-            return None, "GEMINI_API_KEY not set (Vertex AI credentials aren't queryable this way) — showing examples instead."
-        try:
-            from google import genai
-            client = genai.Client(api_key=api_key)
-            # genai lists names as "models/gemini-2.5-flash"; strip the prefix
-            # so what's printed matches what --backend gemini/config.name expects.
-            return [(m.name or "").removeprefix("models/") for m in client.models.list()], None
-        except Exception as exc:  # noqa: BLE001
-            return None, f"couldn't reach Gemini's models API ({exc})."
-    if name == "ollama":
-        try:
-            import httpx  # type: ignore
-            host = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
-            resp = httpx.get(f"{host}/api/tags", timeout=1.5)
-            if resp.status_code != 200:
-                return None, f"ollama server not reachable at {host} — showing examples instead."
-            pulled = [m.get("name", "") for m in resp.json().get("models", [])]
-            return pulled, None if pulled else "no models pulled — run `ollama pull <model>`."
-        except Exception:  # noqa: BLE001
-            return None, "ollama server not reachable — run `ollama serve` — showing examples instead."
-    # hf / tlens / hf-vlm: any HF repo id is eligible, there's no fixed catalog.
-    return None, "any Hugging Face repo id is eligible — no fixed catalog to list."
-
-
-def _check_surrogate_candidates() -> list[tuple[str, str]]:
-    """Check each recommended --surrogate-model candidate against the live HF Hub.
-
-    Returns (model_id, status) pairs, status one of "ok", "gated", "not found".
-    A repo can be renamed, deleted, or re-gated after the fact — this is the
-    same "don't trust a static example list" check as _live_models_for_backend,
-    applied to surrogate models instead of hosted-API backends.
-    """
-    from hif.models.capabilities import SURROGATE_CANDIDATES
-
-    try:
-        from huggingface_hub import HfApi
-        from huggingface_hub.utils import GatedRepoError, RepositoryNotFoundError
-    except ImportError:
-        return [(m, "unknown (huggingface_hub not installed)") for m in SURROGATE_CANDIDATES]
-
-    api = HfApi()
-    results = []
-    for model_id in SURROGATE_CANDIDATES:
-        try:
-            info = api.model_info(model_id)
-            results.append((model_id, "gated" if info.gated else "ok"))
-        except GatedRepoError:
-            results.append((model_id, "gated"))
-        except RepositoryNotFoundError:
-            results.append((model_id, "not found"))
-        except Exception as exc:  # noqa: BLE001
-            results.append((model_id, f"error ({exc})"))
-    return results
-
 
 @app.command()
 def models(
@@ -1306,46 +728,6 @@ def models(
         )
         _print_subject_degradation(info)
     console.print()
-
-
-def _print_subject_degradation(info) -> None:
-    """Which measurements stop being about the target on this backend.
-
-    Two separate statements, and the difference matters. Some quantities are
-    prompt-only on every backend — no access tier can make them about a model.
-    Others are the target's own when the backend teacher-forces, and become
-    prompt-only when `--surrogate` reads the prompt in the target's place; on
-    those backends they leave `measurements` for `prompt_measurements`.
-    """
-    from hif.profile.registry import SUBJECT_PROMPT_ONLY as _PO
-
-    always = [
-        m.key for m in MEASUREMENT_REGISTRY
-        if m.subject == _PO and m.subject_under_surrogate is None
-    ]
-    if always:
-        console.print(
-            f"  [yellow]⊘ never about the target:[/yellow] {', '.join(always)} "
-            "[dim](prompt-only on every backend)[/dim]"
-        )
-    if info.teacher_forcing:
-        return
-    degrades = [
-        m.key for m in MEASUREMENT_REGISTRY
-        if m.subject_under_surrogate == _PO
-    ]
-    if degrades:
-        console.print(
-            f"  [yellow]⊘ prompt-only under --surrogate:[/yellow] "
-            f"{', '.join(degrades)}"
-        )
-        console.print(
-            "  [dim]This backend cannot teacher-force, so --surrogate reads "
-            "the prompt with a small local model instead. Those numbers "
-            "describe the prompt under that reference model, not this "
-            "backend's model, and are reported in `prompt_measurements` "
-            "rather than `measurements`.[/dim]"
-        )
 
 
 @app.command()
@@ -1439,17 +821,8 @@ def suite(
     output_dir: Path = typer.Option(Path("outputs"), help="Output directory"),
     max_new_tokens: int = typer.Option(64, help="Maximum new tokens to generate"),
     top_k: int = typer.Option(50, help="Top-K candidates per step"),
-    charts: bool = typer.Option(
-        False,
-        "--charts",
-        help="Generate plots + the combined dashboard locally (off by default).",
-    ),
-    units: bool = typer.Option(
-        False, "--units",
-        help="Include a per-measurement units block in each record. Constant per "
-             "signal_set_version and identical on every record, so off by default; "
-             "`hif schema` prints the same information without running a model.",
-    ),
+    charts: bool = typer.Option(False, "--charts", help=CHARTS_HELP),
+    units: bool = typer.Option(False, "--units", help=UNITS_HELP),
 ) -> None:
     """Run the full HI pipeline over the prompt suite (every regime, or one)."""
     from hif.prompts.suite import REGIMES, get_regime
@@ -1667,22 +1040,6 @@ def compare(
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_text("\n".join(lines))
         console.print(f"\nComparison written to: [cyan]{output}[/cyan]")
-
-
-def _resolve_validation_corpus(corpus: Optional[Path], seed: int, quiet: bool) -> Path:
-    """Return a corpus directory, generating the built-in known-answer corpus
-    into ~/.hif/validation-corpus/<seed>/ on first use (deterministic from
-    the seed; images are not shipped in the package)."""
-    if corpus is not None:
-        return corpus
-    from hif.validation.corpus import generate_corpus
-
-    cache_dir = Path.home() / ".hif" / "validation-corpus" / str(seed)
-    if not (cache_dir / "corpus.jsonl").exists():
-        if not quiet:
-            console.print(f"[dim]Generating validation corpus into {cache_dir}...[/dim]")
-        generate_corpus(seed=seed, out_dir=cache_dir)
-    return cache_dir
 
 
 @app.command("validate-model")
@@ -1951,19 +1308,6 @@ def schema(
 # ---------------------------------------------------------------------------
 
 
-def _batch_explicit_params(ctx: typer.Context) -> frozenset:
-    """Which generation knobs the user passed explicitly (vs. defaults) —
-    same override rule as `profile`: explicit CLI flags beat --config-file."""
-    # Compare by enum NAME, not identity/equality: typer >=0.26 returns its
-    # own ParameterSource enum class rather than click's, so a cross-class
-    # `!=` against click.core.ParameterSource.DEFAULT is always True.
-    return frozenset(
-        name for name in ("max_new_tokens", "top_k", "seed", "mode")
-        if (src := ctx.get_parameter_source(name)) is not None
-        and getattr(src, "name", None) != "DEFAULT"
-    )
-
-
 def _open_records_file(output_dir: Optional[Path]):
     """Open <output-dir>/records.jsonl for the batch stream mirror (or None)."""
     if output_dir is None:
@@ -2020,10 +1364,7 @@ def batch(
         "(raw per-step top-K distributions). Default off: compute-and-discard.",
     ),
     trace_dir: Optional[Path] = typer.Option(
-        None,
-        "--trace-dir",
-        help="Where --trace artifacts are written (default: <output-dir>/traces, "
-        "or ./traces when no --output-dir). Passing this implies --trace.",
+        None, "--trace-dir", help=TRACE_DIR_HELP
     ),
     limit: Optional[int] = typer.Option(
         None, "--limit", help="Profile only the first N workload rows."
@@ -2033,12 +1374,7 @@ def batch(
         help="Also mirror the stdout record stream to <output-dir>/records.jsonl. "
         "Default: records stream to stdout only.",
     ),
-    units: bool = typer.Option(
-        False, "--units",
-        help="Include a per-measurement units block in each record. Constant per "
-             "signal_set_version and identical on every record, so off by default; "
-             "`hif schema` prints the same information without running a model.",
-    ),
+    units: bool = typer.Option(False, "--units", help=UNITS_HELP),
 ) -> None:
     """Profile every prompt in a workload file (model loaded once).
 
@@ -2051,14 +1387,7 @@ def batch(
 
     # Backend validation FIRST — cheap, and an unknown backend should fail
     # fast (exit 3) before any model load.
-    # Ollama-style names ("gemma3:4b-it-qat") contain a colon, invalid in HF
-    # repo ids — same auto-route as `hif profile`.
-    if backend == "hf" and ":" in model_name:
-        err_console.print(
-            f"[yellow]{model_name!r} looks like an Ollama model tag — using "
-            "--backend ollama. Pass --backend explicitly to override.[/yellow]"
-        )
-        backend = "ollama"
+    backend = _resolve_backend(model_name, backend)
     from hif.models.factory import KNOWN_BACKENDS
     if backend not in KNOWN_BACKENDS:
         err_console.print(
@@ -2067,9 +1396,7 @@ def batch(
         )
         raise typer.Exit(3)
 
-    if mode not in ("fast", "audit"):
-        err_console.print(f"[red]--mode must be 'fast' or 'audit', got {mode!r}[/red]")
-        raise typer.Exit(3)
+    _check_mode(mode)
 
     # --surrogate-model implies --surrogate; --trace-dir implies --trace
     # (same conventions as `profile`).
@@ -2099,7 +1426,7 @@ def batch(
         )
         raise typer.Exit(3)
 
-    explicit = _batch_explicit_params(ctx)
+    explicit = _explicit_generation_params(ctx)
     base_config = _load_config_file(config_file) if config_file is not None else None
     config = _make_run_config(
         model_name, backend, max_new_tokens, top_k, seed, output_dir,
