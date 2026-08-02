@@ -156,6 +156,59 @@ class TestBuildProfileStructure:
         assert profile.input_side.mean_entropy > 0.0
         assert profile.input_side.volatility_score >= 0.0
 
+    def test_surrogate_run_record_keeps_prompt_only_out_of_measurements(self):
+        """End-to-end through the real builder on a mock closed backend.
+
+        The surrogate teacher-forced the PROMPT, so the quantities it produced
+        are not measurements of the target at any caveat level: the record puts
+        them in `prompt_measurements`, naming the reference model, and leaves
+        them out of `measurements`.
+        """
+        from hif.profile.signals import signals_record
+
+        api_model = _make_mock_model()
+        api_model.supports_teacher_forcing = False
+        surrogate = _make_mock_model()
+        surrogate.supports_teacher_forcing = True
+        surrogate.name = "surrogate-model"
+
+        profile = _patched_build(
+            model=api_model, prompt="hello world", regime="test",
+            config=_make_config(), embedder=_make_mock_embedder(), seed=42,
+            surrogate_model=surrogate,
+        )
+        record = signals_record(
+            profile, model_name="closed-model", backend="anthropic",
+            regime="test", seed=42, prompt="hello world",
+        )
+        block = record["prompt_measurements"]
+        assert block["subject"] == "prompt-only"
+        assert "prompt_surprisal_excess_bits" in block["values"]
+        assert block["reference_models"]["prompt_surprisal_excess_bits"] == (
+            "surrogate-model"
+        )
+        assert "prompt_surprisal_excess_bits" not in record["measurements"]
+        assert not set(block["values"]) & set(record["measurements"])
+        # The target's own output response is untouched by an input surrogate.
+        assert "perturbation_jsd_bits" in record["measurements"]
+
+    def test_full_access_run_record_has_no_prompt_block(self):
+        """The [F] path is unchanged: nothing leaves `measurements`."""
+        from hif.profile.signals import signals_record
+
+        model = _make_mock_model()
+        model.supports_teacher_forcing = True
+        profile = _patched_build(
+            model=model, prompt="hello world", regime="test",
+            config=_make_config(), embedder=_make_mock_embedder(), seed=42,
+        )
+        record = signals_record(
+            profile, model_name="open-model", backend="hf", regime="test",
+            seed=42, prompt="hello world",
+        )
+        assert "prompt_measurements" not in record
+        assert "prompt_surprisal_excess_bits" in record["measurements"]
+
     def test_surrogate_not_used_when_model_supports_teacher_forcing(self):
         model = _make_mock_model()
         model.supports_teacher_forcing = True
