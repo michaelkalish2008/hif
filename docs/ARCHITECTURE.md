@@ -54,17 +54,17 @@ The two are independent and are reported separately, because a measurement compu
 
 ## Measurements and Formulas
 
-A run reports up to twelve scalar **measurements**, each in its natural unit (bits, cosine distance, Pearson *r*, a fraction). They are defined once, in `MEASUREMENTS` / `MEASUREMENT_UNITS` in `hif/profile/signals.py`, and derived from the low-level distribution, semantic, sensitivity, and perturbation-response metrics computed at each generation step. `hif schema` prints the set; `signals_record()` emits it under `measurements`, with the matching unit strings under `units`.
+A run reports a set of scalar **measurements**, each in its natural unit (bits, cosine distance, Pearson *r*, a fraction). They are defined once, in `MEASUREMENT_REGISTRY` in `hif/profile/signals.py` — run `hif schema` for the current set — and derived from the low-level distribution, semantic, sensitivity, and perturbation-response metrics computed at each generation step. `hif schema` prints every registry row in full; `signals_record()` emits the values under `measurements`, with the matching unit strings under `units` on request.
 
 Absent measurements are omitted from the record, never pinned to a default: a backend that cannot teacher-force produces no `input_entropy_shift_bits`, and that is a different statement from a measured zero.
 
-Nothing is normalised into `[0, 1]`, inverted into a score, or bucketed into a level. Mathematical definitions, formulas, and ranges: [docs/METRICS.md](METRICS.md).
+Nothing is normalised into `[0, 1]`, inverted into a score, or bucketed into a level. Mathematical definitions, formulas, and ranges: [docs/MEASUREMENTS.md](MEASUREMENTS.md).
 
 ---
 
 ## Signal Visualizations
 
-`hif/viz/registry.py` is the single source of truth for the chart set: thirteen visualizations, one per signal, ordered aggregates-then-readings. Each entry supplies a generator and an *availability predicate*, so a signal whose backing data is missing renders an explicit "requires teacher forcing / attention capture / …" placeholder rather than a flat or zero chart.
+`hif/viz/registry.py` is the single source of truth for the chart set: one visualization per signal, ordered aggregates-then-readings. Each entry supplies a generator and an *availability predicate*, so a signal whose backing data is missing renders an explicit "requires teacher forcing / attention capture / …" placeholder rather than a flat or zero chart.
 
 **Aggregates** (`kind="aggregate"`) — Stability (rendered as the input entropy trace), Breadth, Surprise, I/O Correlation, Sensitivity, Continuity, Similarity.
 
@@ -163,7 +163,7 @@ hif/
     render_markdown.py     # render_technical(), render_public() → Markdown
 
   prompts/
-    regimes.py             # REGIMES list, Regime dataclass, eight regime definitions
+    regimes.py             # REGIMES list, Regime dataclass, the regime definitions
     suite.py               # get_regime(), suite accessors
 
   archetypes/
@@ -257,6 +257,6 @@ The full pipeline, as orchestrated by `build_profile()` in `hif/profile/builder.
 12. **Profile assembly** — `BehavioralRangeProfile` constructed from all of the above plus `ModelIdentity` and `PromptRecord` metadata, and the effective embedder recorded into the persisted config. Raw traces are attached only under the traceability opt-in.
 13. **Measurement extraction** — `hif/profile/signals.py::measurements()` reduces the profile to the flat measurement dict; `signals_record()` wraps it with provenance for `--json`, `suite`, and `batch`.
 14. **Rendering (optional)** — `render_json()` writes the full profile as JSON; `render_technical()` and `render_public()` write Markdown reports. Nothing is written unless an output directory is requested — the privacy-first default writes nothing.
-15. **Charts (optional)** — `generate_signal_plots()` renders the registry's thirteen signal charts plus a combined dashboard index.
+15. **Charts (optional)** — `generate_signal_plots()` renders the registry's signal charts plus a combined dashboard index.
 
 `SessionEngine` (`hif/engine.py`) wraps steps 1–13 for the load-once/profile-many callers (`hif profile`, `hif batch`, `hif suite`); it never writes an artifact implicitly.

@@ -4,7 +4,7 @@ move when the prompt is perturbed in content-preserving ways.
 Everything here is reported in its natural unit. Nothing is normalised by a
 vocabulary size, squashed into [0, 1], or inverted into a "score".
 
-History (kept deliberately visible — see docs/METRICS.md § Natural units):
+History (kept deliberately visible — see docs/MEASUREMENTS.md § Natural units):
 this module used to report ``input_stability = 1 - mean|delta volatility|``
 and ``output_stability = 1 - mean JSD``. Both were wrong in the same three
 ways: they saturated (pinning at exactly 1.0 and destroying resolution in the

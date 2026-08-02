@@ -59,7 +59,7 @@ hif schema     # every measurement, its unit, and its definition
 | command | what it does |
 |---|---|
 | `hif profile <model> <prompt>` | full pipeline on one (model, prompt) pair |
-| `hif suite <model>` | the same across all eight prompt regimes |
+| `hif suite <model>` | the same across every prompt regime |
 | `hif batch <workload.jsonl> <model>` | every row of a workload, model loaded once |
 | `hif compare <a.json> <b.json>` | per-measurement difference between two profiles |
 | `hif validate-model <model>` | region-sensitivity check against a known-answer suite |
@@ -94,6 +94,16 @@ Run `hif models` for the authoritative per-backend list. Measurements a backend
 cannot support are **absent from the record with a stated reason** — never zero,
 never a default, never silently borrowed from elsewhere.
 
+A fair objection: behavioural measurement of a closed model is of limited
+value. Conceded — but on a closed model the API response is the entire
+observable surface (no weights, no full logits, no attention, no teacher
+forcing), so reading that surface is not the preferred method there, it is the
+only one that exists, and the `[T-k]` and `[P]` tiers are honest inventories of
+how little it exposes. This is a stopgap by design: every measurement becomes
+exact on open weights, and if providers expose more, measurements should
+migrate up the tiers and the proxy tier should shrink toward empty. The
+limitation lives in provider opacity, not in the method.
+
 ## Scope and honesty
 
 This instrument **describes** behaviour. It does not detect drift, identify
@@ -124,14 +134,21 @@ Known limitations, stated plainly:
 
 ## Documentation
 
-- [`docs/METRICS.md`](docs/METRICS.md) — derivation scheme; each measurement as observable × functional × resolution
-- [`docs/INSTRUMENTS.md`](docs/INSTRUMENTS.md) — the per-token instrument readings
-- [`docs/PROMPT_SUITE.md`](docs/PROMPT_SUITE.md) — the eight regimes; an unlabeled dataset, not a benchmark
+- [`docs/MEASUREMENTS.md`](docs/MEASUREMENTS.md) — every measurement as observable × functional × resolution: the run-level scalars, the token-level traces, the components, and the field descriptors
+- [`docs/PROMPT_SUITE.md`](docs/PROMPT_SUITE.md) — the prompt regimes; an unlabeled dataset, not a benchmark
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — model roles, module layout, data flow
 - [`docs/PHILOSOPHY.md`](docs/PHILOSOPHY.md) — why read behaviour distributionally at all
 
 Profiles generated with this tool are published and explorable at
 [ai-interpretability.com](https://ai-interpretability.com).
+
+## Contributing
+
+The one contribution path is **adding a measurement**, and it is deliberately
+small: compute the quantity in natural units, declare its triple, check it
+passes the Significance Gate, add one row to the registry in
+`hif/profile/signals.py`, add a test. [`CONTRIBUTING.md`](CONTRIBUTING.md)
+walks through all five steps with a worked example.
 
 ## License
 

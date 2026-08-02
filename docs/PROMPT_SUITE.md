@@ -2,7 +2,7 @@
 
 ## Nature of this dataset
 
-The eight prompt regimes are a **custom, unlabeled dataset** — not a benchmark. There are no ground-truth labels, no correct answers, and no accuracy scores attached to any prompt. This is a deliberate design choice, not a gap.
+The prompt regimes are a **custom, unlabeled dataset** — not a benchmark. There are no ground-truth labels, no correct answers, and no accuracy scores attached to any prompt. This is a deliberate design choice, not a gap.
 
 The prompt suite represents a different regime entirely: **inference-mode behavioral profiling**. In production, most model traffic has no labels. Users ask questions; the model responds; no oracle scores the output. The six HIF metrics are designed precisely for this regime — they characterize how the model distributes probability mass, how stable that distribution is across rephrasings, and whether confidence tracks the structure of the input, without requiring any ground-truth answer to do so.
 
@@ -12,7 +12,7 @@ This is the primary use case for HIF in practice: continuous, label-free behavio
 
 ---
 
-The HIF prompt suite is a curated set of forty prompts organized into eight context bands — regions of the spectrum of topics users bring to a language model. Each band has a characteristic behavioral signature: the shape and movement of the model's output distribution within that band is the interpretability claim.
+The HIF prompt suite is a curated set of prompts (`hif/prompts/regimes.py` is the authoritative list) organized into context bands — regions of the spectrum of topics users bring to a language model. Each band has a characteristic behavioral signature: the shape and movement of the model's output distribution within that band is the interpretability claim.
 
 The purpose of the suite is structured sampling across the range of conditions under which language models are actually deployed: common social exchanges, regulated professional advice, open-ended creative tasks, value-laden deliberation, and adversarial edge cases. No single prompt characterizes a model; the suite characterizes the model's distributional behavior across the context bands that matter for deployment.
 
