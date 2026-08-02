@@ -75,7 +75,7 @@ Nothing is normalised into `[0, 1]`, inverted into a score, or bucketed into a l
 | Symbol | Reading | Source signal |
 |--------|---------|--------------|
 | ● | **Entropy** | Per-output-step Shannon entropy, in bits (nucleus and raw top-K both drawn) |
-| ◆ | **Shift** | Step-to-step Jensen-Shannon divergence between consecutive output distributions |
+| ◆ | **Shift** | Step-to-step Jensen-Shannon divergence between consecutive output distributions — computed in `hif/metrics/shift.py` and reported as `output_step_jsd_bits`, so the chart and the measurement are one arithmetic |
 | ▲ | **Wager** | Per-prompt-position surprisal excess over entropy — where the model committed and the actual token overrode that commitment |
 | ■ | **Spread** | Attention-row entropy per generated token, in bits — how broadly attention was distributed over prior context |
 | — | **Horizon** (labelled *Input attention entropy*) | Attention-row entropy per prompt position, in bits |

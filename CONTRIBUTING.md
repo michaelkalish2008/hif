@@ -27,10 +27,21 @@ derive, phrase around, or point at the command for.
 
 Put the computation where its inputs live: perturbation-response quantities in
 `hif/metrics/stability.py`, per-step distribution quantities in
-`hif/metrics/distribution.py`, semantic/embedding quantities in
+`hif/metrics/distribution.py`, step-to-step output divergence in
+`hif/metrics/shift.py`, semantic/embedding quantities in
 `hif/metrics/semantic.py` or an analyzer under `hif/analysis/`, prompt-side
 quantities in `hif/hourglass/input_side.py`. The function returns the value —
 or `None`.
+
+**Never in a chart module.** `hif/viz/` draws numbers; it does not define them.
+A quantity computed inside `hif/viz/signals/*.py` is reachable only by someone
+looking at a chart, and the CLI cannot report it — which is how Shift ◆ came to
+be visible on the companion website and impossible to reproduce with `hif
+profile`. The rule the fix established: the computation lives under
+`hif/metrics/` (or `hif/analysis/`) and *both* the chart and `measurements()`
+import it, so a reader's number and a record's number cannot drift apart. If
+you are about to write arithmetic in a viz module, that is the signal you are
+adding a measurement and should be here at step 1.
 
 Three hard requirements. Each was learned the expensive way, and each has a
 reason of one line:

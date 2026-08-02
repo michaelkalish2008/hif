@@ -77,7 +77,16 @@ RECORD_SCHEMA_VERSION = "record-v4"
 # hif-v2 artifact carries numbers under keys a hif-v3 artifact deliberately
 # does not, so the two are not intersectable without silently comparing a
 # fact about the target against a fact about a reference model.
-SIGNAL_SET_VERSION = "hif-v3"
+# hif-v3.1 (current): added output_step_jsd_bits (Shift ◆ — the step-to-step
+# output divergence that existed only as a chart, so a reader could see it on
+# the companion website and not reproduce it with the CLI) and its companion
+# output_step_topk_overlap_fraction. Purely additive within the hif-v3 family:
+# no key was removed, so `hif compare` still intersects across v3 and v3.1.
+# The same release made `perturbation_jsd_bits` ABSENT on selected-only
+# backends, which is an absence rule on an already-optional key rather than a
+# change of set membership — a hif-v3 artifact from such a backend carries a
+# number a hif-v3.1 run declines to produce, and declining is the correction.
+SIGNAL_SET_VERSION = "hif-v3.1"
 
 
 def profile_hash(model_name: str, prompt: str, seed: int) -> str:
@@ -437,9 +446,67 @@ MEASUREMENT_REGISTRY: tuple[Measurement, ...] = (
         subject_under_surrogate=SUBJECT_TARGET_OUTPUT_TEXT,
         label=None,  # deliberately NOT "Shift ◆": Shift is the step-to-step
         # JSD (where the mass sits); this is the step-to-step change in the
-        # amount of uncertainty. Confusing the two is the exact mistake the
-        # docs warn against.
+        # amount of uncertainty. Two steps can carry identical entropy over
+        # completely different token sets, so the two quantities are not
+        # substitutes. Shift is `output_step_jsd_bits`, the next row but one.
         surrogate_group="output",
+    ),
+    Measurement(
+        key="output_step_jsd_bits",
+        name="Output step-to-step JSD (bits)",
+        unit="bits",
+        definition=(
+            "mean Jensen-Shannon divergence between CONSECUTIVE generation "
+            "steps' output distributions, JSD(Qⱼ₋₁, Qⱼ). Bounded to [0, 1] by "
+            "definition in log base 2. Computed over the stored top-K supports "
+            "only: two consecutive steps whose top-K sets are disjoint give "
+            "exactly 1 bit however similar their true full-vocabulary "
+            "distributions are, so this number must be read together with its "
+            "companion output_step_topk_overlap_fraction, which reports how "
+            "much support the same transitions actually shared. Absent when "
+            "the run has fewer than two generation steps, and on a backend "
+            "that returns only the selected token, where consecutive steps are "
+            "point masses and the divergence is a token-disagreement indicator "
+            "rather than a divergence between distributions."
+        ),
+        observable="output distribution",
+        functional="information-theoretic",
+        resolution="per-step",
+        # The target's own distributions, and deliberately the RAW ones:
+        # hif/metrics/shift.py reads `profile.output_side.steps`, which
+        # builder.py step 13 sets from the unrecovered `output_trace`. That is
+        # the same series the Shift chart draws, which is the point — one
+        # computation feeds both, so the instrument on the website and the key
+        # in the record cannot drift. It also means no surrogate can stand in
+        # here: on a selected-only backend the quantity is ABSENT rather than
+        # proxied, hence no surrogate_group and no subject_under_surrogate.
+        subject=SUBJECT_TARGET_DISTRIBUTION,
+        label="Shift ◆",
+        surrogate_group="",
+    ),
+    Measurement(
+        key="output_step_topk_overlap_fraction",
+        name="Output step-to-step top-K overlap (fraction)",
+        unit="fraction of shared top-K token ids",
+        definition=(
+            "mean Jaccard overlap |Aⱼ₋₁ ∩ Aⱼ| / |Aⱼ₋₁ ∪ Aⱼ| between "
+            "consecutive generation steps' top-K candidate token-id sets. "
+            "Bounded to [0, 1] by construction. It is the resolution limit on "
+            "output_step_jsd_bits: at 0 the two steps share no candidate and "
+            "the divergence is pinned at its 1-bit ceiling by the truncation "
+            "alone, so a high Shift over low overlap is weaker evidence of a "
+            "vocabulary pivot than the same Shift over high overlap. Absent "
+            "under the same conditions as output_step_jsd_bits."
+        ),
+        observable="output distribution",
+        functional="information-theoretic",
+        resolution="per-step",
+        # Same series, same raw basis, same absence rules as output_step_jsd_bits.
+        subject=SUBJECT_TARGET_DISTRIBUTION,
+        label=None,  # no established shorthand — it is new with Shift's
+        # admission to the measurement set, and inventing one would imply a
+        # doc vocabulary that does not exist.
+        surrogate_group="",
     ),
     Measurement(
         key="semantic_centroid_veer_cosine",
@@ -681,6 +748,19 @@ def _all_measured_values(p) -> dict[str, float]:
         nents = [d.nucleus_entropy_bits for d in m.distribution]
         deltas = [abs(nents[i] - nents[i - 1]) for i in range(1, len(nents))]
         out["output_entropy_step_delta_bits"] = sum(deltas) / len(deltas)
+
+    # --- Shift ◆: step-to-step divergence of the output distribution, plus the
+    # top-K overlap that bounds how much of it the truncation could have
+    # manufactured. Both come from hif/metrics/shift.py, the same function the
+    # Shift chart draws — one computation, so instrument and record agree.
+    # shift_summary() returns None (never 0.0) on < 2 steps or a selected-only
+    # backend, so both keys are simply omitted there.
+    from hif.metrics.shift import shift_summary
+
+    _shift = shift_summary(getattr(p.output_side, "steps", None) or [])
+    if _shift is not None:
+        out["output_step_jsd_bits"] = _shift.mean_jsd_bits
+        out["output_step_topk_overlap_fraction"] = _shift.mean_overlap_fraction
 
     # --- semantic field (Veer): present only when semantic_field analysis ran
     sf = getattr(p, "semantic_field", None)

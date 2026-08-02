@@ -56,6 +56,38 @@ def test_current_version_has_a_wellformed_family():
     assert _signal_set_family(SIGNAL_SET_VERSION + ".1") == _signal_set_family(
         SIGNAL_SET_VERSION
     )
+    # The bump that admitted Shift ◆ (output_step_jsd_bits) and its top-K
+    # overlap companion is the concrete instance of that rule: purely additive,
+    # so a hif-v3 artifact and a hif-v3.1 one still intersect.
+    assert _signal_set_family("hif-v3.1") == _signal_set_family("hif-v3")
+
+
+def test_the_shift_bump_was_additive_within_the_family():
+    """A key added ⇒ minor bump; a key removed would have forced a major one.
+
+    Asserted as a property of the registry rather than a count: the keys the
+    Shift admission introduced must be present, and the keys a hif-v3 artifact
+    already carried must all still be registered, or the bump was mislabelled.
+    """
+    from hif.profile.signals import MEASUREMENT_KEYS
+
+    hif_v3_keys = {
+        "input_entropy_shift_bits", "input_entropy_std_bits",
+        "perturbation_jsd_bits", "io_correlation_r", "io_cosine_similarity",
+        "prompt_surprisal_excess_bits", "candidate_cluster_entropy_bits",
+        "output_entropy_bits", "output_entropy_step_delta_bits",
+        "semantic_centroid_veer_cosine", "attention_entropy_output_bits",
+        "attention_entropy_input_bits", "counterfactual_exposure_fraction",
+        "branch_pairwise_cosine_similarity",
+    }
+    assert hif_v3_keys <= set(MEASUREMENT_KEYS), (
+        "a key present in hif-v3 was dropped — that is a MAJOR bump, not "
+        f"{SIGNAL_SET_VERSION}"
+    )
+    assert {"output_step_jsd_bits", "output_step_topk_overlap_fraction"} <= set(
+        MEASUREMENT_KEYS
+    )
+    assert _signal_set_family(SIGNAL_SET_VERSION) == "hif-v3"
 
 
 def test_artifact_version_reads_both_fields_and_defaults():

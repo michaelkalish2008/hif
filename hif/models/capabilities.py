@@ -55,6 +55,7 @@ ATTENTION_METRICS = frozenset({
 OUTPUT_SIDE_METRICS = frozenset({
     "candidate_cluster_entropy_bits", "output_entropy_bits",
     "output_entropy_step_delta_bits", "perturbation_jsd_bits",
+    "output_step_jsd_bits", "output_step_topk_overlap_fraction",
     "io_cosine_similarity", "semantic_centroid_veer_cosine",
     "counterfactual_exposure_fraction",
 })
