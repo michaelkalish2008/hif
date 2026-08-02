@@ -1,0 +1,5 @@
+id: rag-qa
+description: RAG-backed question answering
+perturbation_family: paraphrase
+default_analysis_window: 512
+report_template: default

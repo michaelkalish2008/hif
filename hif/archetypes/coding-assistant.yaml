@@ -1,0 +1,5 @@
+id: coding-assistant
+description: Code generation and review
+perturbation_family: paraphrase
+default_analysis_window: adaptive
+report_template: default

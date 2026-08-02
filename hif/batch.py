@@ -1,0 +1,273 @@
+"""`hif batch` — profile a workload file against one loaded model.
+
+Loads the model/embedder (and optional teacher-forcing surrogate) exactly
+once via SessionEngine, then streams one JSON dict per workload row to the
+caller-supplied `emit` callback. Row failures never abort the stream: a
+minimal error record is emitted and the run continues.
+
+Error records carry the SAME `schema_version` as successful ones — the
+constant is imported from hif.profile.signals rather than restated here, so
+one stream can never mix two schema versions.
+
+Workload file: JSONL, one row per prompt:
+
+    {"query_id": str, "text": str, "image"?: str, "regime"?: str}
+
+`image` is a path relative to the workload file's directory (multimodal
+rows require a VLM backend). The whole file is validated up front — a
+malformed line is a caller error (WorkloadError), surfaced before any
+model is loaded.
+
+Privacy contract: same as the engine — compute-and-discard by default;
+per-row trace artifacts are written only when the run opted in (--trace).
+"""
+
+from __future__ import annotations
+
+import json
+import re
+import time
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Callable, Optional
+
+from hif.engine import SessionEngine
+from hif.profile.signals import RECORD_SCHEMA_VERSION
+
+VLM_BACKENDS = ("hf-vlm", "openai-vlm")
+
+
+def _release_local_gpu_memory() -> None:
+    """Best-effort MPS cache release between rows.
+
+    A single row's `engine.profile_one` can run many generate() calls
+    (baseline + perturbation variants + trajectory branches, each with its
+    own KV cache) with no cleanup in between. Over a multi-row batch on a
+    local MPS-backed model this accumulates — degrading row latency and,
+    once the unified-memory ceiling is hit, stalling for hours rather than
+    raising a clean OOM (observed: 4 clean rows, then a sharp per-row
+    slowdown, then an indefinite hang on row 6 of a 10-row session). No-op
+    for API backends and machines without MPS; a plain `import torch`
+    failure is also treated as a no-op (hif runs without torch when only
+    API backends are configured)."""
+    try:
+        import gc
+
+        import torch
+    except ImportError:
+        return
+    gc.collect()
+    if torch.backends.mps.is_available():
+        torch.mps.empty_cache()
+
+
+class WorkloadError(ValueError):
+    """The workload file is unusable (missing, unreadable, malformed rows).
+
+    Raised during up-front validation — before any model load — so the CLI
+    can exit 3 without paying inference cost.
+    """
+
+
+@dataclass
+class BatchRow:
+    """One validated workload row."""
+
+    query_id: str
+    text: str
+    image: Optional[Path] = None  # resolved against the workload file's dir
+    regime: Optional[str] = None  # overrides the run-level default
+
+
+def load_workload(path: Path, *, limit: Optional[int] = None) -> list[BatchRow]:
+    """Parse and validate the whole workload file up front.
+
+    Raises WorkloadError on a missing file or any malformed line — a
+    half-valid workload silently profiling a subset is worse than no run.
+    The whole file is validated before `limit` truncates it, so a malformed
+    line past the limit still surfaces.
+    """
+    path = Path(path)
+    try:
+        raw = path.read_text()
+    except FileNotFoundError:
+        raise WorkloadError(f"Workload file not found: {path}")
+    except OSError as exc:
+        raise WorkloadError(f"Could not read workload file {path}: {exc}")
+
+    rows: list[BatchRow] = []
+    for lineno, line in enumerate(raw.splitlines(), 1):
+        if not line.strip():
+            continue
+        try:
+            data = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise WorkloadError(f"{path}:{lineno}: not valid JSON: {exc}")
+        if not isinstance(data, dict):
+            raise WorkloadError(f"{path}:{lineno}: row must be a JSON object")
+        query_id = data.get("query_id")
+        text = data.get("text")
+        if not isinstance(query_id, str) or not query_id:
+            raise WorkloadError(
+                f"{path}:{lineno}: missing/invalid \"query_id\" (non-empty string required)"
+            )
+        if not isinstance(text, str) or not text:
+            raise WorkloadError(
+                f"{path}:{lineno}: missing/invalid \"text\" (non-empty string required)"
+            )
+        image = data.get("image")
+        if image is not None and (not isinstance(image, str) or not image):
+            raise WorkloadError(
+                f"{path}:{lineno}: \"image\" must be a non-empty string path"
+            )
+        if image is not None and not (path.parent / image).exists():
+            raise WorkloadError(
+                f"{path}:{lineno}: image file not found: {path.parent / image}"
+            )
+        regime = data.get("regime")
+        if regime is not None and (not isinstance(regime, str) or not regime):
+            raise WorkloadError(
+                f"{path}:{lineno}: \"regime\" must be a non-empty string"
+            )
+        rows.append(
+            BatchRow(
+                query_id=query_id,
+                text=text,
+                image=(path.parent / image) if image else None,
+                regime=regime,
+            )
+        )
+
+    if limit is not None:
+        rows = rows[: max(limit, 0)]
+    return rows
+
+
+def has_image_rows(rows: list[BatchRow]) -> bool:
+    return any(r.image is not None for r in rows)
+
+
+def sanitize_query_id(query_id: str) -> str:
+    """Filesystem-safe form of a query_id for trace artifact names."""
+    return re.sub(r"[^A-Za-z0-9._-]+", "_", query_id) or "row"
+
+
+def _error_record(query_id: str, message: str) -> dict:
+    return {
+        "schema_version": RECORD_SCHEMA_VERSION,
+        "query_id": query_id,
+        "error": message,
+    }
+
+
+def _row_input(row: BatchRow):
+    """The engine input for a row: plain text, or a MultimodalInput for
+    image rows (image first, then text — same construction as `hif
+    profile --input`).
+
+    Deliberately NOT the CLI's `_build_multimodal_input`: that helper prints
+    and raises typer.Exit, which would abort the whole stream. Here a bad
+    image raises a plain ValueError so run_batch's row isolation turns it
+    into a meaningful error record and the run continues.
+    """
+    if row.image is None:
+        return row.text
+    from hif.models.mm import InputPart, MultimodalInput
+
+    try:
+        from PIL import Image
+
+        with Image.open(row.image) as img:
+            img.verify()
+    except Exception as exc:
+        raise ValueError(
+            f"image {row.image} is not a readable image (PNG/JPEG): {exc}"
+        ) from exc
+    return MultimodalInput(
+        parts=[InputPart.from_image_path(str(row.image)), InputPart.from_text(row.text)]
+    )
+
+
+def _write_row_trace(engine, profile, row: BatchRow, *, seed: int,
+                     trace_dir: Path) -> Path:
+    """Persist the row's full profile artifact.
+
+    Named with the (sanitized) query_id AND the content hash: two workload
+    rows can share (model, prompt, seed) — the hash alone would collide and
+    silently overwrite one row's artifact with another's.
+    """
+    from hif.profile.render_json import render_json
+    from hif.profile.signals import profile_hash
+
+    h = profile_hash(engine.config.model.name, row.text, seed)
+    path = Path(trace_dir) / f"profile_{sanitize_query_id(row.query_id)}_{h}.json"
+    render_json(profile, path)
+    return path
+
+
+def run_batch(
+    config,
+    rows: list[BatchRow],
+    *,
+    default_regime: str = "batch",
+    seed: int = 42,
+    surrogate: bool = False,
+    surrogate_model_id: Optional[str] = None,
+    trace: bool = False,
+    trace_dir: Optional[Path] = None,
+    emit: Callable[[dict], None],
+    include_units: bool = False,
+    log: Callable[[str], None] = lambda _msg: None,
+) -> tuple[int, int]:
+    """Profile every row against one engine; stream records via `emit`.
+
+    Returns (n_ok, n_failed). Row errors emit a minimal error record and
+    continue — the stream never aborts mid-workload. `log` receives
+    human-readable progress lines (the CLI routes them to stderr).
+    """
+    create_kwargs = dict(surrogate=surrogate)
+    if surrogate_model_id is not None:
+        create_kwargs["surrogate_model_id"] = surrogate_model_id
+    engine = SessionEngine.create(config, **create_kwargs)
+
+    resolved_trace_dir = Path(trace_dir) if trace_dir is not None else Path("traces")
+
+    n_ok = 0
+    n_failed = 0
+    total = len(rows)
+    for i, row in enumerate(rows, 1):
+        regime = row.regime or default_regime
+        t0 = time.perf_counter()
+        try:
+            profile = engine.profile_one(_row_input(row), regime=regime, seed=seed)
+            elapsed = time.perf_counter() - t0
+
+            trace_path: Optional[Path] = None
+            if trace:
+                trace_path = _write_row_trace(
+                    engine, profile, row, seed=seed, trace_dir=resolved_trace_dir
+                )
+
+            record = engine.record_for(
+                profile,
+                prompt=row.text,
+                regime=regime,
+                seed=seed,
+                latency={"pipeline": round(elapsed, 3)},
+                trace_path=str(trace_path) if trace_path is not None else None,
+                extras={"query_id": row.query_id},
+                include_units=include_units,
+            )
+            emit(record)
+            n_ok += 1
+            log(f"[{i}/{total}] {row.query_id} ok ({elapsed:.1f}s)")
+        except Exception as exc:  # noqa: BLE001 — row isolation is the contract
+            elapsed = time.perf_counter() - t0
+            message = str(exc) or exc.__class__.__name__
+            emit(_error_record(row.query_id, message))
+            n_failed += 1
+            log(f"[{i}/{total}] {row.query_id} ERROR ({elapsed:.1f}s): {message}")
+        finally:
+            _release_local_gpu_memory()
+
+    return n_ok, n_failed

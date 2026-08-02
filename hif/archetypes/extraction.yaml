@@ -1,0 +1,5 @@
+id: extraction
+description: Structured data extraction
+perturbation_family: paraphrase
+default_analysis_window: 512
+report_template: default
