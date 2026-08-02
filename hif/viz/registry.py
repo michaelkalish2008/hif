@@ -18,7 +18,22 @@ Relation to the measurement registry (hif/profile/registry.py)
 -------------------------------------------------------------
 Signal ids are chart names, not measurement keys — the two namespaces are
 deliberately different (a chart may draw a trace whose run-level summary is
-the measurement). The bridge is explicit: `measurement_key` on each row names
+the measurement). Ids are also filenames: generated charts are written under
+them and consumers link to those paths, so an id is renamed only with a
+corresponding migration of the artifacts. A `label` is display text and
+carries no such cost.
+
+Labels name the quantity drawn, in the terms it is computed in — the same
+convention as `name` on a measurement row, and for the same reason
+(SIGNAL_SET_VERSION history, hif-v3.3: a coined shorthand is free to drift
+off the quantity while the key stays pinned to it). Three charts do not draw
+a measurement directly and say so in their label: `stability` draws the
+per-position input entropy trace behind the aggregate, `surprise` draws the
+same per-position series `wager` summarises, and `breadth` draws effective
+support size, which is not in the measurement set at all. The GLYPHs are
+unchanged and stay what they always were — legend markers, not names.
+
+The bridge is explicit: `measurement_key` on each row names
 the measurement the chart draws (None for a chart, like breadth, that draws a
 component quantity which is deliberately NOT in the measurement set), and
 `family` is copied from that measurement's `functional` so the two registries
@@ -64,25 +79,25 @@ _SPEC = [
     # aggregate is a single scalar with no informative direct chart; the trace
     # is the series behind it, which is why docs/ARCHITECTURE.md describes it
     # as "Stability (rendered as the input entropy trace)".
-    ("stability",      "Stability",       "aggregate", stability,      "input_entropy_std_bits"),
+    ("stability",      "Input entropy trace",                "aggregate", stability,      "input_entropy_std_bits"),
     # Breadth draws per-step effective support size — deliberately NOT a
     # measurement (ESS is entropy in different units; docs/MEASUREMENTS.md
     # excludes it), so it maps to no key.
-    ("breadth",        "Breadth",         "aggregate", breadth,        None),
+    ("breadth",        "Effective support size",             "aggregate", breadth,        None),
     # Surprise draws the same per-position excess-surprisal series as the
-    # Wager reading; wager is the designated chart for the measurement, so
+    # wager reading; wager is the designated chart for the measurement, so
     # only wager carries the key (one measurement must resolve to one chart).
-    ("surprise",       "Surprise",        "aggregate", surprise,       None),
-    ("io_correlation", "I/O Correlation", "aggregate", io_correlation, "io_correlation_r"),
-    ("sensitivity",    "Sensitivity",     "aggregate", sensitivity,    "perturbation_jsd_bits"),
-    ("continuity",     "Continuity",      "aggregate", continuity,     "branch_pairwise_cosine_similarity"),
-    ("similarity",     "Similarity",      "aggregate", similarity,     "io_cosine_similarity"),
-    ("entropy",        "Entropy",         "reading",   entropy,        "output_entropy_bits"),
-    ("shift",          "Shift",           "reading",   shift,          "output_step_jsd_bits"),
-    ("wager",          "Wager",           "reading",   wager,          "prompt_surprisal_excess_bits"),
-    ("spread",         "Spread",          "reading",   spread,         "attention_entropy_output_bits"),
-    ("horizon",        "Horizon",         "reading",   horizon,        "attention_entropy_input_bits"),
-    ("exposure",       "Exposure",        "reading",   exposure,       "counterfactual_exposure_fraction"),
+    ("surprise",       "Prompt surprisal excess (trace)",    "aggregate", surprise,       None),
+    ("io_correlation", "Input/output correlation (r)",       "aggregate", io_correlation, "io_correlation_r"),
+    ("sensitivity",    "Perturbation JSD (bits)",            "aggregate", sensitivity,    "perturbation_jsd_bits"),
+    ("continuity",     "Branch pairwise cosine similarity",  "aggregate", continuity,     "branch_pairwise_cosine_similarity"),
+    ("similarity",     "Input/output cosine similarity",     "aggregate", similarity,     "io_cosine_similarity"),
+    ("entropy",        "Output entropy (bits)",              "reading",   entropy,        "output_entropy_bits"),
+    ("shift",          "Output step-to-step JSD (bits)",     "reading",   shift,          "output_step_jsd_bits"),
+    ("wager",          "Prompt surprisal excess (bits)",     "reading",   wager,          "prompt_surprisal_excess_bits"),
+    ("spread",         "Output attention-row entropy (bits)","reading",   spread,         "attention_entropy_output_bits"),
+    ("horizon",        "Input attention-row entropy (bits)", "reading",   horizon,        "attention_entropy_input_bits"),
+    ("exposure",       "Counterfactual exposure (fraction)", "reading",   exposure,       "counterfactual_exposure_fraction"),
 ]
 
 SIGNALS: list[SignalViz] = [
