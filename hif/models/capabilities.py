@@ -70,7 +70,7 @@ BACKENDS: dict[str, BackendInfo] = {
         teacher_forcing=True, attention=True, logprobs="full",
         example_models=["gpt2", "distilgpt2", "gpt2-medium",
                         "EleutherAI/pythia-160m", "EleutherAI/gpt-neo-125M"],
-        notes="Full fidelity — all 13 signals. Best for a complete profile.",
+        notes="Full fidelity — every measurement. Best for a complete profile.",
     ),
     "tlens": BackendInfo(
         name="tlens", kind="local-open",

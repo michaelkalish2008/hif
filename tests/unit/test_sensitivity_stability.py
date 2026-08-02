@@ -309,6 +309,11 @@ class TestComputeStabilityMetrics:
         # mean(|1.0|, |6.0|, |1.0|) — a bits quantity well above 1.0, proving
         # nothing squashes it into [0, 1].
         assert result.input_entropy_shift_bits == pytest.approx(8.0 / 3.0)
+        # std(|1.0|, |6.0|, |1.0|, ddof=1) — the spread of the same shifts,
+        # also in raw bits and also above 1.0.
+        assert result.input_entropy_std_bits == pytest.approx(
+            float(np.std([1.0, 6.0, 1.0], ddof=1))
+        )
         assert result.perturbation_jsd_bits == pytest.approx(0.35 / 3.0)
         assert 0.0 <= result.perturbation_jsd_bits <= 1.0
 

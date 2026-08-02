@@ -56,7 +56,7 @@ from typing import Optional
 # record-v3 (current): the per-record `units` block is opt-in (`--units`)
 # rather than always present — it is identical for every record of a given
 # schema_version and `hif schema` prints it on demand. The field-descriptor
-# blocks are renamed to the names docs/METRICS.md Part 3 gives them:
+# blocks are renamed to the names docs/MEASUREMENTS.md Part 4 gives them:
 # `field` -> `perturbation_field`, `branch_field` -> `trajectory_branch_field`.
 RECORD_SCHEMA_VERSION = "record-v3"
 
@@ -76,85 +76,306 @@ def profile_hash(model_name: str, prompt: str, seed: int) -> str:
 
 
 # ---------------------------------------------------------------------------
-# The measurement set
+# The measurement registry
 # ---------------------------------------------------------------------------
 
-# (key, human label, what it needs, surrogate group)
+# Every measurement is a triple — observable × functional × resolution — plus
+# the contract details a consumer needs (key, unit, definition) and the
+# surrogate caveat. This registry is the single source of truth: the CLI
+# table, `hif schema`, the Markdown renderers, and the record path all derive
+# from it. Adding a measurement means adding one row here (see
+# CONTRIBUTING.md).
+
+# Resolution — the granularity of the underlying series a scalar summarises
+# within one run. The record always carries the run-level scalar; resolution
+# says what that scalar is a summary OF, and therefore whether a token-level
+# trace exists behind the number (docs/MEASUREMENTS.md Part 2):
 #
-# `surrogate group` names which surrogate caveat applies when the target model
-# could not produce the quantity itself: "input" readings inherit
-# findings.surrogate_model_name's proxy caveat, "output" readings inherit
-# output_distribution_surrogate_name's.
+#   "per-position"  one sample per prompt/context position — the trace behind
+#                   the scalar is indexed by token position.
+#   "per-step"      one sample per generation step — the trace is indexed by
+#                   output step.
+#   "aggregate"     the quantity exists only at whole-run level (across
+#                   perturbation variants, trajectory branches, or the run's
+#                   endpoints); there is no per-token trace to restore.
+RESOLUTIONS: tuple[str, ...] = ("aggregate", "per-step", "per-position")
+
+# Functional — which family of functional produces the number.
+# "information-theoretic" reads the shape of a distribution (entropy,
+# surprisal, JSD, trace correlation); "geometric" reads where the mass sits
+# in embedding space (distance, cluster structure).
+FUNCTIONALS: tuple[str, ...] = ("information-theoretic", "geometric")
+
+
+@dataclass(frozen=True)
+class Measurement:
+    """One registry row: a measurement's triple and its record contract.
+
+    key             record/measurement key — descriptive and unit-suffixed;
+                    this is the stable machine name and never changes.
+    name            human-readable quantity name, shown in CLI and report
+                    tables.
+    unit            the natural unit ("bits", "dimensionless", "cosine
+                    distance", "fraction of analysed generation steps").
+    definition      what the quantity is, in one or two sentences, including
+                    its bound (or that it is unbounded) and any absence rule.
+    observable      what the quantity is computed from — what the forward
+                    pass (or the encoder over its text) exposes.
+    functional      one of FUNCTIONALS.
+    resolution      one of RESOLUTIONS (see the comment above).
+    label           optional canonical shorthand from the docs ("Wager ▲",
+                    "Continuity"). None when no established shorthand exists —
+                    a made-up name would be worse than none.
+    surrogate_group which surrogate caveat applies when the target model could
+                    not produce the quantity itself: "input" measurements
+                    inherit findings.surrogate_model_name's proxy caveat,
+                    "output" measurements inherit
+                    output_distribution_surrogate_name's, "" inherits neither.
+    """
+
+    key: str
+    name: str
+    unit: str
+    definition: str
+    observable: str
+    functional: str
+    resolution: str
+    label: Optional[str] = None
+    surrogate_group: str = ""
+
+
+MEASUREMENT_REGISTRY: tuple[Measurement, ...] = (
+    Measurement(
+        key="input_entropy_shift_bits",
+        name="Input entropy shift (bits)",
+        unit="bits",
+        definition=(
+            "mean |mean input-token entropy(variant) − mean input-token "
+            "entropy(baseline)| over perturbation variants. Unbounded above."
+        ),
+        observable="input distribution",
+        functional="information-theoretic",
+        resolution="aggregate",
+        label=None,  # the historical "Input Stability" named the removed
+        # inverted score (1 − x), not this quantity — carrying that name
+        # forward would re-attach the score reading.
+        surrogate_group="input",
+    ),
+    Measurement(
+        key="input_entropy_std_bits",
+        name="Input entropy shift spread (bits)",
+        unit="bits",
+        definition=(
+            "standard deviation (ddof=1) of the per-variant input entropy "
+            "shifts. The spread of the model's entropy response across "
+            "perturbations. Unbounded above; absent when fewer than two "
+            "variants exist."
+        ),
+        observable="input distribution",
+        functional="information-theoretic",
+        resolution="aggregate",
+        label="Stability",  # the natural-unit form of the Stability
+        # aggregate (see SIGNAL_SET_VERSION history above).
+        surrogate_group="input",
+    ),
+    Measurement(
+        key="perturbation_jsd_bits",
+        name="Perturbation JSD (bits)",
+        unit="bits",
+        definition=(
+            "mean Jensen-Shannon divergence between the baseline output "
+            "distribution and each perturbed variant's. Bounded to [0, 1] by "
+            "definition in log base 2."
+        ),
+        observable="output distribution",
+        functional="information-theoretic",
+        resolution="aggregate",
+        label="Sensitivity",  # the quantity the historical `sensitivity`
+        # score was computed from (mean JS divergence per variant).
+        surrogate_group="output",
+    ),
+    Measurement(
+        key="io_correlation_r",
+        name="Input/output correlation (r)",
+        unit="dimensionless",
+        definition=(
+            "Pearson r between per-variant input entropy shift and "
+            "per-variant JSD. Bounded to [-1, 1] by definition; reported "
+            "signed."
+        ),
+        observable="input × output distributions",
+        functional="information-theoretic",
+        resolution="aggregate",
+        label=None,  # no established shorthand — the docs name it only by
+        # its zone ("Center").
+        surrogate_group="input",
+    ),
+    Measurement(
+        key="io_cosine_similarity",
+        name="Input/output cosine similarity",
+        unit="dimensionless",
+        definition=(
+            "cosine similarity between the input embedding and the output "
+            "embedding. Bounded to [-1, 1] by definition."
+        ),
+        observable="input/output text embeddings",
+        functional="geometric",
+        resolution="aggregate",
+        label=None,  # no established shorthand (`io_sim` is a field name,
+        # not a doc name).
+    ),
+    Measurement(
+        key="prompt_surprisal_excess_bits",
+        name="Prompt surprisal excess (bits)",
+        unit="bits",
+        definition=(
+            "mean max(0, surprisal(token) − H(distribution)) over "
+            "teacher-forced prompt positions. Unbounded above."
+        ),
+        observable="input distribution",
+        functional="information-theoretic",
+        resolution="per-position",
+        label="Wager ▲",
+        surrogate_group="input",
+    ),
+    Measurement(
+        key="candidate_cluster_entropy_bits",
+        name="Candidate cluster entropy (bits)",
+        unit="bits",
+        definition=(
+            "mean Shannon entropy of the semantic-cluster mass distribution "
+            "over each generation step's top-K candidate cloud. Unbounded "
+            "above (bounded in practice by log2 of the cluster count)."
+        ),
+        observable="output distribution",
+        functional="geometric",
+        resolution="per-step",
+        label=None,  # "Cluster Entropy" in the docs names the per-step
+        # component, not a canonical instrument shorthand.
+        surrogate_group="output",
+    ),
+    Measurement(
+        key="output_entropy_bits",
+        name="Output entropy (bits)",
+        unit="bits",
+        definition=(
+            "mean Shannon entropy of the per-step top-K output distribution. "
+            "A lower bound on full-vocabulary entropy when the distribution "
+            "is truncated."
+        ),
+        observable="output distribution",
+        functional="information-theoretic",
+        resolution="per-step",
+        label="Entropy ●",
+        surrogate_group="output",
+    ),
+    Measurement(
+        key="output_entropy_step_delta_bits",
+        name="Output entropy step delta (bits)",
+        unit="bits",
+        definition=(
+            "mean |H(step i) − H(step i−1)| over the nucleus (95% mass, "
+            "renormalised) entropy trace. Unbounded above."
+        ),
+        observable="output distribution",
+        functional="information-theoretic",
+        resolution="per-step",
+        label=None,  # deliberately NOT "Shift ◆": Shift is the step-to-step
+        # JSD (where the mass sits); this is the step-to-step change in the
+        # amount of uncertainty. Confusing the two is the exact mistake the
+        # docs warn against.
+        surrogate_group="output",
+    ),
+    Measurement(
+        key="semantic_centroid_veer_cosine",
+        name="Semantic centroid veer (cosine distance)",
+        unit="cosine distance",
+        definition=(
+            "mean step-to-step displacement of the candidate cloud's "
+            "semantic centroid in embedding space. Bounded to [0, 2] by "
+            "definition."
+        ),
+        observable="output distribution",
+        functional="geometric",
+        resolution="per-step",
+        label="Veer ◈",
+    ),
+    Measurement(
+        key="attention_entropy_output_bits",
+        name="Output attention-row entropy (bits)",
+        unit="bits",
+        definition=(
+            "mean Shannon entropy of the causal-prefix attention row at each "
+            "output position. Grows with prefix length; not divided by "
+            "log2(prefix length)."
+        ),
+        observable="attention row",
+        functional="information-theoretic",
+        resolution="per-position",
+        label="Spread ■",
+    ),
+    Measurement(
+        key="attention_entropy_input_bits",
+        name="Input attention-row entropy (bits)",
+        unit="bits",
+        definition=(
+            "mean Shannon entropy of the causal-prefix attention row at each "
+            "input position. Grows with prefix length; not divided by "
+            "log2(prefix length)."
+        ),
+        observable="attention row",
+        functional="information-theoretic",
+        resolution="per-position",
+        label="Horizon",  # no glyph: the ▼ symbol is not used in the code.
+    ),
+    Measurement(
+        key="counterfactual_exposure_fraction",
+        name="Counterfactual exposure (fraction of steps)",
+        unit="fraction of analysed generation steps",
+        definition=(
+            "steps where a probabilistically accessible alternative token "
+            "would have pulled the response toward a different meaning. A "
+            "proportion, bounded to [0, 1] by construction."
+        ),
+        observable="output distribution",
+        functional="geometric",
+        resolution="per-step",
+        label="Exposure ◇",
+    ),
+    Measurement(
+        key="branch_pairwise_cosine_similarity",
+        name="Branch pairwise cosine similarity",
+        unit="dimensionless",
+        definition=(
+            "mean pairwise cosine similarity between trajectory branch "
+            "embeddings. High = branches converge semantically; low = they "
+            "scatter. Bounded to [-1, 1] by definition. This is the "
+            "natural-unit form of the Continuity aggregate, reported "
+            "directly rather than as a derived score."
+        ),
+        observable="trajectory branch embeddings",
+        functional="geometric",
+        resolution="aggregate",
+        label="Continuity",
+    ),
+)
+
+
+# ---------------------------------------------------------------------------
+# Derived views — thin projections of the registry, kept for callers that
+# only need one facet. The registry above is the source of truth.
+# ---------------------------------------------------------------------------
+
+# (key, name, surrogate group) — the historical tuple shape.
 MEASUREMENTS: list[tuple[str, str, str]] = [
-    ("input_entropy_shift_bits", "Input entropy shift (bits)", "input"),
-    ("input_entropy_std_bits", "Input entropy shift spread (bits)", "input"),
-    ("perturbation_jsd_bits", "Perturbation JSD (bits)", "output"),
-    ("io_correlation_r", "Input/output correlation (r)", "input"),
-    ("io_cosine_similarity", "Input/output cosine similarity", ""),
-    ("prompt_surprisal_excess_bits", "Prompt surprisal excess (bits)", "input"),
-    ("candidate_cluster_entropy_bits", "Candidate cluster entropy (bits)", "output"),
-    ("output_entropy_bits", "Output entropy (bits)", "output"),
-    ("output_entropy_step_delta_bits", "Output entropy step delta (bits)", "output"),
-    ("semantic_centroid_veer_cosine", "Semantic centroid veer (cosine distance)", ""),
-    ("attention_entropy_output_bits", "Output attention-row entropy (bits)", ""),
-    ("attention_entropy_input_bits", "Input attention-row entropy (bits)", ""),
-    ("counterfactual_exposure_fraction", "Counterfactual exposure (fraction of steps)", ""),
-    ("branch_pairwise_cosine_similarity", "Branch pairwise cosine similarity", ""),
+    (m.key, m.name, m.surrogate_group) for m in MEASUREMENT_REGISTRY
 ]
 
-MEASUREMENT_KEYS: tuple[str, ...] = tuple(k for k, _l, _s in MEASUREMENTS)
+MEASUREMENT_KEYS: tuple[str, ...] = tuple(m.key for m in MEASUREMENT_REGISTRY)
 
-# What each measurement is, in one line. Emitted by `hif schema` and used for
-# the CLI table's unit column, so the unit is never ambiguous at the point of
-# use.
+# "unit — definition" per key, the historical one-line form.
 MEASUREMENT_UNITS: dict[str, str] = {
-    "input_entropy_shift_bits":
-        "bits — mean |mean input-token entropy(variant) − mean input-token entropy(baseline)| "
-        "over perturbation variants. Unbounded above.",
-    "input_entropy_std_bits":
-        "bits — standard deviation (ddof=1) of the per-variant input entropy shifts. The "
-        "spread of the model's entropy response across perturbations. Unbounded above; "
-        "absent when fewer than two variants exist.",
-    "perturbation_jsd_bits":
-        "bits — mean Jensen-Shannon divergence between the baseline output distribution and "
-        "each perturbed variant's. Bounded to [0, 1] by definition in log base 2.",
-    "io_correlation_r":
-        "dimensionless — Pearson r between per-variant input entropy shift and per-variant "
-        "JSD. Bounded to [-1, 1] by definition; reported signed.",
-    "io_cosine_similarity":
-        "dimensionless — cosine similarity between the input embedding and the output "
-        "embedding. Bounded to [-1, 1] by definition.",
-    "prompt_surprisal_excess_bits":
-        "bits — mean max(0, surprisal(token) − H(distribution)) over teacher-forced prompt "
-        "positions. Unbounded above.",
-    "candidate_cluster_entropy_bits":
-        "bits — mean Shannon entropy of the semantic-cluster mass distribution over each "
-        "generation step's top-K candidate cloud. Unbounded above (bounded in practice by "
-        "log2 of the cluster count).",
-    "output_entropy_bits":
-        "bits — mean Shannon entropy of the per-step top-K output distribution. A lower "
-        "bound on full-vocabulary entropy when the distribution is truncated.",
-    "output_entropy_step_delta_bits":
-        "bits — mean |H(step i) − H(step i−1)| over the nucleus (95% mass, renormalised) "
-        "entropy trace. Unbounded above.",
-    "semantic_centroid_veer_cosine":
-        "cosine distance — mean step-to-step displacement of the candidate cloud's semantic "
-        "centroid in embedding space. Bounded to [0, 2] by definition.",
-    "attention_entropy_output_bits":
-        "bits — mean Shannon entropy of the causal-prefix attention row at each output "
-        "position. Grows with prefix length; not divided by log2(prefix length).",
-    "attention_entropy_input_bits":
-        "bits — mean Shannon entropy of the causal-prefix attention row at each input "
-        "position. Grows with prefix length; not divided by log2(prefix length).",
-    "branch_pairwise_cosine_similarity":
-        "dimensionless — mean pairwise cosine similarity between trajectory branch "
-        "embeddings. High = branches converge semantically; low = they scatter. Bounded "
-        "to [-1, 1] by definition. This is the natural-unit form of the Continuity "
-        "aggregate, reported directly rather than as a derived score.",
-    "counterfactual_exposure_fraction":
-        "fraction of analysed generation steps — steps where a probabilistically accessible "
-        "alternative token would have pulled the response toward a different meaning. "
-        "A proportion, bounded to [0, 1] by construction.",
+    m.key: f"{m.unit} — {m.definition}" for m in MEASUREMENT_REGISTRY
 }
 
 
@@ -336,10 +557,11 @@ def signals_record(
         "seed": seed,
         "modality": getattr(profile.prompt, "modality", "text") or "text",
         # Every measurement in its natural unit. Absent measurements are
-        # omitted. See MEASUREMENT_UNITS for what each unit means.
+        # omitted. See MEASUREMENT_REGISTRY for what each quantity and unit
+        # means.
         "measurements": measurements(profile),
 
-        # Part 3 of docs/METRICS.md — behaviour as a region rather than a
+        # Part 4 of docs/MEASUREMENTS.md — behaviour as a region rather than a
         # point. Named as the docs name them.
         "perturbation_field": field_scalars(profile),
         "trajectory_branch_field": branch_field_scalars(profile),

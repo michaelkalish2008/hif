@@ -20,9 +20,10 @@ from rich.table import Table
 # tables and the SessionEngine record path report identical numbers.
 from hif.profile.signals import (
     MEASUREMENT_KEYS,
+    MEASUREMENT_REGISTRY,
     RECORD_SCHEMA_VERSION as SIGNAL_RECORD_VERSION,
     MEASUREMENT_UNITS,
-    MEASUREMENTS as _MEASUREMENTS,
+    RESOLUTIONS,
     SIGNAL_SET_VERSION,
     measurements as _measurements,
     profile_hash as _profile_hash,
@@ -877,16 +878,16 @@ def _print_measurements(p) -> None:
     table.add_column("Value", justify="right")
     table.add_column("Unit / definition")
 
-    for key, label, surrogate_group in _MEASUREMENTS:
-        starred = (surrogate_group == "input" and input_surrogate) or (
-            surrogate_group == "output" and output_surrogate
+    for m in MEASUREMENT_REGISTRY:
+        starred = (m.surrogate_group == "input" and input_surrogate) or (
+            m.surrogate_group == "output" and output_surrogate
         )
         star = " *" if starred else ""
-        v = vals.get(key)
+        v = vals.get(m.key)
         table.add_row(
-            f"{label}{star}",
+            f"{m.name}{star}",
             ABSENT_TEXT if v is None else f"{v:.6g}",
-            MEASUREMENT_UNITS[key].split(" — ")[0],
+            m.unit,
         )
     console.print(table)
 
@@ -1271,7 +1272,7 @@ def suite(
              "`hif schema` prints the same information without running a model.",
     ),
 ) -> None:
-    """Run the full HI pipeline over the prompt suite (all eight regimes or one)."""
+    """Run the full HI pipeline over the prompt suite (every regime, or one)."""
     from hif.prompts.suite import REGIMES, get_regime
 
     if regime is not None:
@@ -1683,11 +1684,14 @@ def schema(
         help="Emit the machine-readable schema document (default) or a human table.",
     ),
 ) -> None:
-    """Print the measurement set: every key, its unit, and its definition.
+    """Print the measurement registry: every key with its full row.
 
-    This is the contract for `hif profile --json`, `hif suite` and `hif batch`
-    records. Every measurement is in natural units; there is no normalised
-    variant and no level.
+    Each measurement is emitted as its complete registry row — key, name,
+    label, unit, definition, and its triple (observable, functional,
+    resolution). This is the contract for `hif profile --json`, `hif suite`
+    and `hif batch` records, and the machine-readable mirror of
+    docs/MEASUREMENTS.md. Every measurement is in natural units; there is no
+    normalised variant and no level.
     """
     if output_json:
         print(json.dumps({
@@ -1702,18 +1706,43 @@ def schema(
                         "go to stderr. A failed row is still a record, carrying "
                         "an \"error\" key instead of \"measurements\".",
             },
+            # What the resolution field means: the granularity of the
+            # underlying series the run-level scalar summarises. Rows with a
+            # per-step / per-position resolution have a token-level trace
+            # behind the number; "aggregate" rows exist only at run level.
+            "resolutions": {
+                "aggregate": "the quantity exists only at whole-run level "
+                             "(across perturbation variants, trajectory "
+                             "branches, or the run's endpoints)",
+                "per-step": "one sample per generation step; the scalar "
+                            "summarises a per-step trace",
+                "per-position": "one sample per prompt/context position; the "
+                                "scalar summarises a per-position trace",
+            },
             "measurements": {
-                key: {"label": label, "unit_and_definition": MEASUREMENT_UNITS[key]}
-                for key, label, _s in _MEASUREMENTS
+                m.key: {
+                    "name": m.name,
+                    "label": m.label,
+                    "unit": m.unit,
+                    "definition": m.definition,
+                    "observable": m.observable,
+                    "functional": m.functional,
+                    "resolution": m.resolution,
+                    "surrogate_group": m.surrogate_group or None,
+                }
+                for m in MEASUREMENT_REGISTRY
             },
         }, indent=2))
         return
 
     table = Table(title="hif measurement set", show_header=True)
     table.add_column("Key", style="bold", no_wrap=True)
-    table.add_column("Unit and definition")
-    for key, _label, _sg in _MEASUREMENTS:
-        table.add_row(key, MEASUREMENT_UNITS[key])
+    table.add_column("Label")
+    table.add_column("Unit")
+    table.add_column("Resolution")
+    table.add_column("Definition")
+    for m in MEASUREMENT_REGISTRY:
+        table.add_row(m.key, m.label or "—", m.unit, m.resolution, m.definition)
     console.print(table)
 
 

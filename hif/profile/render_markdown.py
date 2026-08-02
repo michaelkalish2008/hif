@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from hif.profile.schema import BehavioralRangeProfile
-from hif.profile.signals import MEASUREMENT_UNITS, MEASUREMENTS, measurements
+from hif.profile.signals import MEASUREMENT_REGISTRY, measurements
 
 
 # ---------------------------------------------------------------------------
@@ -64,11 +64,11 @@ def render_technical(profile: BehavioralRangeProfile, output_path: Path) -> None
     star = " *" if profile.findings.surrogate_model_name is not None else ""
     a("| Measurement | Value | Unit / definition |")
     a("|---|---|---|")
-    for key, label, sg in MEASUREMENTS:
-        v = vals.get(key)
-        mark = star if sg else ""
+    for m in MEASUREMENT_REGISTRY:
+        v = vals.get(m.key)
+        mark = star if m.surrogate_group else ""
         shown = "absent (not measurable on this run)" if v is None else f"{v:.6g}"
-        a(f"| {label}{mark} | {shown} | {MEASUREMENT_UNITS[key]} |")
+        a(f"| {m.name}{mark} | {shown} | {m.unit} — {m.definition} |")
     a("")
     a(f"Similarity trend slope: {profile.findings.similarity_trend_slope:+.6g} "
       "(OLS slope of per-step input/output cosine similarity).")
@@ -238,10 +238,10 @@ def render_public(profile: BehavioralRangeProfile, output_path: Path) -> None:
     a("")
     a("| Measurement | Value | Unit |")
     a("|---|---|---|")
-    for key, label, _sg in MEASUREMENTS:
-        v = vals.get(key)
+    for m in MEASUREMENT_REGISTRY:
+        v = vals.get(m.key)
         shown = "absent" if v is None else f"{v:.6g}"
-        a(f"| {label} | {shown} | {MEASUREMENT_UNITS[key].split(' — ')[0]} |")
+        a(f"| {m.name} | {shown} | {m.unit} |")
     a("")
     a("Absent means this run produced no evidence for that quantity — the")
     a("backend could not teacher-force, or an optional analysis stage did not")

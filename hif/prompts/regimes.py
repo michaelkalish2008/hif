@@ -1,4 +1,4 @@
-"""Regime definitions: metadata and prompt groupings for each of the eight BRI evaluation regimes."""
+"""Regime definitions: metadata and prompt groupings for each BRI evaluation regime (REGIMES below is the authoritative list)."""
 
 from __future__ import annotations
 
