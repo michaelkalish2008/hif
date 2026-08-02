@@ -40,12 +40,16 @@ def test_signal_set_family_extracts_major():
 
 
 def test_current_version_has_a_wellformed_family():
-    # The current set is hif-v2: the normalized/levels removal was a breaking
-    # change, so it is deliberately NOT in the hif-v1 family.
+    # The current set is hif-v3: moving the prompt-only quantities out of
+    # `measurements` REMOVES keys from the set, so it is deliberately not in
+    # the hif-v2 family — intersecting a hif-v2 artifact with a hif-v3 one
+    # would silently compare a fact about the target against a fact about a
+    # reference model. (hif-v2 itself broke from hif-v1 over normalized/levels.)
     # Pin the FAMILY, not the exact version — this test's own closing
     # assertion is that a minor bump must not orphan artifacts, so pinning
     # the exact string would forbid the very thing it exists to allow.
-    assert _signal_set_family(SIGNAL_SET_VERSION) == "hif-v2"
+    assert _signal_set_family(SIGNAL_SET_VERSION) == "hif-v3"
+    assert _signal_set_family(SIGNAL_SET_VERSION) != _signal_set_family("hif-v2")
     assert _signal_set_family(SIGNAL_SET_VERSION) != _signal_set_family("hif-v1")
     # The whole point of the family rule: a future minor bump must not orphan
     # artifacts stamped with the current version.

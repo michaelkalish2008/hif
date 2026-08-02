@@ -5,7 +5,14 @@ from __future__ import annotations
 from pathlib import Path
 
 from hif.profile.schema import BehavioralRangeProfile
-from hif.profile.signals import MEASUREMENT_REGISTRY, measurements
+from hif.profile.signals import (
+    MEASUREMENT_REGISTRY,
+    SUBJECT_PROMPT_ONLY,
+    _prompt_reference_model,
+    measurements,
+    prompt_measurements,
+    run_subjects,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -54,21 +61,27 @@ def render_technical(profile: BehavioralRangeProfile, output_path: Path) -> None
     a("")
 
     # Measurements — natural units, no levels
-    a("## Measurements")
+    a(f"## Measurements — {profile.model.name}")
     a("")
     a("All values are in natural units. There are no levels, thresholds, or")
     a("verdicts: assigning one needs a null distribution this instrument does")
     a("not have.")
     a("")
     vals = measurements(profile)
+    subjects = run_subjects(profile)
     star = " *" if profile.findings.surrogate_model_name is not None else ""
-    a("| Measurement | Value | Unit / definition |")
-    a("|---|---|---|")
+    a("| Measurement | Value | Subject | Unit / definition |")
+    a("|---|---|---|---|")
     for m in MEASUREMENT_REGISTRY:
+        if subjects.get(m.key) == SUBJECT_PROMPT_ONLY:
+            continue
         v = vals.get(m.key)
         mark = star if m.surrogate_group else ""
         shown = "absent (not measurable on this run)" if v is None else f"{v:.6g}"
-        a(f"| {m.name}{mark} | {shown} | {m.unit} — {m.definition} |")
+        a(
+            f"| {m.name}{mark} | {shown} | {subjects.get(m.key, '')} | "
+            f"{m.unit} — {m.definition} |"
+        )
     a("")
     a(f"Similarity trend slope: {profile.findings.similarity_trend_slope:+.6g} "
       "(OLS slope of per-step input/output cosine similarity).")
@@ -77,6 +90,27 @@ def render_technical(profile: BehavioralRangeProfile, output_path: Path) -> None
         a(f"\\* computed via surrogate model `{profile.findings.surrogate_model_name}` "
           "(teacher-forcing proxy) — a measurement of the surrogate over the "
           "target's text, not of the target model.")
+        a("")
+
+    # Prompt-only quantities — real measurements, but not of this model, so
+    # they get their own section rather than a footnote in the table above.
+    prompt_vals = prompt_measurements(profile)
+    if prompt_vals:
+        a("## Prompt measurements — not about this model")
+        a("")
+        a("Subject: `prompt-only`. Computed from the prompt text under the")
+        a("reference model named below, with no input from")
+        a(f"`{profile.model.name}`. Comparable across targets for exactly that")
+        a("reason, and reported separately rather than as caveated")
+        a("measurements of the model. See docs/MEASUREMENTS.md § Subject.")
+        a("")
+        a("| Measurement | Value | Reference model | Unit |")
+        a("|---|---|---|---|")
+        for m in MEASUREMENT_REGISTRY:
+            if m.key not in prompt_vals:
+                continue
+            ref = _prompt_reference_model(m.key, profile) or "unknown"
+            a(f"| {m.name} | {prompt_vals[m.key]:.6g} | `{ref}` | {m.unit} |")
         a("")
 
     # Center diagnostics

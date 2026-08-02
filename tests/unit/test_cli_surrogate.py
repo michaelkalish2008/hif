@@ -74,7 +74,14 @@ def test_no_surrogate_flags_defaults_off(monkeypatch, tmp_path):
     assert captured["surrogate_model_id"] == "unsloth/Llama-3.2-1B"
 
 
-def test_measurement_table_flags_surrogate_derived_measurements(monkeypatch, tmp_path):
+def test_measurement_table_separates_prompt_only_quantities(monkeypatch, tmp_path):
+    """Under a surrogate, prompt-only quantities leave the model's table.
+
+    A surrogate that teacher-forces the PROMPT never touched the target, so
+    its readings are not caveated measurements of the target — they are
+    measurements of the prompt. They appear under their own heading, naming
+    the reference model, and not in the model's measurement table.
+    """
     profile = _make_profile()
     profile.findings.surrogate_model_name = "unsloth/Llama-3.2-1B"
 
@@ -90,13 +97,16 @@ def test_measurement_table_flags_surrogate_derived_measurements(monkeypatch, tmp
 
     assert result.exit_code == 0, result.output
     flat = " ".join(result.output.split())
-    # Exactly the input-side measurements are attributed to the surrogate.
-    assert "Input entropy shift (bits) *" in flat
-    assert "Input/output correlation (r) *" in flat
-    assert "Prompt surprisal excess (bits) *" in flat
+    # The prompt-only quantities are reported, under their own heading, and
+    # attributed to the reference model that actually produced them.
+    assert "Prompt measurements — not about this model" in flat
+    assert "Prompt surprisal excess (bits)" in flat
+    assert "unsloth/Llama-3.2-1B" in flat
+    # io_correlation_r is mixed, not prompt-only: the target's output response
+    # is half of it, so it stays in the model's table, marked.
+    assert "Input/output correlation (r) * †" in flat
     # Output-side measurements are the target model's own — never starred here.
     assert "Output entropy (bits) *" not in flat
-    assert "computed via surrogate model 'unsloth/Llama-3.2-1B'" in flat
 
 
 def test_measurement_table_no_asterisk_without_surrogate(monkeypatch, tmp_path):

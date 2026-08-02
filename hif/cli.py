@@ -25,8 +25,13 @@ from hif.profile.signals import (
     MEASUREMENT_UNITS,
     RESOLUTIONS,
     SIGNAL_SET_VERSION,
+    SUBJECT_LEGEND,
+    SUBJECT_MIXED,
+    SUBJECT_PROMPT_ONLY,
     measurements as _measurements,
     profile_hash as _profile_hash,
+    prompt_measurements as _prompt_measurements,
+    run_subjects as _run_subjects,
     signals_record as _signals_record,
 )
 
@@ -788,7 +793,11 @@ def profile(
 
     # --metric: print one measurement, in its natural unit, and exit.
     if metric is not None:
-        vals = _measurements(p)
+        from hif.profile.signals import _prompt_reference_model
+
+        subject = _run_subjects(p).get(metric)
+        prompt_only = subject == SUBJECT_PROMPT_ONLY
+        vals = _prompt_measurements(p) if prompt_only else _measurements(p)
         value = vals.get(metric)
         if value is None:
             err_console.print(
@@ -796,12 +805,26 @@ def profile(
                 f"[dim]{MEASUREMENT_UNITS[metric]}[/dim]"
             )
             raise typer.Exit(1)
+        # A single value has no block around it to say who it is about, so the
+        # subject travels with it — a bare number is exactly how a prompt-only
+        # quantity gets mistaken for a fact about the model.
+        reference = _prompt_reference_model(metric, p) if prompt_only else None
         if output_json:
-            print(json.dumps({"metric": metric, "value": value,
-                              "unit": MEASUREMENT_UNITS[metric]}))
+            payload = {"metric": metric, "value": value,
+                       "unit": MEASUREMENT_UNITS[metric], "subject": subject}
+            if prompt_only:
+                payload["reference_model"] = reference
+                payload["about"] = "the prompt, not the model named in --model"
+            print(json.dumps(payload))
         else:
             console.print(f"{metric} = {value:.6g}")
             console.print(f"[dim]{MEASUREMENT_UNITS[metric]}[/dim]")
+            console.print(f"[dim]subject: {subject}[/dim]")
+            if prompt_only:
+                console.print(
+                    f"[dim]This describes the prompt under reference model "
+                    f"{reference or 'unknown'}, not {model_name}.[/dim]"
+                )
         return
 
     if output_json:
@@ -862,30 +885,45 @@ def profile(
 
 
 def _print_measurements(p) -> None:
-    """The full measurement set, one row per quantity, in natural units.
+    """The measurement set, one row per quantity, in natural units.
 
     There is no Level column and no Normalized column, by design. A level is
     an inference requiring a null this project never established; the
     normaliser (log2 of the vocabulary size) put tokenizer metadata into a
     column labelled behaviour. Absent measurements are named and left absent.
+
+    Quantities whose subject on this run is the prompt rather than the model
+    get their own table below, for the same reason the record puts them in
+    their own block: they are not measurements of this model.
     """
     vals = _measurements(p)
+    subjects = _run_subjects(p)
     input_surrogate = p.findings.surrogate_model_name
     output_surrogate = p.findings.output_distribution_surrogate_name
 
-    table = Table(title="Measurements", show_header=True)
+    # No Subject column: the whole table is one subject — this model. Rows
+    # that would have said something else are not in it. The one exception a
+    # reader must not miss is `mixed`, which is marked.
+    table = Table(title=f"Measurements — {p.model.name}", show_header=True)
     table.add_column("Quantity", style="bold", no_wrap=True)
     table.add_column("Value", justify="right")
     table.add_column("Unit / definition")
 
+    any_mixed = False
     for m in MEASUREMENT_REGISTRY:
+        subject = subjects.get(m.key)
+        if subject == SUBJECT_PROMPT_ONLY:
+            continue
         starred = (m.surrogate_group == "input" and input_surrogate) or (
             m.surrogate_group == "output" and output_surrogate
         )
-        star = " *" if starred else ""
+        marks = " *" if starred else ""
+        if subject == SUBJECT_MIXED:
+            marks += " †"
+            any_mixed = True
         v = vals.get(m.key)
         table.add_row(
-            f"{m.name}{star}",
+            f"{m.name}{marks}",
             ABSENT_TEXT if v is None else f"{v:.6g}",
             m.unit,
         )
@@ -899,6 +937,12 @@ def _print_measurements(p) -> None:
             f"proxy) — a measurement of the surrogate over the target's text, "
             f"not of the target model.[/dim]"
         )
+    if any_mixed:
+        console.print(
+            "[dim]† subject 'mixed': couples a series derived from the target "
+            "with one derived from the surrogate, so it is a claim about the "
+            "pair rather than about the target alone.[/dim]"
+        )
     console.print(
         f"[dim]Similarity trend slope: {p.findings.similarity_trend_slope:+.6g} "
         "(per-step input/output cosine similarity, OLS slope).[/dim]"
@@ -907,6 +951,43 @@ def _print_measurements(p) -> None:
         "[dim]No thresholds, levels, or verdicts: this instrument describes "
         "behaviour, it does not decide anything. Run `hif schema` for the full "
         "unit definitions.[/dim]"
+    )
+    console.print()
+    _print_prompt_measurements(p, subjects)
+
+
+def _print_prompt_measurements(p, subjects: dict) -> None:
+    """Prompt-only quantities, kept out of the model's measurement table.
+
+    Printed only when the run produced any. These are real measurements — of
+    the prompt, under the reference model named beside each one. They are not
+    caveated facts about the model under test; nothing the model did enters
+    them, so they cannot vary with its behaviour.
+    """
+    from hif.profile.signals import _prompt_reference_model
+
+    vals = _prompt_measurements(p)
+    if not vals:
+        return
+
+    table = Table(title="Prompt measurements — not about this model", show_header=True)
+    table.add_column("Quantity", style="bold", no_wrap=True)
+    table.add_column("Value", justify="right")
+    table.add_column("Reference model", no_wrap=True)
+    table.add_column("Unit")
+
+    for m in MEASUREMENT_REGISTRY:
+        if m.key not in vals:
+            continue
+        ref = _prompt_reference_model(m.key, p)
+        table.add_row(m.name, f"{vals[m.key]:.6g}", ref or "unknown", m.unit)
+    console.print(table)
+    console.print(
+        "[dim]Subject: prompt-only. Computed from the prompt text under the "
+        "reference model shown, with no input from "
+        f"{p.model.name} — comparable across targets for exactly that reason, "
+        "and reported here rather than as a caveated measurement of the "
+        "model. See docs/MEASUREMENTS.md § Subject.[/dim]"
     )
     console.print()
 
@@ -1166,7 +1247,48 @@ def models(
         console.print(f"  [green]✓ signals:[/green] {', '.join(ok)}")
         if no:
             console.print(f"  [yellow]✗ unavailable:[/yellow] {', '.join(no)}")
+        _print_subject_degradation(info)
     console.print()
+
+
+def _print_subject_degradation(info) -> None:
+    """Which measurements stop being about the target on this backend.
+
+    Two separate statements, and the difference matters. Some quantities are
+    prompt-only on every backend — no access tier can make them about a model.
+    Others are the target's own when the backend teacher-forces, and become
+    prompt-only when `--surrogate` reads the prompt in the target's place; on
+    those backends they leave `measurements` for `prompt_measurements`.
+    """
+    from hif.profile.signals import SUBJECT_PROMPT_ONLY as _PO
+
+    always = [
+        m.key for m in MEASUREMENT_REGISTRY
+        if m.subject == _PO and m.subject_under_surrogate is None
+    ]
+    if always:
+        console.print(
+            f"  [yellow]⊘ never about the target:[/yellow] {', '.join(always)} "
+            "[dim](prompt-only on every backend)[/dim]"
+        )
+    if info.teacher_forcing:
+        return
+    degrades = [
+        m.key for m in MEASUREMENT_REGISTRY
+        if m.subject_under_surrogate == _PO
+    ]
+    if degrades:
+        console.print(
+            f"  [yellow]⊘ prompt-only under --surrogate:[/yellow] "
+            f"{', '.join(degrades)}"
+        )
+        console.print(
+            "  [dim]This backend cannot teacher-force, so --surrogate reads "
+            "the prompt with a small local model instead. Those numbers "
+            "describe the prompt under that reference model, not this "
+            "backend's model, and are reported in `prompt_measurements` "
+            "rather than `measurements`.[/dim]"
+        )
 
 
 @app.command()
@@ -1699,6 +1821,11 @@ def schema(
             "signal_set_version": SIGNAL_SET_VERSION,
             "stdout_format": {
                 "hif profile --json": "a single JSON document",
+                "prompt_measurements": "present only when the run produced "
+                        "prompt-only quantities (see \"subjects\"); they are "
+                        "never inside \"measurements\", which carries "
+                        "measurements of the model named in the record and "
+                        "nothing else.",
                 "hif suite": "JSONL, one record per prompt",
                 "hif batch": "JSONL, one record per workload row",
                 "hif compare --json": "a single JSON document",
@@ -1719,6 +1846,11 @@ def schema(
                 "per-position": "one sample per prompt/context position; the "
                                 "scalar summarises a per-position trace",
             },
+            # Whose behaviour each measurement describes. `subject` is the
+            # answer when the target's own machinery produced the quantity;
+            # `subject_under_surrogate`, when present, is what it becomes once
+            # the surrogate named by `surrogate_group` stands in.
+            "subjects": dict(SUBJECT_LEGEND),
             "measurements": {
                 m.key: {
                     "name": m.name,
@@ -1728,6 +1860,8 @@ def schema(
                     "observable": m.observable,
                     "functional": m.functional,
                     "resolution": m.resolution,
+                    "subject": m.subject,
+                    "subject_under_surrogate": m.subject_under_surrogate,
                     "surrogate_group": m.surrogate_group or None,
                 }
                 for m in MEASUREMENT_REGISTRY
@@ -1740,10 +1874,19 @@ def schema(
     table.add_column("Label")
     table.add_column("Unit")
     table.add_column("Resolution")
+    table.add_column("Subject")
     table.add_column("Definition")
     for m in MEASUREMENT_REGISTRY:
-        table.add_row(m.key, m.label or "—", m.unit, m.resolution, m.definition)
+        subject = m.subject
+        if m.subject_under_surrogate is not None:
+            subject = f"{m.subject} → {m.subject_under_surrogate} (surrogate)"
+        table.add_row(
+            m.key, m.label or "—", m.unit, m.resolution, subject, m.definition
+        )
     console.print(table)
+    console.print("\n[bold]Subject[/bold] — whose behaviour the number describes:")
+    for value, gloss in SUBJECT_LEGEND.items():
+        console.print(f"  [bold]{value}[/bold] — {gloss}")
 
 
 # ---------------------------------------------------------------------------

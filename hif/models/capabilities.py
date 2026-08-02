@@ -21,6 +21,24 @@ directly determines which measurements can be computed:
 This module powers three things: the early metric/backend guard in `profile`,
 the `doctor` preflight command, and the `models` discovery command — so a user
 learns what they can run *before* a long pipeline zeroes their requested metric.
+
+Availability is not the same question as SUBJECT
+------------------------------------------------
+What follows says whether a backend can produce a number. Whether that number
+is *about the target model* is a separate question, answered by the `subject`
+field on each `MEASUREMENT_REGISTRY` row (hif/profile/signals.py). The two come
+apart in exactly one place: `--surrogate`. A surrogate makes the input-side
+quantities computable on a backend that cannot teacher-force, but it computes
+them by reading the PROMPT — the target contributes nothing, so on that backend
+their subject is `prompt-only` and they are reported in `prompt_measurements`
+rather than in `measurements`. `hif models` prints both facts per backend.
+
+One row is prompt-only on every backend, including `[F]`:
+`attention_entropy_input_bits`. Attention here is not the target's — it comes
+from a bidirectional analysis encoder (hif/analysis/attention.py) reading text
+as an object, and the input-side row reads the prompt. Its availability gate
+below is therefore about whether the *stage runs*, not about whether the target
+exposes anything.
 """
 
 from __future__ import annotations

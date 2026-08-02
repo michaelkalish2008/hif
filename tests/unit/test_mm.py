@@ -531,8 +531,16 @@ def _mm_run_config():
 
 class TestMMSurrogateInputSide:
     def test_surrogate_recovers_input_side_measurements(self):
+        """A surrogate recovers the input-side quantities — as PROMPT
+        measurements, not as measurements of the target.
+
+        The surrogate teacher-forces the prompt text; nothing the target
+        produced enters those numbers, so they are reported under
+        prompt_measurements() and are absent from measurements(). The
+        quantities the target does participate in stay where they were.
+        """
         from hif.profile.builder import build_profile
-        from hif.profile.signals import measurements
+        from hif.profile.signals import measurements, prompt_measurements
 
         surrogate = FakeModel(vocab_size=50)
         profile = build_profile(
@@ -546,8 +554,15 @@ class TestMMSurrogateInputSide:
         assert profile.input_side.positions          # proxy-read text positions
 
         vals = measurements(profile)
-        for key in ("input_entropy_shift_bits", "io_correlation_r",
-                    "prompt_surprisal_excess_bits", "perturbation_jsd_bits"):
+        prompt_vals = prompt_measurements(profile)
+        # Prompt-only: computed from the prompt under the surrogate.
+        for key in ("input_entropy_shift_bits", "prompt_surprisal_excess_bits"):
+            assert key in prompt_vals, f"{key} missing from prompt_measurements()"
+            assert key not in vals, f"{key} reported as a measurement of the target"
+        # The target's data is in these, so they stay in the measurement set:
+        # perturbation_jsd_bits is the target's own output response, and
+        # io_correlation_r couples that response with the surrogate's reading.
+        for key in ("io_correlation_r", "perturbation_jsd_bits"):
             assert key in vals, f"{key} missing from measurements()"
         # Provenance: the record must say input-side came from the proxy.
         assert profile.findings.surrogate_model_name == surrogate.name

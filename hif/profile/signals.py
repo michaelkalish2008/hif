@@ -53,12 +53,17 @@ from typing import Optional
 # record-v2: the `signals`/`readings` split, the `normalized` and `levels`
 # blocks, and `findings_levels` are gone; a single flat `measurements` block
 # in natural units replaces them.
-# record-v3 (current): the per-record `units` block is opt-in (`--units`)
+# record-v3: the per-record `units` block is opt-in (`--units`)
 # rather than always present — it is identical for every record of a given
 # schema_version and `hif schema` prints it on demand. The field-descriptor
 # blocks are renamed to the names docs/MEASUREMENTS.md Part 4 gives them:
 # `field` -> `perturbation_field`, `branch_field` -> `trajectory_branch_field`.
-RECORD_SCHEMA_VERSION = "record-v3"
+# record-v4 (current): every measurement declares a SUBJECT (whose behaviour
+# the number describes), and quantities whose subject on the active backend is
+# `prompt-only` are no longer emitted inside `measurements` with a surrogate
+# flag — they move to a separate top-level `prompt_measurements` block naming
+# the reference model that produced them. See the "Subject" section below.
+RECORD_SCHEMA_VERSION = "record-v4"
 
 # Version of the measurement set this package computes. Minor bumps within a
 # major family are additive supersets (see cli._signal_set_family), so
@@ -67,7 +72,12 @@ RECORD_SCHEMA_VERSION = "record-v3"
 # hif-v2.1: added input_entropy_std_bits and
 # branch_pairwise_cosine_similarity — the natural-unit forms of the Stability
 # and Continuity aggregates, which were computed but never surfaced.
-SIGNAL_SET_VERSION = "hif-v2.1"
+# hif-v3 (current): `measurements` no longer contains prompt-only quantities.
+# This is a REMOVAL from the measurement set, not an additive superset — a
+# hif-v2 artifact carries numbers under keys a hif-v3 artifact deliberately
+# does not, so the two are not intersectable without silently comparing a
+# fact about the target against a fact about a reference model.
+SIGNAL_SET_VERSION = "hif-v3"
 
 
 def profile_hash(model_name: str, prompt: str, seed: int) -> str:
@@ -106,6 +116,71 @@ RESOLUTIONS: tuple[str, ...] = ("aggregate", "per-step", "per-position")
 # in embedding space (distance, cluster structure).
 FUNCTIONALS: tuple[str, ...] = ("information-theoretic", "geometric")
 
+# Subject — WHOSE behaviour the number describes. The triple says what was
+# measured and at what granularity; the subject says who it is about, which
+# the record previously could not express.
+#
+# The distinction that matters is not "was a proxy involved" but "whose
+# behaviour is standing in for whose". A fixed instrument (a teacher-forcing
+# surrogate, a local encoder) applied to data the target model actually
+# produced is a reading instrument on real data: the number still moves when
+# the target's behaviour moves, so it is a fact about the target, read
+# indirectly. An instrument applied only to the prompt is a different thing
+# entirely: nothing the target did enters the computation, the number is
+# deterministic in prompt text + instrument weights + seed, and it cannot see
+# the target at all. Emitting the second kind inside `measurements` with a
+# caveat flag says "a caveated fact about this model"; it is not a fact about
+# this model.
+#
+#   "target-distribution"  computed from the target model's own probability
+#                          distributions (its forward pass over its input, or
+#                          over its own generation).
+#   "target-output-text"   computed by a local instrument (embedder, analysis
+#                          encoder) reading text the target actually
+#                          generated. The instrument is fixed; the data is the
+#                          target's.
+#   "mixed"                couples a target-derived series with a series
+#                          derived from something other than the target. The
+#                          target participates but does not solely determine
+#                          the number.
+#   "prompt-only"          computed from the prompt text alone under a fixed
+#                          reference model or encoder. No data the target
+#                          produced enters. NOT a measurement of the target,
+#                          and therefore never emitted inside `measurements`.
+SUBJECT_TARGET_DISTRIBUTION = "target-distribution"
+SUBJECT_TARGET_OUTPUT_TEXT = "target-output-text"
+SUBJECT_MIXED = "mixed"
+SUBJECT_PROMPT_ONLY = "prompt-only"
+
+SUBJECTS: tuple[str, ...] = (
+    SUBJECT_TARGET_DISTRIBUTION,
+    SUBJECT_TARGET_OUTPUT_TEXT,
+    SUBJECT_MIXED,
+    SUBJECT_PROMPT_ONLY,
+)
+
+# One line per value — the legend `hif schema` prints.
+SUBJECT_LEGEND: dict[str, str] = {
+    SUBJECT_TARGET_DISTRIBUTION: (
+        "the target model's own probability distributions — its forward pass "
+        "over its input or its own generation"
+    ),
+    SUBJECT_TARGET_OUTPUT_TEXT: (
+        "a fixed local instrument (embedder or analysis encoder) reading text "
+        "the target model actually generated"
+    ),
+    SUBJECT_MIXED: (
+        "a target-derived series coupled with a series derived from something "
+        "other than the target; the target participates but does not solely "
+        "determine the number"
+    ),
+    SUBJECT_PROMPT_ONLY: (
+        "the prompt text alone under a fixed reference model — no data the "
+        "target produced enters, so it is not a measurement of the target and "
+        "is reported in `prompt_measurements`, never in `measurements`"
+    ),
+}
+
 
 @dataclass(frozen=True)
 class Measurement:
@@ -123,6 +198,10 @@ class Measurement:
                     pass (or the encoder over its text) exposes.
     functional      one of FUNCTIONALS.
     resolution      one of RESOLUTIONS (see the comment above).
+    subject         one of SUBJECTS — whose behaviour the number describes when
+                    the target's own machinery produced it (the `[F]` case).
+                    Required: a row that cannot say who it is about should not
+                    be in the set.
     label           optional canonical shorthand from the docs ("Wager ▲",
                     "Continuity"). None when no established shorthand exists —
                     a made-up name would be worse than none.
@@ -131,6 +210,16 @@ class Measurement:
                     inherit findings.surrogate_model_name's proxy caveat,
                     "output" measurements inherit
                     output_distribution_surrogate_name's, "" inherits neither.
+                    This is a claim about the computation, verifiable against
+                    hif/profile/builder.py — see the per-row comments.
+    subject_under_surrogate
+                    what `subject` degrades to when the surrogate named by
+                    surrogate_group actually stood in. None when the subject
+                    does not change (no surrogate can apply to this row).
+                    Subject is therefore backend-dependent by construction
+                    rather than by a static value that is wrong half the time:
+                    `effective_subject()` resolves it against the surrogates a
+                    given run actually used.
     """
 
     key: str
@@ -140,8 +229,10 @@ class Measurement:
     observable: str
     functional: str
     resolution: str
+    subject: str
     label: Optional[str] = None
     surrogate_group: str = ""
+    subject_under_surrogate: Optional[str] = None
 
 
 MEASUREMENT_REGISTRY: tuple[Measurement, ...] = (
@@ -156,6 +247,13 @@ MEASUREMENT_REGISTRY: tuple[Measurement, ...] = (
         observable="input distribution",
         functional="information-theoretic",
         resolution="aggregate",
+        # builder.py step 6: `tf_model = model if model.supports_teacher_forcing
+        # else surrogate_model`, and stability.py differences ONLY the resulting
+        # per-variant mean_entropy values. On [F] those distributions are the
+        # target's; under --surrogate they are the surrogate's over prompt text
+        # the target never saw a token of.
+        subject=SUBJECT_TARGET_DISTRIBUTION,
+        subject_under_surrogate=SUBJECT_PROMPT_ONLY,
         label=None,  # the historical "Input Stability" named the removed
         # inverted score (1 − x), not this quantity — carrying that name
         # forward would re-attach the score reading.
@@ -174,6 +272,10 @@ MEASUREMENT_REGISTRY: tuple[Measurement, ...] = (
         observable="input distribution",
         functional="information-theoretic",
         resolution="aggregate",
+        # Same series as input_entropy_shift_bits (its standard deviation
+        # rather than its mean), so the same subject and the same degradation.
+        subject=SUBJECT_TARGET_DISTRIBUTION,
+        subject_under_surrogate=SUBJECT_PROMPT_ONLY,
         label="Stability",  # the natural-unit form of the Stability
         # aggregate (see SIGNAL_SET_VERSION history above).
         surrogate_group="input",
@@ -190,9 +292,21 @@ MEASUREMENT_REGISTRY: tuple[Measurement, ...] = (
         observable="output distribution",
         functional="information-theoretic",
         resolution="aggregate",
+        # Always the target's own distributions. builder.py step 6 calls
+        # compute_sensitivity_metrics(output_trace, variant_trace, ...) on the
+        # RAW traces, before the step-6b surrogate recovery; nothing downstream
+        # re-derives the JSDs from `semantic_steps`. On a selected-only backend
+        # the traces are point masses, so the JSD degenerates to a coarse
+        # token-agreement signal — coarse, but still the target's.
+        subject=SUBJECT_TARGET_DISTRIBUTION,
         label="Sensitivity",  # the quantity the historical `sensitivity`
         # score was computed from (mean JS divergence per variant).
-        surrogate_group="output",
+        # CORRECTED (was "output"): the surrogate recovery in builder.py step 6b
+        # substitutes `semantic_steps` for the distribution/semantic/exposure
+        # metrics and rebuilds the perturbation FIELD basis, but never touches
+        # `all_sensitivity_metrics`, which is what this key reduces. Flagging it
+        # as surrogate-derived claimed a proxy that never ran.
+        surrogate_group="",
     ),
     Measurement(
         key="io_correlation_r",
@@ -206,6 +320,19 @@ MEASUREMENT_REGISTRY: tuple[Measurement, ...] = (
         observable="input × output distributions",
         functional="information-theoretic",
         resolution="aggregate",
+        # The genuine mixed case, and the reason "mixed" exists as a value.
+        # stability.py: pearsonr(entropy_shifts, js_divergences). The second
+        # series is always the target's (see perturbation_jsd_bits); the first
+        # is the target's on [F] and the surrogate's under --surrogate. So
+        # under a surrogate this is neither a fact about the target alone nor
+        # prompt-only: the target's output response is half the computation,
+        # and a correlation cannot be attributed to one of its two series. It
+        # stays in `measurements` — the target's data does enter — but it is
+        # declared `mixed` rather than lumped in with the target-side rows,
+        # because r says how the surrogate's reading of the prompt tracks the
+        # target's reaction, which is a claim about the pair.
+        subject=SUBJECT_TARGET_DISTRIBUTION,
+        subject_under_surrogate=SUBJECT_MIXED,
         label=None,  # no established shorthand — the docs name it only by
         # its zone ("Center").
         surrogate_group="input",
@@ -221,6 +348,13 @@ MEASUREMENT_REGISTRY: tuple[Measurement, ...] = (
         observable="input/output text embeddings",
         functional="geometric",
         resolution="aggregate",
+        # similarity.py::_mean_io_cosine over (prompt, output) pairs collected
+        # in builder.py step 6. The embedder is a fixed local instrument; the
+        # output texts are the target's actual generations. Not "mixed": the
+        # other member of each pair is the prompt itself — real input data, not
+        # another model's behaviour standing in for the target's. No surrogate
+        # path touches it.
+        subject=SUBJECT_TARGET_OUTPUT_TEXT,
         label=None,  # no established shorthand (`io_sim` is a field name,
         # not a doc name).
     ),
@@ -235,6 +369,12 @@ MEASUREMENT_REGISTRY: tuple[Measurement, ...] = (
         observable="input distribution",
         functional="information-theoretic",
         resolution="per-position",
+        # builder.py step 2: input_analysis comes from the target when it
+        # teacher-forces, else from analyze_input_side(surrogate_model, prompt).
+        # In the surrogate case every position record — surprisal AND entropy —
+        # is the surrogate's over the prompt. The target contributes nothing.
+        subject=SUBJECT_TARGET_DISTRIBUTION,
+        subject_under_surrogate=SUBJECT_PROMPT_ONLY,
         label="Wager ▲",
         surrogate_group="input",
     ),
@@ -250,6 +390,13 @@ MEASUREMENT_REGISTRY: tuple[Measurement, ...] = (
         observable="output distribution",
         functional="geometric",
         resolution="per-step",
+        # builder.py step 8 iterates `semantic_steps`, which step 6b replaces
+        # with output_steps_via_surrogate(surrogate, prompt, continuation_text)
+        # on a selected-only backend. The surrogate is then teacher-forced over
+        # the target's ACTUAL generated continuation — a reading instrument on
+        # the target's real output, not a stand-in for the target's behaviour.
+        subject=SUBJECT_TARGET_DISTRIBUTION,
+        subject_under_surrogate=SUBJECT_TARGET_OUTPUT_TEXT,
         label=None,  # "Cluster Entropy" in the docs names the per-step
         # component, not a canonical instrument shorthand.
         surrogate_group="output",
@@ -266,6 +413,10 @@ MEASUREMENT_REGISTRY: tuple[Measurement, ...] = (
         observable="output distribution",
         functional="information-theoretic",
         resolution="per-step",
+        # builder.py step 7 iterates the same `semantic_steps` basis — see
+        # candidate_cluster_entropy_bits.
+        subject=SUBJECT_TARGET_DISTRIBUTION,
+        subject_under_surrogate=SUBJECT_TARGET_OUTPUT_TEXT,
         label="Entropy ●",
         surrogate_group="output",
     ),
@@ -280,6 +431,10 @@ MEASUREMENT_REGISTRY: tuple[Measurement, ...] = (
         observable="output distribution",
         functional="information-theoretic",
         resolution="per-step",
+        # Nucleus entropies of the same `semantic_steps` basis — see
+        # candidate_cluster_entropy_bits.
+        subject=SUBJECT_TARGET_DISTRIBUTION,
+        subject_under_surrogate=SUBJECT_TARGET_OUTPUT_TEXT,
         label=None,  # deliberately NOT "Shift ◆": Shift is the step-to-step
         # JSD (where the mass sits); this is the step-to-step change in the
         # amount of uncertainty. Confusing the two is the exact mistake the
@@ -298,7 +453,16 @@ MEASUREMENT_REGISTRY: tuple[Measurement, ...] = (
         observable="output distribution",
         functional="geometric",
         resolution="per-step",
+        # builder.py step 11d embeds each step's candidate cloud from
+        # `semantic_steps` — the same basis as the distribution metrics.
+        subject=SUBJECT_TARGET_DISTRIBUTION,
+        subject_under_surrogate=SUBJECT_TARGET_OUTPUT_TEXT,
         label="Veer ◈",
+        # CORRECTED (was ""): step 11d passes `sf_trace`, which IS the
+        # surrogate-recovered basis when step 6b fired. The row was silent
+        # about a proxy it actually uses, so on a [P] backend the CLI table
+        # showed a surrogate-derived number with no attribution at all.
+        surrogate_group="output",
     ),
     Measurement(
         key="attention_entropy_output_bits",
@@ -312,6 +476,14 @@ MEASUREMENT_REGISTRY: tuple[Measurement, ...] = (
         observable="attention row",
         functional="information-theoretic",
         resolution="per-position",
+        # NOT the target's attention. hif/analysis/attention.py::AttentionAnalyzer
+        # is a bidirectional encoder (DistilBERT by default) applied to text as
+        # an object — "This is NOT the model under analysis ... The generation
+        # mechanism of the model under analysis is never accessed." This row
+        # reads `continuation_attention`, the encoder's self-attention over the
+        # target's ACTUAL generated continuation, so it is a fixed instrument on
+        # the target's real output: it moves when the target's output moves.
+        subject=SUBJECT_TARGET_OUTPUT_TEXT,
         label="Spread ■",
     ),
     Measurement(
@@ -326,6 +498,16 @@ MEASUREMENT_REGISTRY: tuple[Measurement, ...] = (
         observable="attention row",
         functional="information-theoretic",
         resolution="per-position",
+        # PROMPT-ONLY ON EVERY BACKEND, including [F]. Same encoder as
+        # attention_entropy_output_bits (see that row), but this one reads
+        # `input_analysis.attention_map` — the encoder's self-attention over the
+        # PROMPT. Nothing the target produced enters: the value is a function of
+        # prompt text and encoder weights alone, so it is deterministic in the
+        # prompt and cannot vary with any model-side change. That is precisely
+        # the zero-variance signature the predecessor audit found. It is a real
+        # measurement of the prompt under a fixed reference encoder; it is not a
+        # measurement of the target, and no backend can make it one.
+        subject=SUBJECT_PROMPT_ONLY,
         label="Horizon",  # no glyph: the ▼ symbol is not used in the code.
     ),
     Measurement(
@@ -340,7 +522,15 @@ MEASUREMENT_REGISTRY: tuple[Measurement, ...] = (
         observable="output distribution",
         functional="geometric",
         resolution="per-step",
+        # builder.py step 11b passes `exposure_trace` — the same
+        # surrogate-recovered basis as the distribution metrics when step 6b
+        # fired — to ExposureAnalyzer, which reads each step's topk candidates.
+        subject=SUBJECT_TARGET_DISTRIBUTION,
+        subject_under_surrogate=SUBJECT_TARGET_OUTPUT_TEXT,
         label="Exposure ◇",
+        # CORRECTED (was ""): same omission as semantic_centroid_veer_cosine —
+        # the row consumed the proxy basis without declaring it.
+        surrogate_group="output",
     ),
     Measurement(
         key="branch_pairwise_cosine_similarity",
@@ -356,6 +546,12 @@ MEASUREMENT_REGISTRY: tuple[Measurement, ...] = (
         observable="trajectory branch embeddings",
         functional="geometric",
         resolution="aggregate",
+        # trajectory.py embeds each branch's `final_text`. Branches are rollouts
+        # the TARGET generated: builder.py step 5 runs analyze_trajectory only
+        # when model.supports_teacher_forcing, and returns an empty branch list
+        # otherwise, so this quantity is absent rather than proxied on any
+        # backend that cannot generate them itself. No surrogate path exists.
+        subject=SUBJECT_TARGET_OUTPUT_TEXT,
         label="Continuity",
     ),
 )
@@ -378,14 +574,67 @@ MEASUREMENT_UNITS: dict[str, str] = {
     m.key: f"{m.unit} — {m.definition}" for m in MEASUREMENT_REGISTRY
 }
 
+MEASUREMENT_BY_KEY: dict[str, Measurement] = {
+    m.key: m for m in MEASUREMENT_REGISTRY
+}
 
-def measurements(p) -> dict[str, float]:
-    """Every measurement this profile actually supports, in natural units.
 
-    Absent measurements are OMITTED, never pinned to 0.0 or 1.0: absent means
-    the run produced no evidence for that quantity (a backend that cannot
-    teacher-force, an analysis stage that did not run), which is a different
-    statement from a measured zero.
+# ---------------------------------------------------------------------------
+# Subject resolution
+# ---------------------------------------------------------------------------
+
+
+def effective_subject(
+    m: Measurement,
+    *,
+    input_surrogate: bool = False,
+    output_surrogate: bool = False,
+) -> str:
+    """The subject of `m` on a run that used the given surrogates.
+
+    A row's declared `subject` describes the case where the target's own
+    machinery produced the quantity. When the surrogate named by the row's
+    surrogate_group actually stood in, the subject becomes
+    `subject_under_surrogate` — which is the honest answer to "who is this
+    number about?" on that backend, and is not always the same answer.
+    """
+    if m.subject_under_surrogate is None:
+        return m.subject
+    stood_in = (
+        (m.surrogate_group == "input" and input_surrogate)
+        or (m.surrogate_group == "output" and output_surrogate)
+    )
+    return m.subject_under_surrogate if stood_in else m.subject
+
+
+def run_subjects(p) -> dict[str, str]:
+    """key -> effective subject for every registered measurement on this run.
+
+    Reads which surrogates actually stood in from the profile's findings, so
+    the answer is the run's, not the registry's default.
+    """
+    f = getattr(p, "findings", None)
+    input_surrogate = bool(getattr(f, "surrogate_model_name", None))
+    output_surrogate = bool(
+        getattr(f, "output_distribution_surrogate_name", None)
+    )
+    return {
+        m.key: effective_subject(
+            m,
+            input_surrogate=input_surrogate,
+            output_surrogate=output_surrogate,
+        )
+        for m in MEASUREMENT_REGISTRY
+    }
+
+
+def _all_measured_values(p) -> dict[str, float]:
+    """Every value this profile produced, before the subject split.
+
+    Internal: callers want `measurements()` (about the target) or
+    `prompt_measurements()` (about the prompt under a reference model). This
+    function does not distinguish them, which is exactly the confusion the
+    subject field exists to prevent.
     """
     from hif.hourglass.input_side import mean_surprisal_excess
 
@@ -471,6 +720,104 @@ def measurements(p) -> dict[str, float]:
     return out
 
 
+def measurements(p) -> dict[str, float]:
+    """The measurements OF THE TARGET MODEL this profile supports.
+
+    Absent measurements are OMITTED, never pinned to 0.0 or 1.0: absent means
+    the run produced no evidence for that quantity (a backend that cannot
+    teacher-force, an analysis stage that did not run), which is a different
+    statement from a measured zero.
+
+    Absence extends to "measured something else". A quantity whose effective
+    subject on this run is `prompt-only` never touched the target's data, so it
+    is omitted here — not emitted with a surrogate flag — and reported in
+    `prompt_measurements()` instead. A flag would say "a caveated number about
+    this model"; only "this model produced no number" is true.
+    """
+    subjects = run_subjects(p)
+    return {
+        k: v
+        for k, v in _all_measured_values(p).items()
+        if subjects.get(k) != SUBJECT_PROMPT_ONLY
+    }
+
+
+def prompt_measurements(p) -> dict[str, float]:
+    """The values whose subject on this run is the prompt, not the target.
+
+    Useful and comparable in their own right — "how surprising is this prompt
+    under a fixed reference model" is a real question, and the answer is
+    comparable across targets precisely BECAUSE the target does not enter it.
+    They are simply not measurements of the target, so they are reported
+    separately rather than inside `measurements()`.
+    """
+    subjects = run_subjects(p)
+    return {
+        k: v
+        for k, v in _all_measured_values(p).items()
+        if subjects.get(k) == SUBJECT_PROMPT_ONLY
+    }
+
+
+def _text_analysis_encoder(p) -> Optional[str]:
+    """Name of the encoder that read the prompt as text, if one ran.
+
+    The analysis encoder is recorded on the attention map it produced, so this
+    reports the model that actually ran rather than the configured default.
+    """
+    att = getattr(p, "attention_capture", None) or getattr(p, "attention", None)
+    if att is None:
+        return None
+    try:
+        if isinstance(att, dict):
+            return (
+                att.get("input_analysis", {})
+                .get("attention_map", {})
+                .get("analysis_model")
+            )
+        return att.input_analysis.attention_map.analysis_model
+    except Exception:  # noqa: BLE001 — provenance is best-effort, never fatal
+        return None
+
+
+def _prompt_reference_model(key: str, p) -> Optional[str]:
+    """Whose behaviour a prompt-only value describes."""
+    m = MEASUREMENT_BY_KEY[key]
+    if m.subject_under_surrogate == SUBJECT_PROMPT_ONLY:
+        # Degraded to prompt-only because a teacher-forcing surrogate read the
+        # prompt in the target's place.
+        return getattr(getattr(p, "findings", None), "surrogate_model_name", None)
+    # Statically prompt-only: a local encoder read the prompt text directly.
+    return _text_analysis_encoder(p)
+
+
+def prompt_measurement_block(p) -> Optional[dict]:
+    """The record's `prompt_measurements` block, or None when it would be empty.
+
+    Omitted rather than emitted empty, for the same reason an unmeasurable
+    quantity is omitted from `measurements`: an empty block would assert that
+    the run considered these quantities and found nothing, when in fact none
+    was in play.
+    """
+    values = prompt_measurements(p)
+    if not values:
+        return None
+    return {
+        "subject": SUBJECT_PROMPT_ONLY,
+        "about": (
+            "These describe the PROMPT under the reference model named for "
+            "each key, not the model named in this record. No data the target "
+            "produced enters their computation, so they cannot vary with the "
+            "target's behaviour. They are comparable across targets for "
+            "exactly that reason."
+        ),
+        "reference_models": {
+            k: _prompt_reference_model(k, p) for k in values
+        },
+        "values": values,
+    }
+
+
 # Historical names kept as thin aliases so external callers and tests that
 # import them keep working. Both return the same flat measurement dict.
 def profile_scores(profile) -> dict[str, float]:
@@ -547,6 +894,13 @@ def signals_record(
 
     output_text = "".join(s.selected_token_str for s in profile.output_side.steps)
 
+    # Quantities whose subject on this backend is the prompt rather than the
+    # target are reported in their own block, never inside `measurements`.
+    # The block is omitted when nothing falls into it, so a record from a
+    # backend where every quantity is target-side is byte-identical in shape
+    # to one with no such block at all.
+    prompt_block = prompt_measurement_block(profile)
+
     record = {
         "schema_version": RECORD_SCHEMA_VERSION,
         "signal_set_version": SIGNAL_SET_VERSION,
@@ -556,10 +910,11 @@ def signals_record(
         "regime": regime,
         "seed": seed,
         "modality": getattr(profile.prompt, "modality", "text") or "text",
-        # Every measurement in its natural unit. Absent measurements are
-        # omitted. See MEASUREMENT_REGISTRY for what each quantity and unit
-        # means.
+        # Every measurement OF THIS MODEL in its natural unit. Absent
+        # measurements are omitted. See MEASUREMENT_REGISTRY for what each
+        # quantity and unit means, and which subject it has.
         "measurements": measurements(profile),
+        **({"prompt_measurements": prompt_block} if prompt_block else {}),
 
         # Part 4 of docs/MEASUREMENTS.md — behaviour as a region rather than a
         # point. Named as the docs name them.
@@ -582,9 +937,11 @@ def signals_record(
     # so they are opt-in (`--units`) rather than repeated on every JSONL line.
     # `hif schema` prints them for every measurement without running a model.
     if include_units:
+        keyed = list(record["measurements"]) + list(
+            (prompt_block or {}).get("values", {})
+        )
         record["units"] = {
-            k: MEASUREMENT_UNITS[k] for k in record["measurements"]
-            if k in MEASUREMENT_UNITS
+            k: MEASUREMENT_UNITS[k] for k in keyed if k in MEASUREMENT_UNITS
         }
     input_parts = getattr(profile.prompt, "input_parts", None)
     if input_parts:
