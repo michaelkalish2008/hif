@@ -61,7 +61,7 @@ def generate_findings(
 
     This used to bucket six measurements into low/medium/high and emit a
     one-sentence verdict. It no longer does either. See the Findings docstring
-    in hif/profile/schema.py for why, and hif.profile.signals.measurements()
+    in hif/profile/schema.py for why, and hif.profile.measure.measurements()
     for the numbers themselves.
     """
     similarity_trend_slope = (

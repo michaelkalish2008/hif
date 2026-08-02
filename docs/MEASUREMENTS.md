@@ -34,7 +34,7 @@ Three families of quantity were removed, and this document records why so they d
 - **The `levels` block (low/medium/high) and the verdict/equilibrium flags.** Assigning a level is an inference requiring a null distribution this project never established. The decision rule built on the previous levels measured a ~43% false-positive rate on pairs of runs known to be identical.
 - **Duplicate names.** `continuity` was `1 − sensitivity` computed from the same JS divergences, and the `wager` aggregate was byte-for-byte the same computation as `surprise`. Reporting one measurement twice under two names inflates the apparent dimensionality of the signal set. Each quantity now appears exactly once in the measurement set.
 
-Source of truth: `MEASUREMENT_REGISTRY` in `hif/profile/signals.py` — one row per measurement carrying its key, name, label, unit, definition, triple, and subject — printed in full by `hif schema`.
+Source of truth: `MEASUREMENT_REGISTRY` in `hif/profile/registry.py` — one row per measurement carrying its key, name, label, unit, definition, triple, and subject — printed in full by `hif schema`.
 
 ## Subject — whose behaviour the number describes
 
@@ -109,7 +109,7 @@ All distribution and semantic metrics are computed once per generation step over
 
 ## Part 1 — The Measurement Set
 
-The measurement set is defined once, in `MEASUREMENT_REGISTRY` in `hif/profile/signals.py`, and extracted by `measurements(profile)` — run `hif schema` for the current set. The same function feeds the CLI table and the machine record, so a number shown in a terminal and a number in a JSONL line can never diverge. Each is a triple: observable × functional × resolution; the record carries the run-level scalar, and rows with `per-step` / `per-position` resolution also have a trace in Part 2.
+The measurement set is defined once, in `MEASUREMENT_REGISTRY` in `hif/profile/registry.py`, and extracted by `measurements(profile)` (`hif/profile/measure.py`) — run `hif schema` for the current set. The same function feeds the CLI table and the machine record, so a number shown in a terminal and a number in a JSONL line can never diverge. Each is a triple: observable × functional × resolution; the record carries the run-level scalar, and rows with `per-step` / `per-position` resolution also have a trace in Part 2.
 
 | Key | Label | Unit | Resolution | Subject | Requires |
 |-----|-------|------|------------|---------|----------|
@@ -954,6 +954,6 @@ There is no covariance-aware drift, no Mahalanobis translation, and no cross-run
 | `surrogate_model_name` | Set when the input-side measurements were computed by teacher-forcing a `--surrogate` proxy over the prompt instead of the target model. `None` when they came from the target directly. |
 | `output_distribution_surrogate_name` | Set when the target backend's own per-step distribution was degenerate (selected token only) and a surrogate was teacher-forced over prompt + continuation to recover a real output entropy reading instead of a trivial `0.0` over a one-entry "distribution". Independent of the field above. |
 
-**Why the levels are gone.** `generate_findings()` used to bucket measurements into low/medium/high against a threshold table and emit a one-sentence verdict. Assigning a level is an inference that requires a null distribution this project never established, and the decision rule built on those levels measured a **~43% false-positive rate on pairs of runs known to be identical**. What a run measured lives in `hif.profile.signals.measurements()`, in natural units; what it means is the reader's call.
+**Why the levels are gone.** `generate_findings()` used to bucket measurements into low/medium/high against a threshold table and emit a one-sentence verdict. Assigning a level is an inference that requires a null distribution this project never established, and the decision rule built on those levels measured a **~43% false-positive rate on pairs of runs known to be identical**. What a run measured lives in `hif.profile.measure.measurements()`, in natural units; what it means is the reader's call.
 
 The two surrogate names are reported rather than hidden because a measurement computed through a proxy describes the proxy reading the target's text — not the target's own computation. The CLI stars such measurements in its table, and `signals_record()` emits both names under `surrogate`.

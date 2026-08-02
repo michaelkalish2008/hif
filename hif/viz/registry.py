@@ -14,7 +14,7 @@ FIDELITY CONTRACT: one visualization per signal, gated on data availability.
 No signal is ever rendered from another signal's data, and no absent signal is
 drawn as zero/flat.
 
-Relation to the measurement registry (hif/profile/signals.py)
+Relation to the measurement registry (hif/profile/registry.py)
 -------------------------------------------------------------
 Signal ids are chart names, not measurement keys — the two namespaces are
 deliberately different (a chart may draw a trace whose run-level summary is
@@ -32,7 +32,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable
 
-from hif.profile.signals import MEASUREMENT_BY_KEY
+from hif.profile.registry import MEASUREMENT_BY_KEY
 from hif.viz.signals import (
     breadth, continuity, entropy, exposure, horizon, io_correlation,
     sensitivity, shift, similarity, spread, stability, surprise, wager,

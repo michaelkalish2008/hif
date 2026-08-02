@@ -6,7 +6,7 @@ caller-supplied `emit` callback. Row failures never abort the stream: a
 minimal error record is emitted and the run continues.
 
 Error records carry the SAME `schema_version` as successful ones — the
-constant is imported from hif.profile.signals rather than restated here, so
+constant is imported from hif.profile.record rather than restated here, so
 one stream can never mix two schema versions.
 
 Workload file: JSONL, one row per prompt:
@@ -32,7 +32,7 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from hif.engine import SessionEngine
-from hif.profile.signals import RECORD_SCHEMA_VERSION
+from hif.profile.record import RECORD_SCHEMA_VERSION
 
 VLM_BACKENDS = ("hf-vlm", "openai-vlm")
 
@@ -196,8 +196,8 @@ def _write_row_trace(engine, profile, row: BatchRow, *, seed: int,
     rows can share (model, prompt, seed) — the hash alone would collide and
     silently overwrite one row's artifact with another's.
     """
+    from hif.profile.record import profile_hash
     from hif.profile.render_json import render_json
-    from hif.profile.signals import profile_hash
 
     h = profile_hash(engine.config.model.name, row.text, seed)
     path = Path(trace_dir) / f"profile_{sanitize_query_id(row.query_id)}_{h}.json"

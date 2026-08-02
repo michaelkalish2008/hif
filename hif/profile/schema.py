@@ -144,7 +144,7 @@ class Findings(BaseModel):
     null distribution this project never established, and the decision rule
     built on the previous levels measured a ~43% false-positive rate on pairs
     of runs known to be identical. What the run measured lives in
-    hif.profile.signals.measurements(), in natural units; what it means is the
+    hif.profile.measure.measurements(), in natural units; what it means is the
     reader's call.
     """
 

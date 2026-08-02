@@ -16,23 +16,29 @@ from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 
-# Canonical measurement extraction lives in hif/profile/signals.py so the CLI
-# tables and the SessionEngine record path report identical numbers.
-from hif.profile.signals import (
+# Canonical measurement extraction lives in hif/profile/measure.py so the CLI
+# tables and the SessionEngine record path report identical numbers; the
+# registry rows they are keyed on live in hif/profile/registry.py and the wire
+# record in hif/profile/record.py.
+from hif.profile.measure import (
+    measurements as _measurements,
+    prompt_measurements as _prompt_measurements,
+)
+from hif.profile.record import (
+    RECORD_SCHEMA_VERSION as SIGNAL_RECORD_VERSION,
+    profile_hash as _profile_hash,
+    signals_record as _signals_record,
+)
+from hif.profile.registry import (
     MEASUREMENT_KEYS,
     MEASUREMENT_REGISTRY,
-    RECORD_SCHEMA_VERSION as SIGNAL_RECORD_VERSION,
     MEASUREMENT_UNITS,
     RESOLUTIONS,
     SIGNAL_SET_VERSION,
     SUBJECT_LEGEND,
     SUBJECT_MIXED,
     SUBJECT_PROMPT_ONLY,
-    measurements as _measurements,
-    profile_hash as _profile_hash,
-    prompt_measurements as _prompt_measurements,
     run_subjects as _run_subjects,
-    signals_record as _signals_record,
 )
 
 app = typer.Typer(
@@ -838,7 +844,7 @@ def profile(
 
     # --metric: print one measurement, in its natural unit, and exit.
     if metric is not None:
-        from hif.profile.signals import _prompt_reference_model
+        from hif.profile.measure import _prompt_reference_model
 
         subject = _run_subjects(p).get(metric)
         prompt_only = subject == SUBJECT_PROMPT_ONLY
@@ -1009,7 +1015,7 @@ def _print_prompt_measurements(p, subjects: dict) -> None:
     caveated facts about the model under test; nothing the model did enters
     them, so they cannot vary with its behaviour.
     """
-    from hif.profile.signals import _prompt_reference_model
+    from hif.profile.measure import _prompt_reference_model
 
     vals = _prompt_measurements(p)
     if not vals:
@@ -1311,7 +1317,7 @@ def _print_subject_degradation(info) -> None:
     prompt-only when `--surrogate` reads the prompt in the target's place; on
     those backends they leave `measurements` for `prompt_measurements`.
     """
-    from hif.profile.signals import SUBJECT_PROMPT_ONLY as _PO
+    from hif.profile.registry import SUBJECT_PROMPT_ONLY as _PO
 
     always = [
         m.key for m in MEASUREMENT_REGISTRY

@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Optional
 
 from hif.config import ModelConfig, RunConfig
-from hif.profile.signals import profile_hash, signals_record
+from hif.profile.record import profile_hash, signals_record
 
 # Default teacher-forcing surrogate: ungated mirror of Llama 3.2 1B (same
 # weights as meta-llama/Llama-3.2-1B), so runs aren't blocked on HF gated-repo

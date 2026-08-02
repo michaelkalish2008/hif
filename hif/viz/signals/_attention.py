@@ -22,7 +22,7 @@ def row_entropy_trace(weights: list[list[float]]) -> list[float] | None:
     reading divided each value by ``log2(prefix_len)`` to land in [0, 1]; that
     denominator is the sequence length, so it leaks position metadata into a
     number presented as behaviour — the same mistake as the removed
-    vocabulary-size normaliser (see hif/profile/signals.py). Bits only.
+    vocabulary-size normaliser (see hif/profile/registry.py). Bits only.
     """
     if not weights:
         return None

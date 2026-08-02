@@ -156,7 +156,7 @@ Profiles generated with this tool are published and explorable at
 The one contribution path is **adding a measurement**, and it is deliberately
 small: compute the quantity in natural units, declare its triple, check it
 passes the Significance Gate, add one row to the registry in
-`hif/profile/signals.py`, add a test. [`CONTRIBUTING.md`](CONTRIBUTING.md)
+`hif/profile/registry.py`, add a test. [`CONTRIBUTING.md`](CONTRIBUTING.md)
 walks through all five steps with a worked example.
 
 ## License

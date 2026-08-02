@@ -4,15 +4,17 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from hif.profile.schema import BehavioralRangeProfile
-from hif.profile.signals import (
-    MEASUREMENT_REGISTRY,
-    SUBJECT_PROMPT_ONLY,
+from hif.profile.measure import (
     _prompt_reference_model,
     measurements,
     prompt_measurements,
+)
+from hif.profile.registry import (
+    MEASUREMENT_REGISTRY,
+    SUBJECT_PROMPT_ONLY,
     run_subjects,
 )
+from hif.profile.schema import BehavioralRangeProfile
 
 
 # ---------------------------------------------------------------------------

@@ -38,11 +38,8 @@ from hif.models.capabilities import (
     NEEDS_TWO_DISTRIBUTIONS,
     TRAJECTORY_METRICS,
 )
-from hif.profile.signals import (
-    MEASUREMENT_BY_KEY,
-    _all_measured_values,
-    run_subjects,
-)
+from hif.profile.measure import _all_measured_values
+from hif.profile.registry import MEASUREMENT_BY_KEY, run_subjects
 
 
 class ProvenanceMismatch(RuntimeError):

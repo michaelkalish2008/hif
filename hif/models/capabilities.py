@@ -35,7 +35,7 @@ Availability is not the same question as SUBJECT
 ------------------------------------------------
 What follows says whether a backend can produce a number. Whether that number
 is *about the target model* is a separate question, answered by the `subject`
-field on each `MEASUREMENT_REGISTRY` row (hif/profile/signals.py). The two come
+field on each `MEASUREMENT_REGISTRY` row (hif/profile/registry.py). The two come
 apart in exactly one place: `--surrogate`. A surrogate makes the input-side
 quantities computable on a backend that cannot teacher-force, but it computes
 them by reading the PROMPT — the target contributes nothing, so on that backend
@@ -67,7 +67,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 # Measurement groupings by what data they require — DERIVED from the registry
-# rows (hif/profile/signals.py), never hand-listed. This module used to keep
+# rows (hif/profile/registry.py), never hand-listed. This module used to keep
 # its own frozensets of measurement keys; they drifted twice
 # (`input_entropy_std_bits` was silently promised on Anthropic,
 # `branch_pairwise_cosine_similarity` vanished from `hif models`), because a
@@ -96,7 +96,7 @@ from dataclasses import dataclass, field
 # tests/unit/test_capability_sets.py asserts the partition (every registry key
 # in exactly one group, no group key outside the registry), so the derivation
 # cannot silently diverge from the registry it reads.
-from hif.profile.signals import MEASUREMENT_REGISTRY
+from hif.profile.registry import MEASUREMENT_REGISTRY
 
 INPUT_SIDE_METRICS = frozenset(
     m.key for m in MEASUREMENT_REGISTRY if m.surrogate_group == "input"

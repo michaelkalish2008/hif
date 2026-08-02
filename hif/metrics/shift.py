@@ -8,7 +8,7 @@ marks an abrupt vocabulary pivot (the field of viable tokens reorganized
 sharply), a small one marks smooth continuation.
 
 This module owns the computation. ``hif/viz/signals/shift.py`` (the chart) and
-``hif/profile/signals.py`` (the measurement) both import from here, so the
+``hif/profile/measure.py`` (the measurement) both import from here, so the
 number a reader sees on a chart and the number in a machine record cannot
 drift apart. Nothing else should reimplement it.
 
@@ -38,7 +38,7 @@ top-K has length 1. JSD between two point masses is 0 when the tokens match and
 between distributions. That is a DIFFERENT QUANTITY, so it is not reported
 under this key — :func:`shift_summary` returns ``None`` and the measurement is
 absent. The same rule governs ``perturbation_jsd_bits`` (see
-``hif/profile/signals.py``).
+``hif/profile/measure.py``).
 """
 
 from __future__ import annotations

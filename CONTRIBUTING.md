@@ -84,7 +84,7 @@ Decide, before writing the registry row:
 
 - **observable** — what it is computed from (input distribution, output
   distribution, attention row, embeddings of text…).
-- **functional** — one of `FUNCTIONALS` in `hif/profile/signals.py`:
+- **functional** — one of `FUNCTIONALS` in `hif/profile/registry.py`:
   `information-theoretic` (entropy, surprisal, JSD, trace correlation) or
   `geometric` (embedding distance, cluster structure).
 - **resolution** — one of `RESOLUTIONS`: `per-step` or `per-position` when the
@@ -145,8 +145,10 @@ re-averaged, it is not a new measurement.
 ### 4. Register it — one row
 
 Add one `Measurement(...)` row to `MEASUREMENT_REGISTRY` in
-`hif/profile/signals.py`, and emit the value from `measurements()` in the same
-file (guarded so absence omits the key). The registry row is the single
+`hif/profile/registry.py`, and emit the value from `_all_measured_values()` in
+`hif/profile/measure.py` (guarded so absence omits the key — `measurements()`
+and `prompt_measurements()` are the subject split over what that function
+returns, and need no edit). The registry row is the single
 extension point: the CLI table, `hif schema`, the Markdown reports, `compare`,
 the record path, and the backend capability guard (`hif/models/capabilities.py`)
 all derive from it — there is no second list to update. In particular, adding a
@@ -233,7 +235,7 @@ variant, because one shift has no spread: that is "no evidence", not "measured
 zero". The value rides on the existing `PerturbationResponse` model as an
 optional field.
 
-**File 2 — `hif/profile/signals.py`** (declare the triple and emit the value):
+**File 2 — `hif/profile/registry.py`** (declare the triple):
 
 ```python
 Measurement(
@@ -255,7 +257,8 @@ Measurement(
 ),
 ```
 
-and in `measurements()`:
+**File 3 — `hif/profile/measure.py`** (emit the value), in
+`_all_measured_values()`:
 
 ```python
 if getattr(st, "input_entropy_std_bits", None) is not None:
