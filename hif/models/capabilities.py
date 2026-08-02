@@ -66,36 +66,58 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-# Measurement groupings by what data they require. Every registry key belongs
-# to exactly one group — tests/unit/test_access_tier_matrix.py asserts it, so a
-# new measurement cannot be added without saying what it needs. A key missing
-# from all four groups would silently be reported available on every backend,
-# which is how `input_entropy_std_bits` came to be promised on Anthropic.
-INPUT_SIDE_METRICS = frozenset({
-    "input_entropy_shift_bits", "input_entropy_std_bits",
-    "prompt_surprisal_excess_bits", "io_correlation_r",
-})
-ATTENTION_METRICS = frozenset({
-    "attention_entropy_input_bits", "attention_entropy_output_bits",
-})
-OUTPUT_SIDE_METRICS = frozenset({
-    "candidate_cluster_entropy_bits", "output_entropy_bits",
-    "output_entropy_step_delta_bits", "perturbation_jsd_bits",
-    "output_step_jsd_bits", "output_step_topk_overlap_fraction",
-    "io_cosine_similarity", "semantic_centroid_veer_cosine",
-    "counterfactual_exposure_fraction",
-})
-# Quantities read off trajectory branches — rollouts the TARGET generates from
-# its own context. builder.py step 5 runs the stage only when the target can
-# teacher-force and returns an empty branch list otherwise, so these are absent
-# rather than proxied on a backend that cannot. No surrogate recovers them: a
-# proxy's rollouts would be the proxy's behaviour, not a reading of the
-# target's.
-TRAJECTORY_METRICS = frozenset({"branch_pairwise_cosine_similarity"})
+# Measurement groupings by what data they require — DERIVED from the registry
+# rows (hif/profile/signals.py), never hand-listed. This module used to keep
+# its own frozensets of measurement keys; they drifted twice
+# (`input_entropy_std_bits` was silently promised on Anthropic,
+# `branch_pairwise_cosine_similarity` vanished from `hif models`), because a
+# second list of registry facts is a second place for the facts to be wrong.
+# Every fact the groups encode is on the row:
+#
+#   INPUT_SIDE_METRICS   surrogate_group == "input": the row inherits the
+#                        input-side teacher-forcing caveat, which is the same
+#                        fact as "requires teacher forcing over the prompt".
+#   ATTENTION_METRICS    observable == "attention row": produced by the
+#                        attention-analysis stage's encoder, not the backend.
+#   TRAJECTORY_METRICS   observable == "trajectory branch embeddings":
+#                        rollouts the TARGET generates from its own context.
+#                        builder.py step 5 runs the stage only when the target
+#                        can teacher-force and returns an empty branch list
+#                        otherwise, so these are absent rather than proxied on
+#                        a backend that cannot. No surrogate recovers them: a
+#                        proxy's rollouts would be the proxy's behaviour, not
+#                        a reading of the target's.
+#   OUTPUT_SIDE_METRICS  everything else — quantities read off the run's own
+#                        generation, with no backend requirement beyond what
+#                        the selected-only rules below add. A new registry row
+#                        lands here unless its row says otherwise, so a new
+#                        measurement cannot fall out of the capability matrix.
+#
+# tests/unit/test_capability_sets.py asserts the partition (every registry key
+# in exactly one group, no group key outside the registry), so the derivation
+# cannot silently diverge from the registry it reads.
+from hif.profile.signals import MEASUREMENT_REGISTRY
+
+INPUT_SIDE_METRICS = frozenset(
+    m.key for m in MEASUREMENT_REGISTRY if m.surrogate_group == "input"
+)
+ATTENTION_METRICS = frozenset(
+    m.key for m in MEASUREMENT_REGISTRY if m.observable == "attention row"
+)
+TRAJECTORY_METRICS = frozenset(
+    m.key for m in MEASUREMENT_REGISTRY
+    if m.observable == "trajectory branch embeddings"
+)
+OUTPUT_SIDE_METRICS = frozenset(
+    m.key for m in MEASUREMENT_REGISTRY
+    if m.key not in INPUT_SIDE_METRICS
+    and m.key not in ATTENTION_METRICS
+    and m.key not in TRAJECTORY_METRICS
+)
 
 # Output-side measurements that a selected-only backend cannot produce AT ALL,
 # because their input is a real per-step distribution and a point mass is not
-# one. Split into two reasons, because the two absences are different:
+# one. Two different absences, both read off the row:
 #
 #   NEEDS_DISTRIBUTION    quantities computed over one step's candidate cloud.
 #                         A point mass is a cloud of one: the entropies are 0.0
@@ -104,41 +126,29 @@ TRAJECTORY_METRICS = frozenset({"branch_pairwise_cosine_similarity"})
 #                         exposure has no alternative to find. A --surrogate
 #                         DOES rescue these — step 6b rebuilds `semantic_steps`
 #                         by teacher-forcing the proxy over the target's actual
-#                         continuation, which is what they all read.
+#                         continuation, which is what they all read. That is
+#                         why the predicate is surrogate_group == "output":
+#                         "recoverable by the output surrogate" and "reads the
+#                         per-step candidate cloud" are the same fact about
+#                         the computation, declared once on the row.
 #   NEEDS_TWO_DISTRIBUTIONS
-#                         divergences between two distributions. Between two
+#                         divergences between two distributions
+#                         (needs_distribution_pair on the row). Between two
 #                         point masses the JSD is 0 when the tokens agree and
 #                         exactly 1 bit when they differ — a token-agreement
 #                         rate, a different quantity under the same key, so it
 #                         is reported absent rather than emitted. Unlike the
 #                         first group, no --surrogate rescues these: the
 #                         surrogate recovery in builder.py step 6b rebuilds
-#                         `semantic_steps`, which these never read.
-NEEDS_DISTRIBUTION = frozenset({
-    "candidate_cluster_entropy_bits", "output_entropy_bits",
-    "output_entropy_step_delta_bits", "counterfactual_exposure_fraction",
-    "semantic_centroid_veer_cosine",
-})
-NEEDS_TWO_DISTRIBUTIONS = frozenset({
-    "perturbation_jsd_bits", "output_step_jsd_bits",
-    "output_step_topk_overlap_fraction",
-    # io_correlation_r is here because of what it correlates: one of its two
-    # series IS the per-variant perturbation JSD. On a selected-only backend
-    # that series is a token-disagreement rate, so the correlation is between
-    # entropy shifts and token disagreement — a different quantity under a key
-    # whose definition names the JSD. A --surrogate does not rescue it either:
-    # the recovery rebuilds `semantic_steps`, and the sensitivity metrics this
-    # reduces are computed from the raw traces before it.
-    "io_correlation_r",
-})
-
-# Historical private names, kept so nothing that imported them breaks.
-_NEEDS_DISTRIBUTION = NEEDS_DISTRIBUTION
-_NEEDS_TWO_DISTRIBUTIONS = NEEDS_TWO_DISTRIBUTIONS
-
-TEACHER_FORCING_BACKENDS = frozenset({"hf", "tlens", "hf-vlm"})
-# Backends whose logprobs degenerate to the selected token only.
-DEGENERATE_LOGPROB_BACKENDS = frozenset({"anthropic"})
+#                         `semantic_steps`, which these never read. See the
+#                         per-row comments (io_correlation_r in particular)
+#                         for why each row carries the flag.
+NEEDS_DISTRIBUTION = frozenset(
+    m.key for m in MEASUREMENT_REGISTRY if m.surrogate_group == "output"
+)
+NEEDS_TWO_DISTRIBUTIONS = frozenset(
+    m.key for m in MEASUREMENT_REGISTRY if m.needs_distribution_pair
+)
 
 
 @dataclass(frozen=True)

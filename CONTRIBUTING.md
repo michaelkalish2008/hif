@@ -150,7 +150,15 @@ Add one `Measurement(...)` row to `MEASUREMENT_REGISTRY` in
 `hif/profile/signals.py`, and emit the value from `measurements()` in the same
 file (guarded so absence omits the key). The registry row is the single
 extension point: the CLI table, `hif schema`, the Markdown reports, `compare`,
-and the record path all derive from it — there is no second list to update.
+the record path, and the backend capability guard (`hif/models/capabilities.py`)
+all derive from it — there is no second list to update. In particular, adding a
+measurement requires touching `capabilities.py` **zero times**: its capability
+sets are comprehensions over the registry rows (`surrogate_group`,
+`observable`, `needs_distribution_pair`), and
+`tests/unit/test_capability_sets.py` fails if a row and the sets ever disagree.
+Declare what your measurement needs on the row itself — a `surrogate_group`,
+and `needs_distribution_pair=True` if it is computed from a divergence between
+two per-step token distributions — and the guard follows.
 
 Row conventions:
 

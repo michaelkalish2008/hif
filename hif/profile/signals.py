@@ -247,6 +247,17 @@ class Measurement:
                     rather than by a static value that is wrong half the time:
                     `effective_subject()` resolves it against the surrogates a
                     given run actually used.
+    needs_distribution_pair
+                    True when the quantity is computed from (or from a series
+                    of) divergences BETWEEN two per-step token distributions.
+                    On a selected-only backend both sides are point masses and
+                    the divergence collapses to a token-agreement indicator —
+                    a different quantity under the same key — so the value is
+                    reported ABSENT there, and no surrogate recovers it: the
+                    step-6b recovery rebuilds the single-step candidate cloud
+                    (`semantic_steps`), which these never read. This is the
+                    one capability fact not implied by the other fields;
+                    hif/models/capabilities.py derives its gate from it.
     """
 
     key: str
@@ -260,6 +271,7 @@ class Measurement:
     label: Optional[str] = None
     surrogate_group: str = ""
     subject_under_surrogate: Optional[str] = None
+    needs_distribution_pair: bool = False
 
 
 MEASUREMENT_REGISTRY: tuple[Measurement, ...] = (
@@ -349,6 +361,8 @@ MEASUREMENT_REGISTRY: tuple[Measurement, ...] = (
         # `all_sensitivity_metrics`, which is what this key reduces. Flagging it
         # as surrogate-derived claimed a proxy that never ran.
         surrogate_group="",
+        needs_distribution_pair=True,  # JSD(baseline, variant) — see the
+        # ABSENCE note above.
     ),
     Measurement(
         key="io_correlation_r",
@@ -378,6 +392,13 @@ MEASUREMENT_REGISTRY: tuple[Measurement, ...] = (
         label=None,  # no established shorthand — the docs name it only by
         # its zone ("Center").
         surrogate_group="input",
+        needs_distribution_pair=True,  # because of what it correlates: one of
+        # its two series IS the per-variant perturbation JSD. On a selected-only
+        # backend that series is a token-disagreement rate, so the correlation
+        # would couple entropy shifts with token disagreement — a different
+        # quantity under a key whose definition names the JSD. No surrogate
+        # rescues it either: the recovery rebuilds `semantic_steps`, and the
+        # sensitivity series is computed from the raw traces before it.
     ),
     Measurement(
         key="io_cosine_similarity",
@@ -516,6 +537,7 @@ MEASUREMENT_REGISTRY: tuple[Measurement, ...] = (
         subject=SUBJECT_TARGET_DISTRIBUTION,
         label="Shift ◆",
         surrogate_group="",
+        needs_distribution_pair=True,  # JSD(Qⱼ₋₁, Qⱼ) — consecutive steps.
     ),
     Measurement(
         key="output_step_topk_overlap_fraction",
@@ -540,6 +562,8 @@ MEASUREMENT_REGISTRY: tuple[Measurement, ...] = (
         # admission to the measurement set, and inventing one would imply a
         # doc vocabulary that does not exist.
         surrogate_group="",
+        needs_distribution_pair=True,  # same series, same absence rules as
+        # output_step_jsd_bits.
     ),
     Measurement(
         key="semantic_centroid_veer_cosine",
