@@ -20,7 +20,7 @@ from hif.viz.base import NEEDS_TEACHER_FORCING, na_figure, save_fig, signal_titl
 from hif.viz._theme import INDIGO, EMERALD, dark_layout
 from hif.profile.schema import BehavioralRangeProfile
 
-LABEL, GLYPH = "Input/output correlation (r)", None
+LABEL = "Input/output correlation (r)"
 
 
 def available(profile: BehavioralRangeProfile) -> str | None:
@@ -44,7 +44,7 @@ def _resample(y: list[float], n: int = 100) -> np.ndarray:
 def generate(profile, output_path: Path, formats: list[str] = ["html"]) -> dict[str, Path]:
     reason = available(profile)
     if reason:
-        return save_fig(na_figure(LABEL, GLYPH, reason), output_path, formats)
+        return save_fig(na_figure(LABEL, reason), output_path, formats)
 
     in_ent = [p.entropy for p in profile.input_side.positions]
     out_ent = [d.entropy_bits for d in profile.metrics.distribution]
@@ -63,7 +63,7 @@ def generate(profile, output_path: Path, formats: list[str] = ["html"]) -> dict[
     fig.add_trace(go.Scatter(x=gx, y=out_r, mode="lines", line=dict(color=EMERALD, width=2.4, dash="dot"),
                              name="Output entropy (generation)"))
     fig.update_layout(**dark_layout(
-        title=signal_title(LABEL, GLYPH, profile.model.name,
+        title=signal_title(LABEL, profile.model.name,
                            f"Input vs output uncertainty over normalized position · {r_txt} · "
                            "tracking together = output complexity follows the prompt"),
         xaxis=dict(title="Normalized position (0 = start → 1 = end)"),

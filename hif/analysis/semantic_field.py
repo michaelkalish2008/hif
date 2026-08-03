@@ -1,4 +1,4 @@
-"""Within-generation semantic field instrument — "Veer" (◈).
+"""Within-generation semantic field — semantic_centroid_veer_cosine.
 
 The Veer rule (docs/ARCHITECTURE.md § Field-model notes): the admitted
 instruments read one generation event; this one reads the *trajectory* of the
@@ -13,7 +13,7 @@ proceeds that centroid traces a path:
   weighted mean distance of candidates from the centroid): the field widening or
   narrowing / fragmenting.
 
-Veer is the GEOMETRIC twin of Shift (◆): Shift reads step-to-step change in the
+It is the GEOMETRIC twin of output_step_jsd_bits: that one reads step-to-step change in the
 distribution's *spread* in vocabulary space (information-theoretic); Veer reads
 step-to-step change in the distribution's *semantic location* in embedding space
 (geometric). `center.semantic_drift` gives only the prompt→output endpoint; Veer

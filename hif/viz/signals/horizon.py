@@ -10,7 +10,7 @@ behaviour, and it saturates. The value grows with prefix length by
 construction — read it against the position axis, not as a fraction.
 
 IMPORTANT: this is the *Horizon instrument*, NOT the semantic meaning-cloud. The
-meaning-cloud (candidate clustering) lives under Exposure ◇, where it belongs.
+meaning-cloud (candidate clustering) lives under counterfactual exposure, where it belongs.
 
 Backing data: ``profile.attention`` (prompt self-attention) — requires attention
 capture (open HuggingFace models).
@@ -36,7 +36,7 @@ from hif.viz._theme import INDIGO, dark_layout
 from hif.viz.signals._attention import get_attention_map, row_entropy_trace
 from hif.profile.schema import BehavioralRangeProfile
 
-LABEL, GLYPH = "Input attention-row entropy (bits)", None
+LABEL = "Input attention-row entropy (bits)"
 
 
 def available(profile: BehavioralRangeProfile) -> str | None:
@@ -47,7 +47,7 @@ def available(profile: BehavioralRangeProfile) -> str | None:
 def generate(profile, output_path: Path, formats: list[str] = ["html"]) -> dict[str, Path]:
     tokens, weights = get_attention_map(profile, "input")
     if not weights:
-        return save_fig(na_figure(LABEL, GLYPH, NEEDS_ATTENTION), output_path, formats)
+        return save_fig(na_figure(LABEL, NEEDS_ATTENTION), output_path, formats)
 
     trace = row_entropy_trace(weights) or []
     x = list(range(len(trace)))
@@ -64,7 +64,7 @@ def generate(profile, output_path: Path, formats: list[str] = ["html"]) -> dict[
     fig.add_hline(y=mean, line_dash="dash", line_color=INDIGO, opacity=0.5,
                   annotation_text=f"mean {mean:.2f} bits", annotation_position="top left")
     fig.update_layout(**dark_layout(
-        title=signal_title(LABEL, GLYPH, profile.model.name,
+        title=signal_title(LABEL, profile.model.name,
                            "Self-attention row entropy per prompt position, in bits — low = "
                            "attention concentrated on a few tokens, high = spread across "
                            "the causal prefix (grows with prefix length)"),

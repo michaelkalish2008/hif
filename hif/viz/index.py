@@ -33,7 +33,6 @@ def _badge(text: str, kind: str) -> str:
 
 
 def _card_embed(sig, avail_reason: str | None) -> str:
-    glyph = f"{sig.glyph} " if sig.glyph else ""
     if avail_reason is None:
         avail_badge = _badge("live data", "live")
     else:
@@ -43,7 +42,7 @@ def _card_embed(sig, avail_reason: str | None) -> str:
       <div class="card-head">
         <div class="badges">{avail_badge}
           <span class="kind">{sig.kind}</span></div>
-        <h3>{glyph}{sig.label}</h3>
+        <h3>{sig.label}</h3>
       </div>
       <iframe src="{sig.id}.html" height="{_height(sig.id)}" loading="lazy"
               title="{sig.label}"></iframe>

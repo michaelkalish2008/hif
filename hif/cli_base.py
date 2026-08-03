@@ -8,7 +8,10 @@ from them, so the command modules can be split without an import cycle.
 from __future__ import annotations
 
 import json
+import os
 import sys
+from pathlib import Path
+from typing import Optional
 
 import typer
 from rich.console import Console
@@ -37,14 +40,69 @@ def _emit_json_line(record: dict) -> None:
     sys.stdout.flush()
 
 
+def load_env_file(path: Path) -> int:
+    """Read `KEY=value` lines into os.environ. Returns how many were set.
+
+    Sourcing a dotenv in a shell does NOT do this. `source .env` on bare
+    `KEY=value` lines creates SHELL variables, and a child process inherits
+    only the ENVIRONMENT — so the keys are visibly present to the shell and
+    invisible to hif, which reads os.environ. The usual symptom is `hif doctor`
+    reporting every credential unset immediately after apparently exporting
+    them. (`set -a` before sourcing is the shell-side fix; this is the one that
+    does not require knowing that.)
+
+    Values already in the environment win: an explicit `KEY=… hif …` or a real
+    export is a deliberate override and must not be silently replaced by a file.
+    """
+    n = 0
+    for raw in path.read_text().splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[len("export "):].lstrip()
+        key, sep, value = line.partition("=")
+        if not sep:
+            continue
+        key = key.strip()
+        if not key or key in os.environ:
+            continue
+        value = value.strip()
+        # Strip one matched pair of surrounding quotes, the way a shell would.
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
+            value = value[1:-1]
+        os.environ[key] = value
+        n += 1
+    return n
+
+
 @app.callback()
-def _main() -> None:
+def _main(
+    env_file: Optional[Path] = typer.Option(
+        None,
+        "--env-file",
+        envvar="HIF_ENV_FILE",
+        help="Read credentials from a dotenv file before running. Applies to "
+        "every command. Values already set in the environment are left alone. "
+        "Nothing is auto-discovered — hosted backends bill per token, so the "
+        "file that pays is named on the command line or in HIF_ENV_FILE.",
+    ),
+) -> None:
     """hif — Horizonal Interpretability CLI."""
     from hif.utils.logging import configure_logging
 
     # Default: results only. Commands that accept --verbose re-call
     # configure_logging(verbose=True) to restore full internal chatter.
     configure_logging(verbose=False)
+
+    if env_file is not None:
+        if not env_file.is_file():
+            console.print(f"[red]--env-file: no such file: {env_file}[/red]")
+            raise typer.Exit(2)
+        n = load_env_file(env_file)
+        # Names only. The whole point of the file is that the values do not
+        # get printed.
+        console.print(f"[dim]Loaded {n} variable(s) from {env_file}[/dim]")
 
 
 # ---------------------------------------------------------------------------

@@ -1,4 +1,4 @@
-"""Shift ◆ (per-step view) — step-to-step output divergence.
+"""Step-to-step output divergence (per-step view).
 
 Fidelity: Shiftⱼ = JSD(Qⱼ₋₁, Qⱼ), the Jensen-Shannon divergence between
 consecutive steps' output distributions. Within a single forward pass: tall bars
@@ -32,7 +32,7 @@ from pathlib import Path
 
 import plotly.graph_objects as go
 
-from hif.metrics.shift import GLYPH, LABEL, shift_summary, shift_trace, unavailable_reason
+from hif.metrics.shift import LABEL, shift_summary, shift_trace, unavailable_reason
 from hif.viz.base import na_figure, save_fig, signal_title
 from hif.viz._theme import VIOLET, dark_layout
 from hif.profile.schema import BehavioralRangeProfile
@@ -46,7 +46,7 @@ def available(profile: BehavioralRangeProfile) -> str | None:
 def generate(profile, output_path: Path, formats: list[str] = ["html"]) -> dict[str, Path]:
     reason = available(profile)
     if reason:
-        return save_fig(na_figure(LABEL, GLYPH, reason), output_path, formats)
+        return save_fig(na_figure(LABEL, reason), output_path, formats)
 
     steps = profile.output_side.steps
     trace = shift_trace(steps)
@@ -78,7 +78,7 @@ def generate(profile, output_path: Path, formats: list[str] = ["html"]) -> dict[
                      f"support alone, not necessarily true maximal divergence (hover per bar)")
 
     fig.update_layout(**dark_layout(
-        title=signal_title(LABEL, GLYPH, profile.model.name, subtitle),
+        title=signal_title(LABEL, profile.model.name, subtitle),
         xaxis=dict(title="Generation step (transition into)"),
         yaxis=dict(title="JSD (bits)", rangemode="tozero", range=[0, max(jsd + [0.01]) * 1.15]),
         height=520, showlegend=False, margin=dict(t=150, b=60),

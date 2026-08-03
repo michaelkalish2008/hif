@@ -1,4 +1,4 @@
-"""Entropy ● (per-step view) — output distribution entropy per step.
+"""Output distribution entropy per step (per-step view).
 
 Fidelity: the per-step Shannon entropy H(Qⱼ) in bits — the full trace that the
 Breadth aggregate compresses (Breadth = mean of ESS = 2^H). Shows whether a mean
@@ -20,7 +20,7 @@ from hif.viz.base import NEEDS_DISTRIBUTION, na_figure, save_fig, signal_title
 from hif.viz._theme import EMERALD, TEXT_MUTED, dark_layout
 from hif.profile.schema import BehavioralRangeProfile
 
-LABEL, GLYPH = "Output entropy (bits)", "●"
+LABEL = "Output entropy (bits)"
 
 
 def available(profile: BehavioralRangeProfile) -> str | None:
@@ -31,7 +31,7 @@ def available(profile: BehavioralRangeProfile) -> str | None:
 def generate(profile, output_path: Path, formats: list[str] = ["html"]) -> dict[str, Path]:
     reason = available(profile)
     if reason:
-        return save_fig(na_figure(LABEL, GLYPH, reason), output_path, formats)
+        return save_fig(na_figure(LABEL, reason), output_path, formats)
 
     dist = profile.metrics.distribution
     steps = list(range(len(dist)))
@@ -54,7 +54,7 @@ def generate(profile, output_path: Path, formats: list[str] = ["html"]) -> dict[
     fig.add_hline(y=mean_nuc, line_dash="dash", line_color=EMERALD, opacity=0.5,
                   annotation_text=f"mean {mean_nuc:.2f} bits", annotation_position="top left")
     fig.update_layout(**dark_layout(
-        title=signal_title(LABEL, GLYPH, profile.model.name,
+        title=signal_title(LABEL, profile.model.name,
                            "Output distribution entropy per step (bits) — peaks are genuine decision "
                            "moments, troughs are committed choices"),
         xaxis=dict(title="Generation step"),

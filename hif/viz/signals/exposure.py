@@ -1,4 +1,4 @@
-"""Exposure ◇ (per-step view) — counterfactual semantic exposure.
+"""Counterfactual semantic exposure (per-step view).
 
 Fidelity: at each generation step the top-K candidates form a meaning-cloud.
 Exposure measures how often a *probabilistically accessible* alternative token
@@ -26,7 +26,7 @@ from hif.viz.base import NEEDS_EXPOSURE, na_figure, save_fig, signal_title
 from hif.viz._theme import INDIGO, AMBER, EMERALD, TEXT_SEC, dark_layout
 from hif.profile.schema import BehavioralRangeProfile
 
-LABEL, GLYPH = "Counterfactual exposure (fraction)", "◇"
+LABEL = "Counterfactual exposure (fraction)"
 
 # Neutral divergence scale (NOT a risk scale): low → high semantic divergence.
 _LOW = EMERALD
@@ -61,7 +61,7 @@ def available(profile: BehavioralRangeProfile) -> str | None:
 def generate(profile, output_path: Path, formats: list[str] = ["html"]) -> dict[str, Path]:
     reason = available(profile)
     if reason:
-        return save_fig(na_figure(LABEL, GLYPH, reason), output_path, formats)
+        return save_fig(na_figure(LABEL, reason), output_path, formats)
 
     exp = _coerce(profile)
     model_name = profile.model.name
@@ -124,7 +124,7 @@ def generate(profile, output_path: Path, formats: list[str] = ["html"]) -> dict[
 
     fig.update_layout(**dark_layout(
         title=signal_title(
-            LABEL, GLYPH, model_name,
+            LABEL, model_name,
             f"Counterfactual semantic exposure = {exposure_scalar:.3f} · mean distance {mean_dist:.3f} · "
             f"{n_exposed} high-exposure step{'s' if n_exposed != 1 else ''} · {diff_pct}% steps diffuse · "
             "measures sensitivity to sampling chance, NOT factuality"),

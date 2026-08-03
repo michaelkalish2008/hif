@@ -3,7 +3,7 @@
 Fidelity: Surprise = mean over prompt positions of max(0, sᵢ − H(Pᵢ)), the
 excess surprisal of the actual token beyond the model's distributional entropy.
 The faithful chart is the per-position excess-surprisal bar series; the mean is
-the aggregate score. (The Wager instrument ▲ is this same quantity at full
+the aggregate score. (The wager chart draws this same quantity at full
 per-position resolution — see wager.py.)
 
 Backing data: ``input_side.positions`` — requires teacher forcing.
@@ -20,7 +20,7 @@ from hif.viz.base import NEEDS_TEACHER_FORCING, add_click_to_dim_js, na_figure, 
 from hif.viz._theme import AMBER, TEXT_SEC, dark_layout
 from hif.profile.schema import BehavioralRangeProfile
 
-LABEL, GLYPH = "Prompt surprisal excess (trace)", None
+LABEL = "Prompt surprisal excess (trace)"
 
 
 def available(profile: BehavioralRangeProfile) -> str | None:
@@ -31,7 +31,7 @@ def available(profile: BehavioralRangeProfile) -> str | None:
 def generate(profile, output_path: Path, formats: list[str] = ["html"]) -> dict[str, Path]:
     reason = available(profile)
     if reason:
-        return save_fig(na_figure(LABEL, GLYPH, reason), output_path, formats)
+        return save_fig(na_figure(LABEL, reason), output_path, formats)
 
     positions = profile.input_side.positions
     idx = [p.position for p in positions]
@@ -55,7 +55,7 @@ def generate(profile, output_path: Path, formats: list[str] = ["html"]) -> dict[
     fig.add_hline(y=mean, line_dash="dash", line_color=TEXT_SEC,
                   annotation_text=f"Surprise = {mean:.3f}", annotation_position="top left")
     fig.update_layout(**dark_layout(
-        title=signal_title(LABEL, GLYPH, profile.model.name,
+        title=signal_title(LABEL, profile.model.name,
                            "Per-position excess surprisal max(0, sᵢ − H) — tall bars mark tokens the model "
                            "committed against and still selected · shown in prompt order (left to right) so "
                            "spikes can be read against sentence structure · click a bar to isolate it"),

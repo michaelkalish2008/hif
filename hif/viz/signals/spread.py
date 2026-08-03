@@ -1,10 +1,10 @@
-"""Spread ■ (per-step view) — attention spread over context.
+"""Attention-row entropy over the context, output side (per-step view).
 
 Fidelity: attention-row entropy per generated token — how evenly the model's
 attention was distributed across prior context when generating each token.
 A value of k bits ≈ 2^k context positions receiving meaningful weight. High =
 diffuse attention; low = concentrated. Measured in context-position space
-(orthogonal to Entropy ●, which is vocabulary space).
+(orthogonal to output entropy, which is vocabulary space).
 
 Backing data: ``profile.attention`` (continuation attention) — requires
 attention capture (open HuggingFace models).
@@ -22,7 +22,7 @@ from hif.viz._theme import AMBER, dark_layout
 from hif.viz.signals._attention import get_attention_map, row_entropy_trace
 from hif.profile.schema import BehavioralRangeProfile
 
-LABEL, GLYPH = "Output attention-row entropy (bits)", "■"
+LABEL = "Output attention-row entropy (bits)"
 
 
 def available(profile: BehavioralRangeProfile) -> str | None:
@@ -33,7 +33,7 @@ def available(profile: BehavioralRangeProfile) -> str | None:
 def generate(profile, output_path: Path, formats: list[str] = ["html"]) -> dict[str, Path]:
     tokens, weights = get_attention_map(profile, "output")
     if not weights:
-        return save_fig(na_figure(LABEL, GLYPH, NEEDS_ATTENTION), output_path, formats)
+        return save_fig(na_figure(LABEL, NEEDS_ATTENTION), output_path, formats)
 
     trace = row_entropy_trace(weights) or []
     x = list(range(len(trace)))
@@ -50,7 +50,7 @@ def generate(profile, output_path: Path, formats: list[str] = ["html"]) -> dict[
     fig.add_hline(y=mean, line_dash="dash", line_color=AMBER, opacity=0.5,
                   annotation_text=f"mean {mean:.2f} bits", annotation_position="top left")
     fig.update_layout(**dark_layout(
-        title=signal_title(LABEL, GLYPH, profile.model.name,
+        title=signal_title(LABEL, profile.model.name,
                            "Attention spread over context positions per token — high = attention diffuse "
                            "across many positions, low = concentrated"),
         xaxis=dict(title="Token position"),

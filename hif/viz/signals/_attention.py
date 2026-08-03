@@ -1,4 +1,4 @@
-"""Shared extraction for the attention-based instruments (Spread ■, Horizon ▼).
+"""Shared extraction for the attention-row readings, output side and input side.
 
 Both read the stored ``profile.attention_capture`` (a TextAttentionAnalysis)
 and reduce an aggregated attention matrix to a per-token row-entropy trace.

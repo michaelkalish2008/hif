@@ -110,7 +110,7 @@ def _all_measured_values(p) -> dict[str, float]:
         deltas = [abs(nents[i] - nents[i - 1]) for i in range(1, len(nents))]
         out["output_entropy_step_delta_bits"] = sum(deltas) / len(deltas)
 
-    # --- Shift ◆: step-to-step divergence of the output distribution, plus the
+    # --- the step JSD: step-to-step divergence of the output distribution, plus the
     # top-K overlap that bounds how much of it the truncation could have
     # manufactured. Both come from hif/metrics/shift.py, the same function the
     # Shift chart draws — one computation, so instrument and record agree.

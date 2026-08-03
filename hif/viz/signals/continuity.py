@@ -23,7 +23,7 @@ from hif.viz._theme import (
 )
 from hif.profile.schema import BehavioralRangeProfile
 
-LABEL, GLYPH = "Branch pairwise cosine similarity", None
+LABEL = "Branch pairwise cosine similarity"
 
 GROUP_COLORS = ["#6366f1", "#22d3ee", "#f59e0b", "#10b981",
                 "#f43f5e", "#a78bfa", "#fb923c", "#34d399"]
@@ -55,7 +55,7 @@ def _wrap(text: str, width: int = 45) -> str:
 def generate(profile, output_path: Path, formats: list[str] = ["html"]) -> dict[str, Path]:
     reason = available(profile)
     if reason:
-        return save_fig(na_figure(LABEL, GLYPH, reason), output_path, formats)
+        return save_fig(na_figure(LABEL, reason), output_path, formats)
 
     traj = profile.trajectory
     convergence = traj.convergence_profile
@@ -134,7 +134,7 @@ def generate(profile, output_path: Path, formats: list[str] = ["html"]) -> dict[
         f"Explosion {explode:.2f} (split further)"
     )
     fig.update_layout(**dark_layout(
-        title=signal_title(LABEL, GLYPH, model_name, subtitle),
+        title=signal_title(LABEL, model_name, subtitle),
         xaxis=dict(title="Rollout step"),
         yaxis=dict(title="Distinct semantic clusters", rangemode="tozero"),
         height=(total_px + 170 if has_table else CHART_PX + 130), showlegend=True,

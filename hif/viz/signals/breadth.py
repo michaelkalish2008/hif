@@ -20,7 +20,7 @@ from hif.viz.base import NEEDS_DISTRIBUTION, na_figure, save_fig, signal_title
 from hif.viz._theme import INDIGO, AMBER, dark_layout
 from hif.profile.schema import BehavioralRangeProfile
 
-LABEL, GLYPH = "Effective support size", None
+LABEL = "Effective support size"
 
 
 def available(profile: BehavioralRangeProfile) -> str | None:
@@ -31,7 +31,7 @@ def available(profile: BehavioralRangeProfile) -> str | None:
 def generate(profile, output_path: Path, formats: list[str] = ["html"]) -> dict[str, Path]:
     reason = available(profile)
     if reason:
-        return save_fig(na_figure(LABEL, GLYPH, reason), output_path, formats)
+        return save_fig(na_figure(LABEL, reason), output_path, formats)
 
     dist = profile.metrics.distribution
     steps = list(range(len(dist)))
@@ -59,7 +59,7 @@ def generate(profile, output_path: Path, formats: list[str] = ["html"]) -> dict[
         hovertext=hover, hoverinfo="text", name="Effective support size",
     ))
     fig.update_layout(**dark_layout(
-        title=signal_title(LABEL, GLYPH, profile.model.name,
+        title=signal_title(LABEL, profile.model.name,
                            "Effective support size per step (2^nucleus-entropy) — how many tokens were "
                            "genuinely in play · high = exploratory, low = committed · shown in generation "
                            "order — the trend across the response is the signal, not just the peak"),

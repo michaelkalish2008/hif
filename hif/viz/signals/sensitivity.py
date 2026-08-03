@@ -19,7 +19,7 @@ from hif.viz.base import NEEDS_PERTURBATION, na_figure, save_fig, signal_title
 from hif.viz._theme import VIOLET, AMBER, dark_layout
 from hif.profile.schema import BehavioralRangeProfile
 
-LABEL, GLYPH = "Perturbation JSD (bits)", None
+LABEL = "Perturbation JSD (bits)"
 
 
 def available(profile: BehavioralRangeProfile) -> str | None:
@@ -30,7 +30,7 @@ def available(profile: BehavioralRangeProfile) -> str | None:
 def generate(profile, output_path: Path, formats: list[str] = ["html"]) -> dict[str, Path]:
     reason = available(profile)
     if reason:
-        return save_fig(na_figure(LABEL, GLYPH, reason), output_path, formats)
+        return save_fig(na_figure(LABEL, reason), output_path, formats)
 
     sens = profile.metrics.sensitivity
     gens = [s.perturbation_generator for s in sens]
@@ -50,7 +50,7 @@ def generate(profile, output_path: Path, formats: list[str] = ["html"]) -> dict[
     fig.add_hline(y=mean, line_dash="dash", line_color=AMBER,
                   annotation_text=f"Sensitivity = {mean:.3f}", annotation_position="top right")
     fig.update_layout(**dark_layout(
-        title=signal_title(LABEL, GLYPH, profile.model.name,
+        title=signal_title(LABEL, profile.model.name,
                            "Output shift (Jensen-Shannon divergence) under each paraphrase family · "
                            "low = robust, high = brittle to surface wording"),
         xaxis=dict(title="Perturbation generator", tickangle=-30,

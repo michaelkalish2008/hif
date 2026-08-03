@@ -1,4 +1,4 @@
-"""Wager ▲ (per-step view) — surprisal excess over entropy.
+"""Prompt surprisal excess (per-position view) — surprisal over entropy.
 
 Fidelity: Wagerᵢ = max(0, sᵢ − H(Pᵢ)), the per-position residual cost of the
 actual token beyond the model's distributional entropy. This is the full-
@@ -24,7 +24,7 @@ from hif.viz.base import NEEDS_TEACHER_FORCING, add_click_to_dim_js, na_figure, 
 from hif.viz._theme import AMBER, INDIGO, RED, TEXT_SEC, dark_layout
 from hif.profile.schema import BehavioralRangeProfile
 
-LABEL, GLYPH = "Prompt surprisal excess (bits)", "▲"
+LABEL = "Prompt surprisal excess (bits)"
 
 
 def available(profile: BehavioralRangeProfile) -> str | None:
@@ -35,7 +35,7 @@ def available(profile: BehavioralRangeProfile) -> str | None:
 def generate(profile, output_path: Path, formats: list[str] = ["html"]) -> dict[str, Path]:
     reason = available(profile)
     if reason:
-        return save_fig(na_figure(LABEL, GLYPH, reason), output_path, formats)
+        return save_fig(na_figure(LABEL, reason), output_path, formats)
 
     positions = profile.input_side.positions
     idx = [p.position for p in positions]
@@ -80,7 +80,7 @@ def generate(profile, output_path: Path, formats: list[str] = ["html"]) -> dict[
                   annotation_text=f"mean = {mean_excess:.3f} bits (Wager)", annotation_position="top left")
 
     fig.update_layout(**dark_layout(
-        title=signal_title(LABEL, GLYPH, profile.model.name,
+        title=signal_title(LABEL, profile.model.name,
                            f"Wager = mean excess surprisal {mean_excess:.3f} bits · gap above the entropy "
                            "line in the top panel = the bar height in the bottom panel · click a bar to isolate it"),
         xaxis=dict(categoryorder="array", categoryarray=x_labels, showticklabels=False),

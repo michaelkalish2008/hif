@@ -38,17 +38,16 @@ NEEDS_DISTRIBUTION = "Requires per-step output distributions (no generation step
 NEEDS_EXPOSURE = "Requires the Exposure analysis extension (top-K probabilities + an embedding encoder)."
 
 
-def na_figure(label: str, glyph: str | None, reason: str) -> go.Figure:
+def na_figure(label: str, reason: str) -> go.Figure:
     """A branded 'not available for this run' placeholder figure.
 
     Deliberately explicit: the reader must never mistake an absent signal for a
     flat or zero one. Names the signal and the exact data requirement.
     """
-    head = f"{glyph}  {label}" if glyph else label
     fig = go.Figure()
     fig.add_annotation(
         x=0.5, y=0.58, xref="paper", yref="paper",
-        text=f"<b>{head}</b>",
+        text=f"<b>{label}</b>",
         showarrow=False, font=dict(size=16, color=TEXT_SEC), align="center",
     )
     fig.add_annotation(
@@ -145,11 +144,18 @@ def _wrap_subtitle(subtitle: str, max_line_chars: int = 68) -> str:
     return "<br>".join(final_lines)
 
 
-def signal_title(label: str, glyph: str | None, model_name: str, subtitle: str) -> dict:
-    """Consistent chart title: `<glyph> Label — model` with a wrapped <sub> line."""
-    head = f"{glyph}  {label}" if glyph else label
+def signal_title(label: str, model_name: str, subtitle: str) -> dict:
+    """Consistent chart title: `Label — model` with a wrapped <sub> line.
+
+    There is no glyph. Charts used to be headed with one — ● ◆ ▲ ■ ◇ — and a
+    symbol set does not extend: adding a measurement means either picking a
+    mark nobody has taken or subscripting one that is (this project reached
+    ▼p and ▼g), and ◆ against ◈ was two near-identical marks on two quantities
+    a reader is specifically likely to confuse. A colour swatch indexes a
+    legend without pretending to be a mnemonic; a name says what the thing is.
+    """
     return dict(
-        text=f"{head} — {model_name}<br><sub>{_wrap_subtitle(subtitle)}</sub>",
+        text=f"{label} — {model_name}<br><sub>{_wrap_subtitle(subtitle)}</sub>",
         font=dict(size=14, color=TEXT_PRI),
     )
 

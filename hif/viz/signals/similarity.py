@@ -18,7 +18,7 @@ from hif.viz.base import na_figure, save_fig, signal_title
 from hif.viz._theme import INDIGO, EMERALD, AMBER, dark_layout
 from hif.profile.schema import BehavioralRangeProfile
 
-LABEL, GLYPH = "Input/output cosine similarity", None
+LABEL = "Input/output cosine similarity"
 _NEEDS = "Requires perturbation variant pairs (no (input, output) pairs were recorded)."
 
 
@@ -29,7 +29,7 @@ def available(profile: BehavioralRangeProfile) -> str | None:
 def generate(profile, output_path: Path, formats: list[str] = ["html"]) -> dict[str, Path]:
     reason = available(profile)
     if reason:
-        return save_fig(na_figure(LABEL, GLYPH, reason), output_path, formats)
+        return save_fig(na_figure(LABEL, reason), output_path, formats)
 
     sim = profile.metrics.similarity
     labels = ["Input spread<br>(input_sim)", "Output spread<br>(output_sim)", "Input→Output anchor<br>(io_sim)"]
@@ -43,7 +43,7 @@ def generate(profile, output_path: Path, formats: list[str] = ["html"]) -> dict[
         hovertemplate="%{x}<br>cosine: %{y:.4f}<extra></extra>",
     ))
     fig.update_layout(**dark_layout(
-        title=signal_title(LABEL, GLYPH, profile.model.name,
+        title=signal_title(LABEL, profile.model.name,
                            f"Semantic anchoring (cosine) · io_ratio {sim.io_ratio:.2f} · "
                            f"per-step trend {sim.trend:+.4f} ({trend_word}) · n={sim.n_pairs} pairs"),
         xaxis=dict(title=""),

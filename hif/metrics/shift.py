@@ -1,4 +1,4 @@
-"""Shift ◆ — step-to-step output divergence, and the top-K overlap that bounds it.
+"""Step-to-step output divergence, and the top-K overlap that bounds it.
 
 CANONICAL IMPLEMENTATION. ``Shiftⱼ = JSD(Qⱼ₋₁, Qⱼ)`` — the Jensen-Shannon
 divergence (bits, log base 2) between CONSECUTIVE generation steps' output
@@ -50,7 +50,7 @@ import numpy as np
 from hif.hourglass.output_side import output_distribution_degenerate
 from hif.metrics.sensitivity import js_divergence
 
-LABEL, GLYPH = "Output step-to-step JSD (bits)", "◆"
+LABEL = "Output step-to-step JSD (bits)"
 
 # Reason strings, so the chart's "not available" panel and the measurement's
 # absence agree on why.
@@ -75,7 +75,7 @@ class StepShift:
 class ShiftSummary:
     """Run-level summary of the per-transition trace.
 
-    mean_jsd_bits          the Shift ◆ measurement.
+    mean_jsd_bits          the output_step_jsd_bits measurement.
     mean_overlap_fraction  its companion — mean top-K overlap over the same
                            transitions, the resolution limit on the divergence.
     median_overlap_fraction
@@ -149,7 +149,7 @@ def shift_trace(steps) -> list[StepShift]:
 
 
 def shift_summary(steps) -> ShiftSummary | None:
-    """Run-level Shift ◆ and its companion overlap, or ``None`` when absent.
+    """Run-level step JSD and its companion overlap, or ``None`` when absent.
 
     ``None`` — not 0.0 — whenever the run produced no evidence for the
     quantity: fewer than two steps, or a selected-only backend whose steps are

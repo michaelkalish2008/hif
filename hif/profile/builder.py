@@ -701,7 +701,7 @@ def build_profile(
         embedder=embedder,
     )
 
-    # 11d. Within-generation semantic field (Veer ◈) — per-step semantic-centroid
+    # 11d. Within-generation semantic field (centroid veer) — per-step semantic-centroid
     # trajectory, same recovered basis. Compute-and-discard.
     semantic_field_reading = None
     if config.semantic_field.enabled:
@@ -1139,7 +1139,7 @@ def _build_profile_mm(
         embedder=embedder,
     )
 
-    # Within-generation semantic field (Veer ◈) — mm path uses the raw output
+    # Within-generation semantic field (centroid veer) — mm path uses the raw output
     # trace (no surrogate output-recovery on the mm path). Compute-and-discard.
     semantic_field_reading = None
     if config.semantic_field.enabled:

@@ -59,7 +59,7 @@ from typing import Optional
 # hif-v2 artifact carries numbers under keys a hif-v3 artifact deliberately
 # does not, so the two are not intersectable without silently comparing a
 # fact about the target against a fact about a reference model.
-# hif-v3.1: added output_step_jsd_bits (Shift ◆ — the step-to-step
+# hif-v3.1: added output_step_jsd_bits (the step-to-step
 # output divergence that existed only as a chart, so a reader could see it on
 # the companion website and not reproduce it with the CLI) and its companion
 # output_step_topk_overlap_fraction. Purely additive within the hif-v3 family:
@@ -80,9 +80,9 @@ from typing import Optional
 # absence condition on already-optional keys, so `hif compare` still intersects
 # across the v3 family.
 # hif-v3.3 (current): removed the `label` field. Rows carried an optional
-# shorthand from this project's own vocabulary — "Stability", "Sensitivity",
-# "Wager ▲", "Continuity", "Horizon", "Exposure ◇", "Veer ◈", "Spread ■",
-# "Entropy ●", "Shift ◆" — alongside the descriptive `name`. Two names for one
+# shorthand from this project's own vocabulary — Stability, Sensitivity, Wager,
+# Continuity, Horizon, Exposure, Veer, Spread, Entropy, Shift — alongside the
+# descriptive `name`. Two names for one
 # quantity is one name too many, and the shorthand was the one that went wrong:
 # "Stability" ended up on `input_entropy_std_bits`, a standard deviation, where
 # a higher number means LESS stable. A name that inverts the reading direction
@@ -205,7 +205,7 @@ class Measurement:
 
                     There is deliberately no second naming layer. Rows used to
                     carry an optional `label` holding a shorthand from this
-                    project's own vocabulary ("Stability", "Wager ▲",
+                    project's own vocabulary ("Stability", " prompt surprisal excess",
                     "Continuity"), and the shorthand outlived the quantity it
                     was coined for: "Stability" ended up on a standard
                     deviation, where a HIGHER number means LESS stable, so the

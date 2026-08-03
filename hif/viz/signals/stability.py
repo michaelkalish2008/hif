@@ -18,7 +18,7 @@ from hif.viz.base import NEEDS_TEACHER_FORCING, na_figure, save_fig, signal_titl
 from hif.viz._theme import INDIGO, AMBER, dark_layout
 from hif.profile.schema import BehavioralRangeProfile
 
-LABEL, GLYPH = "Input entropy trace", None
+LABEL = "Input entropy trace"
 
 
 def available(profile: BehavioralRangeProfile) -> str | None:
@@ -29,7 +29,7 @@ def available(profile: BehavioralRangeProfile) -> str | None:
 def generate(profile, output_path: Path, formats: list[str] = ["html"]) -> dict[str, Path]:
     reason = available(profile)
     if reason:
-        return save_fig(na_figure(LABEL, GLYPH, reason), output_path, formats)
+        return save_fig(na_figure(LABEL, reason), output_path, formats)
 
     positions = profile.input_side.positions
     idx = [p.position for p in positions]
@@ -55,7 +55,7 @@ def generate(profile, output_path: Path, formats: list[str] = ["html"]) -> dict[
         name="Per-position input entropy",
     ))
     fig.update_layout(**dark_layout(
-        title=signal_title(LABEL, GLYPH, profile.model.name,
+        title=signal_title(LABEL, profile.model.name,
                            f"Per-position uncertainty while reading the prompt · {score_txt} · "
                            "SD is in bits"),
         xaxis=dict(title="Prompt token position"),

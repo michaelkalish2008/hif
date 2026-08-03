@@ -1,7 +1,7 @@
 """The signal-visualization registry.
 
 Single source of truth for the viz engine: which signals exist, their identity
-(id/label/kind/glyph/family), the generator that draws them, and the
+(id/label/kind/family), the generator that draws them, and the
 availability predicate that decides whether *this* profile has the backing data.
 
 Insertion order is the v1 ordered set, so the engine renders signals in a
@@ -30,8 +30,7 @@ off the quantity while the key stays pinned to it). Three charts do not draw
 a measurement directly and say so in their label: `stability` draws the
 per-position input entropy trace behind the aggregate, `surprise` draws the
 same per-position series `wager` summarises, and `breadth` draws effective
-support size, which is not in the measurement set at all. The GLYPHs are
-unchanged and stay what they always were — legend markers, not names.
+support size, which is not in the measurement set at all.
 
 The bridge is explicit: `measurement_key` on each row names
 the measurement the chart draws (None for a chart, like breadth, that draws a
@@ -60,7 +59,6 @@ class SignalViz:
     label: str
     kind: str        # "aggregate" | "reading"
     family: str      # a FUNCTIONALS value: "information-theoretic" | "geometric"
-    glyph: str | None
     generate: Callable
     available: Callable  # (profile) -> str | None
     # The measurement this chart draws, as a MEASUREMENT_REGISTRY key — the
@@ -70,8 +68,8 @@ class SignalViz:
 
 
 # Ordered as the v1 signal set. `module` supplies generate/available, and also
-# LABEL/GLYPH — the display name and legend marker are read off the module that
-# draws the chart, not restated here. They used to be restated here, and the two
+# LABEL — the display name is read off the module that draws the chart, not
+# restated here. They used to be restated here, and the two
 # copies drifted: this table said "Stability" while the module said "Input
 # entropy trace", and the chart a reader actually saw was titled from the
 # module.
@@ -114,7 +112,6 @@ SIGNALS: list[SignalViz] = [
             if mkey is not None
             else "information-theoretic"
         ),
-        glyph=getattr(mod, "GLYPH", None),
         generate=mod.generate, available=mod.available,
         measurement_key=mkey,
     )

@@ -1,12 +1,12 @@
-"""Shift ◆ — the step-to-step output divergence, and the rules that bound it.
+"""output_step_jsd_bits — the step-to-step output divergence, and its bounds.
 
 Three properties are under test here, and each corresponds to a defect this
 module was written to close:
 
-1. Shift is a MEASUREMENT, not only a chart. It has a registry row, it is
-   emitted by `measurements()`, and it reaches the machine record — so a reader
-   who sees "Shift ◆" on the companion website can reproduce the number with
-   the CLI.
+1. It is a MEASUREMENT, not only a chart. It has a registry row, it is emitted
+   by `measurements()`, and it reaches the machine record — so a reader who
+   sees the divergence plotted on the companion website can reproduce the
+   number with the CLI.
 2. The chart and the measurement are the same arithmetic. `hif/metrics/shift.py`
    owns it; `hif/viz/signals/shift.py` imports it. They cannot drift.
 3. The saturation caveat is acted on, not just documented — the top-K overlap
@@ -236,7 +236,11 @@ def test_the_chart_imports_the_canonical_computation():
     assert chart.shift_trace is canonical.shift_trace
     assert chart.shift_summary is canonical.shift_summary
     assert chart.LABEL == canonical.LABEL == "Output step-to-step JSD (bits)"
-    assert chart.GLYPH == canonical.GLYPH == "◆"
+    # No GLYPH to check: the symbol set was removed. A mark cannot be extended
+    # by a contributor adding a measurement — this project had already reached
+    # ▼p and ▼g — and ◆ against ◈ put two near-identical marks on the two
+    # quantities a reader is most likely to confuse.
+    assert not hasattr(chart, "GLYPH")
     # No private reimplementation left behind.
     assert not hasattr(chart, "_jsd")
     assert not hasattr(chart, "_overlap_frac")

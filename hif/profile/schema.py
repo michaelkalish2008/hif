@@ -267,8 +267,8 @@ class BehavioralRangeProfile(BaseModel):
     #
     # Field names track the HIF taxonomy, not implementation concepts: neither
     # "attention" nor "hallucination" is a signal. `attention_capture` is the raw
-    # attention substrate the Spread ■ and Horizon ▼ readings derive from;
-    # `exposure` is the Exposure ◇ instrument (runtime type ExposureProfile, from
+    # attention substrate the output-side and input-side attention-row readings derive from;
+    # `exposure` is the counterfactual exposure instrument (runtime type ExposureProfile, from
     # hif.analysis.exposure — both renamed from the historical "hallucination").
     # validation_alias keeps older profile JSON (with the pre-rename keys) loadable.
     #
