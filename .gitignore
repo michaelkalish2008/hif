@@ -48,6 +48,7 @@ outputs/
 traces/
 baselines/
 logs/
+*.log
 *.jsonl.tmp
 
 # Credentials — never commit
