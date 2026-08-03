@@ -35,6 +35,7 @@ from pathlib import Path
 
 from hif.cli import _run_single_profile, _load_model, _load_embedder
 from hif.config import RunConfig
+from hif.profile.measure import measurements, prompt_measurements
 from hif.prompts.suite import REGIMES
 
 SEED = 42
@@ -117,6 +118,13 @@ def run_plane(models, out: Path, *, surrogate: bool) -> int:
 
             record = json.loads(profile.model_dump_json())
             record.pop("raw_traces", None)
+            # The CLI's own answer, so a consumer never has to re-derive the
+            # absence rules from `metrics.*`. `measurements` is about this
+            # model; `prompt_measurements` is about the PROMPT under a
+            # reference model and is identical across every model profiled on
+            # it — see docs/MEASUREMENTS.md § Subject.
+            record["measurements"] = measurements(profile)
+            record["prompt_measurements"] = prompt_measurements(profile)
             # Write to a temp name first: a half-written file left by a crash
             # would otherwise be skipped as "exists" on the next run.
             tmp = target.with_suffix(".json.partial")

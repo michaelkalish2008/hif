@@ -13,3 +13,73 @@ data: 8 files from /Users/michaelkalish/Documents/Github/od/ai-interpretability/
 
 Done: 8 uploaded, 0 failed.
 [21:01:41] gpt5 published
+[21:15:42] gemma_3_1b_it complete (8/8) — uploading
+
+data: 8 files from /Users/michaelkalish/Documents/Github/od/ai-interpretability/public/data
+  ✓ data/gemma_3_1b_it/adversarial_unstable.json
+  ✓ data/gemma_3_1b_it/ambiguous_moral.json
+  ✓ data/gemma_3_1b_it/healthcare_advice.json
+  ✓ data/gemma_3_1b_it/legal_compliance.json
+  ✓ data/gemma_3_1b_it/literary_continuation.json
+  ✓ data/gemma_3_1b_it/ordinary_conversation.json
+  ✓ data/gemma_3_1b_it/poetic_metaphorical.json
+  ✓ data/gemma_3_1b_it/technical_explanation.json
+
+Done: 8 uploaded, 0 failed.
+[21:16:04] gemma_3_1b_it published
+[21:16:04] gpt2_medium complete (8/8) — uploading
+
+data: 8 files from /Users/michaelkalish/Documents/Github/od/ai-interpretability/public/data
+  ✓ data/gpt2_medium/adversarial_unstable.json
+  ✓ data/gpt2_medium/ambiguous_moral.json
+  ✓ data/gpt2_medium/healthcare_advice.json
+  ✓ data/gpt2_medium/legal_compliance.json
+  ✓ data/gpt2_medium/literary_continuation.json
+  ✓ data/gpt2_medium/ordinary_conversation.json
+  ✓ data/gpt2_medium/poetic_metaphorical.json
+  ✓ data/gpt2_medium/technical_explanation.json
+
+Done: 8 uploaded, 0 failed.
+[21:16:29] gpt2_medium published
+[21:16:29] gpt4_1 complete (8/8) — uploading
+
+data: 8 files from /Users/michaelkalish/Documents/Github/od/ai-interpretability/public/data
+  ✓ data/gpt4_1/adversarial_unstable.json
+  ✓ data/gpt4_1/ambiguous_moral.json
+  ✓ data/gpt4_1/healthcare_advice.json
+  ✓ data/gpt4_1/legal_compliance.json
+  ✓ data/gpt4_1/literary_continuation.json
+  ✓ data/gpt4_1/ordinary_conversation.json
+  ✓ data/gpt4_1/poetic_metaphorical.json
+  ✓ data/gpt4_1/technical_explanation.json
+
+Done: 8 uploaded, 0 failed.
+[21:16:43] gpt4_1 published
+[21:16:43] gpt4_1_mini complete (8/8) — uploading
+
+data: 8 files from /Users/michaelkalish/Documents/Github/od/ai-interpretability/public/data
+  ✓ data/gpt4_1_mini/adversarial_unstable.json
+  ✓ data/gpt4_1_mini/ambiguous_moral.json
+  ✓ data/gpt4_1_mini/healthcare_advice.json
+  ✓ data/gpt4_1_mini/legal_compliance.json
+  ✓ data/gpt4_1_mini/literary_continuation.json
+  ✓ data/gpt4_1_mini/ordinary_conversation.json
+  ✓ data/gpt4_1_mini/poetic_metaphorical.json
+  ✓ data/gpt4_1_mini/technical_explanation.json
+
+Done: 8 uploaded, 0 failed.
+[21:16:57] gpt4_1_mini published
+[21:16:57] gpt5 complete (8/8) — uploading
+
+data: 8 files from /Users/michaelkalish/Documents/Github/od/ai-interpretability/public/data
+  ✓ data/gpt5/adversarial_unstable.json
+  ✓ data/gpt5/ambiguous_moral.json
+  ✓ data/gpt5/healthcare_advice.json
+  ✓ data/gpt5/legal_compliance.json
+  ✓ data/gpt5/literary_continuation.json
+  ✓ data/gpt5/ordinary_conversation.json
+  ✓ data/gpt5/poetic_metaphorical.json
+  ✓ data/gpt5/technical_explanation.json
+
+Done: 8 uploaded, 0 failed.
+[21:17:18] gpt5 published
