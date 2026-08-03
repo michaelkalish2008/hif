@@ -74,6 +74,11 @@ class OpenAIModel(Model):
     """OpenAI chat-completion backend."""
 
     def __init__(self, config: ModelConfig) -> None:
+        # Set the first time the API refuses a logprob request, so the rest of
+        # the run skips straight to the no-logprobs path. Per instance, not per
+        # class: whether a model exposes logprobs is a fact about that model,
+        # and the same process may profile several.
+        self._refuses_logprobs = False
         try:
             import tiktoken
             from openai import OpenAI
@@ -194,12 +199,21 @@ class OpenAIModel(Model):
         """
         effective_k = min(top_k, self.max_top_k)
 
+        # Ask once. A model that refuses logprobs refuses every time, and the
+        # refusal costs a full round trip plus a retry — on a profile run that
+        # is one wasted request per generation, sixteen per prompt with the
+        # perturbation variants, and it was the difference between a ~30s
+        # gpt-4.1-mini run and a 626–1056s gpt-5 one.
+        if self._refuses_logprobs:
+            return self._generate_no_logprobs(input_ids, max_new_tokens, seed, messages=messages)
+
         logger.info("OpenAI generate: model=%s tokens=%d top_logprobs=%d", self.name, max_new_tokens, effective_k)
 
         # Use per-model temperature override if set; otherwise default to 0 for determinism.
         # DeepSeek returns -9999 sentinel logprobs at temperature=0 — set temperature=1 in its ModelConfig.
         temperature = self._config.temperature if self._config.temperature is not None else 0.0
 
+        extra = self._config.extra_body or None
         try:
             response = self._client.chat.completions.create(
                 model=self.name,
@@ -209,6 +223,7 @@ class OpenAIModel(Model):
                 top_logprobs=effective_k,
                 seed=seed,
                 temperature=temperature,
+                **({"extra_body": extra} if extra else {}),
             )
         except Exception as exc:
             # Reasoning models (GPT-5, o-series) and some compatible APIs reject logprob requests
@@ -222,7 +237,14 @@ class OpenAIModel(Model):
                 or "403" in str(exc)
             )
             if is_capability_limit:
-                logger.warning("Model %s capability limit — falling back to degenerate mode: %s", self.name, str(exc)[:120])
+                # Remember it, so the rest of the run stops asking. Logged once
+                # at warning; repeats would be the same fact many times over.
+                if not self._refuses_logprobs:
+                    logger.warning(
+                        "Model %s refuses logprobs — degenerate mode for the rest of this run: %s",
+                        self.name, str(exc)[:120],
+                    )
+                self._refuses_logprobs = True
                 return self._generate_no_logprobs(input_ids, max_new_tokens, seed, messages=messages)
             raise
 

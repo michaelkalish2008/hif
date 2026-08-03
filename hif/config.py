@@ -17,6 +17,15 @@ class ModelConfig(BaseModel):
     api_key: Optional[str] = None  # overrides env var for API backends
     base_url: Optional[str] = None  # custom endpoint for OpenAI-compatible APIs (Mistral, DeepSeek, etc.)
     temperature: Optional[float] = None  # per-model override; None = use backend default (0 for OpenAI, 1 for DeepSeek)
+    # Extra JSON passed straight through on each OpenAI-compatible request.
+    # Needed for provider options outside the OpenAI schema — DeepSeek's
+    # `{"thinking": {"type": "disabled"}}` is the case this exists for. Left
+    # on, that model spends the token budget reasoning: at max_new_tokens=64 it
+    # returned 48 reasoning tokens and only 15 content steps, so the measured
+    # generation would be a quarter the length of every other model's and the
+    # comparison would be between different amounts of text. Disabled, it
+    # returns 64 content steps with full top-5 logprobs.
+    extra_body: Optional[dict] = None
 
 
 class EmbeddingConfig(BaseModel):

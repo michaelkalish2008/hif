@@ -40,27 +40,39 @@ from hif.prompts.suite import REGIMES
 
 SEED = 42
 
-# site model id -> (model name, backend, base_url or None)
+# site model id -> (model name, backend, base_url or None, extra_body or None)
 # Names and backends are what the deployed profiles record, so a regenerated
 # file describes the same model the old one did.
 OPEN = [
-    ("reference_run",            "gpt2",                                     "hf", None),
-    ("gpt2_medium",              "gpt2-medium",                              "hf", None),
-    ("gemma_3_1b_it",            "google/gemma-3-1b-it",                     "hf", None),
-    ("llama_3_2_1b",             "meta-llama/Llama-3.2-1B",                  "hf", None),
-    ("qwen3_1_7b",               "Qwen/Qwen3-1.7B",                          "hf", None),
-    ("deepseek_r1_distill_1_5b", "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B", "hf", None),
+    ("reference_run",            "gpt2",                                     "hf", None, None),
+    ("gpt2_medium",              "gpt2-medium",                              "hf", None, None),
+    ("gemma_3_1b_it",            "google/gemma-3-1b-it",                     "hf", None, None),
+    ("llama_3_2_1b",             "meta-llama/Llama-3.2-1B",                  "hf", None, None),
+    ("qwen3_1_7b",               "Qwen/Qwen3-1.7B",                          "hf", None, None),
+    ("deepseek_r1_distill_1_5b", "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B", "hf", None, None),
 ]
 
+# DeepSeek: `deepseek-chat` was retired — the account now serves only
+# deepseek-v4-flash and deepseek-v4-pro, so the V3 readings in the published
+# corpus cannot be reproduced and are not regenerated here. The v4 model gets
+# its own id rather than inheriting `deepseek_v3`: publishing a V4 reading
+# under a V3 label is the provenance error the subject rules exist to prevent.
+#
+# `thinking: disabled` is not a preference. Left enabled at max_new_tokens=64
+# the model spends 48 tokens reasoning and returns 15 content steps, so its
+# measured generation would be a quarter the length of every other model's.
+DEEPSEEK_NO_THINKING = {"thinking": {"type": "disabled"}}
+
 API = [
-    ("gpt4_1_mini",       "gpt-4.1-mini",              "openai",    None),
-    ("gpt4_1",            "gpt-4.1",                   "openai",    None),
-    ("gpt5",              "gpt-5",                     "openai",    None),
-    ("deepseek_v3",       "deepseek-chat",             "openai",    "https://api.deepseek.com"),
-    ("gemini_2_5_flash",  "gemini-2.5-flash",          "gemini",    None),
-    ("gemini_2_5_pro",    "gemini-2.5-pro",            "gemini",    None),
-    ("claude_haiku_4_5",  "claude-haiku-4-5-20251001", "anthropic", None),
-    ("claude_sonnet_4_6", "claude-sonnet-4-6",         "anthropic", None),
+    ("gpt4_1_mini",       "gpt-4.1-mini",              "openai",    None, None),
+    ("gpt4_1",            "gpt-4.1",                   "openai",    None, None),
+    ("gpt5",              "gpt-5",                     "openai",    None, None),
+    ("deepseek_v4_flash", "deepseek-v4-flash",         "openai",    "https://api.deepseek.com", DEEPSEEK_NO_THINKING),
+    ("deepseek_v4_pro",   "deepseek-v4-pro",           "openai",    "https://api.deepseek.com", DEEPSEEK_NO_THINKING),
+    ("gemini_2_5_flash",  "gemini-2.5-flash",          "gemini",    None, None),
+    ("gemini_2_5_pro",    "gemini-2.5-pro",            "gemini",    None, None),
+    ("claude_haiku_4_5",  "claude-haiku-4-5-20251001", "anthropic", None, None),
+    ("claude_sonnet_4_6", "claude-sonnet-4-6",         "anthropic", None, None),
 ]
 
 
@@ -68,13 +80,16 @@ def run_plane(models, out: Path, *, surrogate: bool) -> int:
     embedder = _load_embedder()
     n_ok = n_fail = 0
 
-    for site_id, name, backend, base_url in models:
+    for site_id, name, backend, base_url, extra_body in models:
         print(f"\n=== {site_id}  ({name} / {backend}) ===", flush=True)
 
         base_config = None
-        if base_url is not None:
+        if base_url is not None or extra_body is not None:
             base_config = RunConfig()
-            base_config.model.base_url = base_url
+            if base_url is not None:
+                base_config.model.base_url = base_url
+            if extra_body is not None:
+                base_config.model.extra_body = extra_body
 
         try:
             model = _load_model(name, backend)
