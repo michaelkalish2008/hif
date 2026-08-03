@@ -60,6 +60,46 @@ def _load_config_file(path: Path) -> "RunConfig":
             f"Valid tables: {', '.join(sorted(RunConfig.model_fields))}.[/red]"
         )
         raise typer.Exit(3)
+    # Same guard one level down. RunConfig's sub-models also tolerate unknown
+    # fields (embedded profile JSON must keep loading across versions), so a
+    # typo'd key INSIDE a valid table ([perturbation] generatorz = ...) would
+    # validate cleanly and the run would silently measure with the default —
+    # the worst outcome a config file can produce, because the record carries
+    # no evidence of it. The TOML path is authored by hand and gets no such
+    # tolerance: every key must name a real field (or one of its aliases).
+    # Fields typed as plain dicts (e.g. [model] extra_body, passed through to
+    # the provider verbatim) are exempt — their keys are the provider's
+    # vocabulary, not ours.
+    for table_name, table_value in data.items():
+        if not isinstance(table_value, dict):
+            continue
+        field = RunConfig.model_fields.get(table_name)
+        if field is None:  # matched via alias — resolve to the real field
+            field = next(
+                f for f in RunConfig.model_fields.values()
+                if isinstance(f.validation_alias, AliasChoices)
+                and table_name in f.validation_alias.choices
+            )
+        sub_model = field.annotation
+        sub_fields = getattr(sub_model, "model_fields", None)
+        if sub_fields is None:
+            continue
+        valid_inner: set[str] = set(sub_fields)
+        for _inner in sub_fields.values():
+            if isinstance(_inner.validation_alias, AliasChoices):
+                valid_inner.update(
+                    a for a in _inner.validation_alias.choices if isinstance(a, str)
+                )
+        unknown_inner = sorted(set(table_value) - valid_inner)
+        if unknown_inner:
+            # \[ — rich would otherwise read [perturbation] as a style tag
+            # and silently drop the table name from its own error message.
+            err_console.print(
+                f"[red]Unknown key(s) in \\[{table_name}] of --config-file "
+                f"{path}: {', '.join(unknown_inner)}. "
+                f"Valid keys: {', '.join(sorted(sub_fields))}.[/red]"
+            )
+            raise typer.Exit(3)
     try:
         return RunConfig(**data)
     except Exception as exc:
@@ -182,4 +222,20 @@ def _check_mode(mode: str) -> None:
     """Reject a --mode value neither command accepts."""
     if mode not in ("fast", "audit"):
         err_console.print(f"[red]--mode must be 'fast' or 'audit', got {mode!r}[/red]")
+        raise typer.Exit(3)
+
+
+def _check_acquisition(acquisition: str) -> None:
+    """Reject an --acquisition tier no command accepts.
+
+    Shared by `profile`, `batch`, and `suite`: a ceiling that means one thing
+    at one scale and something else at another would be worse than no ceiling.
+    """
+    from hif.profile.registry import ACQUISITIONS
+
+    if acquisition not in ACQUISITIONS:
+        err_console.print(
+            f"[red]--acquisition must be one of: {', '.join(ACQUISITIONS)} — "
+            f"got {acquisition!r}[/red]"
+        )
         raise typer.Exit(3)

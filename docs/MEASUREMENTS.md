@@ -15,6 +15,28 @@ Every HIF measurement is a **triple**: **observable × functional × resolution*
 
 There is one concept — a **measurement** — and resolution is a field on it, not a category of its own. Splitting aggregate and token-level quantities into separate vocabularies would be the resolution coordinate wearing two names, and two names for one axis is how a set starts double-counting itself.
 
+## Acquisition — what taking the measurement brings into existence
+
+The triple says what was measured. **Subject** says whose behaviour the number describes. Neither says what had to be *created* to get it, and that is a separate question with separate consequences.
+
+Some measurements read the prompt as given and the one continuation the run already produced. Others require the tool to author prompt text the user never wrote, or to make the model generate continuations nobody asked for and nobody will read. Reporting both under one heading — which this document previously did — hides the difference between an observation and an elicitation.
+
+Every registry row now declares an `acquisition`, and `hif schema` prints it:
+
+- **`observational`** — computed from the prompt as given and the single continuation the run produced. Nothing is sent to the model beyond the one call the caller asked for, and no model output exists afterwards that did not exist before. Local instruments may construct strings — counterfactual exposure embeds `prefix + candidate` alternatives — but nothing constructed leaves the process or reaches a provider.
+- **`synthesized-input`** — the tool **authors** new prompt text (paraphrase variants) and teacher-forces the model over it. The model does not generate.
+- **`elicited-output`** — the tool makes the model **generate** text that did not exist before: variant continuations, trajectory branch rollouts. This is the tier that costs tokens, multiplies API calls, and produces unreviewed model output.
+
+| acquisition | measurements |
+| --- | --- |
+| `observational` | `output_entropy_bits`, `output_entropy_step_delta_bits`, `output_step_jsd_bits`, `output_step_topk_overlap_fraction`, `prompt_surprisal_excess_bits`, `candidate_cluster_entropy_bits`, `counterfactual_exposure_fraction`, `semantic_centroid_veer_cosine`, `attention_entropy_input_bits`, `attention_entropy_output_bits` |
+| `synthesized-input` | `input_entropy_shift_bits`, `input_entropy_std_bits` |
+| `elicited-output` | `perturbation_jsd_bits`, `io_correlation_r`, `io_cosine_similarity`, `branch_pairwise_cosine_similarity` |
+
+`--acquisition observational|synthesized-input|elicited-output` caps a run at one of these tiers; measurements above the ceiling are **absent, not zero**. The tiers are strictly nested and the surviving values are identical across them, so raising the ceiling only ever adds keys. See [CONFIG.md](CONFIG.md).
+
+**The input-side pair was entangled with elicitation and no longer is.** `input_entropy_shift_bits` and `input_entropy_std_bits` difference teacher-forced entropies over paraphrased prompts; they read no variant continuation. The pipeline nonetheless generated one for every variant, because authoring and generating happened in the same loop. `[perturbation] elicit_variant_outputs = false` separates them, which is what the `synthesized-input` tier sets.
+
 ## Significance Gate — the bar for admitting a measurement
 
 A computable triple is not automatically a measurement. **This gate is the acceptance criterion for contributing a new measurement** (see [CONTRIBUTING.md](../CONTRIBUTING.md)). Two conditions, both required:

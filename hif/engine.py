@@ -79,17 +79,35 @@ class SessionEngine:
         *,
         regime: str = "ordinary_conversation",
         seed: int = 42,
+        authored_variants: Optional[list] = None,
+        variant_output_sink: Optional[dict] = None,
     ):
         """Run the full pipeline on one prompt (str or MultimodalInput).
 
         Returns the in-memory BehavioralRangeProfile. Nothing is written to
         disk — see `write_trace` for the explicit persistence opt-in.
+
+        `authored_variants`: researcher-authored perturbation texts for THIS
+        prompt; when given they replace the configured generator pipeline.
+        Resolved by the caller (a workload row's `variants`, or the CLI
+        reading [perturbation] variants_file) — the builder never does file
+        I/O, so what it measured is exactly what it was handed.
+
+        `variant_output_sink`: a caller-owned dict that receives
+        {variant_text: variant_continuation} for every variant continuation
+        the run elicits. Out-of-band on purpose: the record's `variant_io`
+        block needs the texts on request (--variant-io), but persisting them
+        on the profile would grow the artifact's content surface for every
+        run, opted in or not. A sink the caller passes is content the caller
+        asked to hold.
         """
         from hif.profile.builder import build_profile
 
         return build_profile(
             self.model, prompt, regime, self.config, self.embedder, seed,
             surrogate_model=self.surrogate_model,
+            authored_variants=authored_variants,
+            variant_output_sink=variant_output_sink,
         )
 
     def record_for(

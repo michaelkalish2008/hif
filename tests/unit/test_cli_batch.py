@@ -50,10 +50,11 @@ class FakeEngine:
         cls.last_create_kwargs = kwargs
         return cls(config)
 
-    def profile_one(self, prompt, *, regime, seed):
+    def profile_one(self, prompt, *, regime, seed, authored_variants=None,
+                    variant_output_sink=None):
         if isinstance(prompt, str) and "BOOM" in prompt:
             raise RuntimeError("pipeline exploded")
-        return {"profile_for": prompt}
+        return {"profile_for": prompt, "authored_variants": authored_variants}
 
     def record_for(self, profile, *, prompt, regime, seed, latency=None,
                    trace_path=None, extras=None, include_units=False):

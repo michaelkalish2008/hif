@@ -175,14 +175,21 @@ def _distribution_metrics_for(
 
 
 def _semantic_metrics_for(
-    steps: list, *, embedder: EmbeddingModel, cluster_config
+    steps: list, *, embedder: EmbeddingModel, cluster_config, enabled: bool = True
 ) -> list[SemanticMetrics]:
     """One SemanticMetrics per step of the caller's chosen basis.
 
     Each step's candidates are embedded in the context of the few tokens that
     preceded them, so the same token at two points in a generation is not the
     same point in embedding space.
+
+    Returns [] when the stage is disabled (`--lite`). Every consumer already
+    handles a short or empty list — the alternative, per-step zeros, would
+    publish a measured value where none was taken.
     """
+    if not enabled:
+        logger.debug("Skipping semantic metrics — stage disabled.")
+        return []
     logger.debug("Computing semantic metrics...")
     out: list[SemanticMetrics] = []
     for i, step in enumerate(steps):
@@ -348,6 +355,8 @@ def build_profile(
     embedder: EmbeddingModel,
     seed: int = 42,
     surrogate_model: "Model | None" = None,
+    authored_variants: "list[str] | None" = None,
+    variant_output_sink: "dict[str, str] | None" = None,
 ) -> BehavioralRangeProfile:
     """Orchestrate the full BRI pipeline and return a BehavioralRangeProfile.
 
@@ -443,9 +452,12 @@ def build_profile(
         max_entropy=input_analysis.max_entropy,
     )
 
-    # 5. Trajectory analysis (skipped for API models without teacher forcing)
+    # 5. Trajectory analysis (skipped for API models without teacher forcing,
+    #    and when the branch budget is zero — `--lite` sets it there). Both
+    #    routes produce the same empty TrajectoryAnalysis, so a lite run is
+    #    indistinguishable from an API run downstream: absent, not zero.
     context_ids = model.tokenize(prompt) + output_trace.generated_ids
-    if model.supports_teacher_forcing:
+    if model.supports_teacher_forcing and config.trajectory.n_branches > 0:
         logger.debug("Analyzing trajectory...")
         trajectory = analyze_trajectory(
             model,
@@ -456,7 +468,12 @@ def build_profile(
             seed,
         )
     else:
-        logger.debug("Skipping trajectory analysis — %s does not support teacher forcing.", model.name)
+        reason = (
+            "branch budget is zero"
+            if config.trajectory.n_branches <= 0
+            else f"{model.name} does not support teacher forcing"
+        )
+        logger.debug("Skipping trajectory analysis — %s.", reason)
         trajectory = _skipped_trajectory(
             start_step=len(context_ids),
             rollout_steps=config.trajectory.rollout_steps,
@@ -482,60 +499,83 @@ def build_profile(
     similarity_inputs: list[str] = [prompt]
     similarity_outputs: list[str] = [baseline_output_text]
 
-    for gen_name in config.perturbation.generators:
-        try:
-            generator = get_generator(
-                gen_name,
-                use_llm=config.perturbation.use_llm_perturbation,
-                base_url=config.perturbation.llm_base_url,
-                api_key=config.perturbation.llm_api_key,
-                model=config.perturbation.llm_model,
-            )
-            pert_result = generator.generate(
-                prompt, config.perturbation.n_variants, seed
-            )
-        except Exception as exc:
-            logger.warning("Perturbation generator %r failed: %s", gen_name, exc)
-            continue
-
-        per_variant_sensitivity: list[SensitivityMetrics] = []
-        for variant_index, variant_text in enumerate(pert_result.variants):
-            # Output trace for this variant
+    # The variant plan: which perturbation texts this run compares against,
+    # and under what generator name. Two mutually exclusive sources —
+    # researcher-authored variants (passed in by the caller, who resolved
+    # them from a workload row's `variants` or the [perturbation]
+    # variants_file; the builder does no file I/O) or the generator pipeline.
+    # Resolved up front so the measurement loop below is identical for both:
+    # nothing downstream knows or cares who authored the text, which is the
+    # point — authorship changes provenance, not procedure.
+    variant_plan: list[tuple[str, list[str]]] = []
+    if authored_variants:
+        variant_plan.append(("authored", list(authored_variants)))
+    else:
+        for gen_name in config.perturbation.generators:
             try:
-                variant_trace = collect_output_trace(
-                    model,
-                    variant_text,
-                    max_new_tokens=config.generation.max_new_tokens,
-                    top_k=config.generation.top_k,
-                    seed=seed,
+                generator = get_generator(
+                    gen_name,
+                    use_llm=config.perturbation.use_llm_perturbation,
+                    base_url=config.perturbation.llm_base_url,
+                    api_key=config.perturbation.llm_api_key,
+                    model=config.perturbation.llm_model,
                 )
-                sens = compute_sensitivity_metrics(
-                    output_trace, variant_trace, variant_text, gen_name
+                pert_result = generator.generate(
+                    prompt, config.perturbation.n_variants, seed
                 )
-                per_variant_sensitivity.append(sens)
-                all_sensitivity_metrics.append(sens)
-                # Transient field member — discarded after field computation.
-                field_variant_traces.append((gen_name, variant_trace))
-                if config.traceability.enabled:
-                    # Sanctioned exception to compute-and-discard: retain the
-                    # same trace reference for the artifact (schema 0.7.0).
-                    raw_variant_traces.append(
-                        VariantRawTrace(
-                            generator=gen_name,
-                            variant_index=variant_index,
-                            trace=variant_trace,
-                        )
-                    )
-                # Capture for similarity metrics while the trace is available.
-                variant_output_text = "".join(
-                    s.selected_token_str for s in variant_trace.steps
-                )
-                similarity_inputs.append(variant_text)
-                similarity_outputs.append(variant_output_text)
             except Exception as exc:
-                logger.warning(
-                    "Sensitivity computation failed for variant %r: %s", variant_text, exc
-                )
+                logger.warning("Perturbation generator %r failed: %s", gen_name, exc)
+                continue
+            variant_plan.append((gen_name, pert_result.variants))
+
+    for gen_name, gen_variants in variant_plan:
+        per_variant_sensitivity: list[SensitivityMetrics] = []
+        for variant_index, variant_text in enumerate(gen_variants):
+            # Output trace for this variant — the elicitation half of the stage.
+            # Skipped under `acquisition = synthesized-input`: the variants are
+            # still authored and teacher-forced below (input side), but the
+            # model is never asked to generate from them. The four measurements
+            # that read a variant continuation go absent, which is the correct
+            # reading of "this run was not permitted to elicit that."
+            if config.perturbation.elicit_variant_outputs:
+                try:
+                    variant_trace = collect_output_trace(
+                        model,
+                        variant_text,
+                        max_new_tokens=config.generation.max_new_tokens,
+                        top_k=config.generation.top_k,
+                        seed=seed,
+                    )
+                    sens = compute_sensitivity_metrics(
+                        output_trace, variant_trace, variant_text, gen_name
+                    )
+                    per_variant_sensitivity.append(sens)
+                    all_sensitivity_metrics.append(sens)
+                    # Transient field member — discarded after field computation.
+                    field_variant_traces.append((gen_name, variant_trace))
+                    if config.traceability.enabled:
+                        # Sanctioned exception to compute-and-discard: retain the
+                        # same trace reference for the artifact (schema 0.7.0).
+                        raw_variant_traces.append(
+                            VariantRawTrace(
+                                generator=gen_name,
+                                variant_index=variant_index,
+                                trace=variant_trace,
+                            )
+                        )
+                    # Capture for similarity metrics while the trace is available.
+                    variant_output_text = "".join(
+                        s.selected_token_str for s in variant_trace.steps
+                    )
+                    similarity_inputs.append(variant_text)
+                    similarity_outputs.append(variant_output_text)
+                    if variant_output_sink is not None:
+                        # Caller-owned capture (--write); see engine.profile_one.
+                        variant_output_sink[variant_text] = variant_output_text
+                except Exception as exc:
+                    logger.warning(
+                        "Sensitivity computation failed for variant %r: %s", variant_text, exc
+                    )
 
             # Input-side analysis for perturbation stability. Use the target's
             # teacher forcing when available, else the surrogate (proxy) that
@@ -556,7 +596,7 @@ def build_profile(
         perturbation_records.append(
             PerturbationRecord(
                 generator=gen_name,
-                variants=pert_result.variants,
+                variants=gen_variants,
                 sensitivity=per_variant_sensitivity,
             )
         )
@@ -601,7 +641,10 @@ def build_profile(
 
     # 8. Semantic metrics — one SemanticMetrics per output step, same basis.
     semantic_metrics = _semantic_metrics_for(
-        semantic_steps, embedder=embedder, cluster_config=config.cluster
+        semantic_steps,
+        embedder=embedder,
+        cluster_config=config.cluster,
+        enabled=config.semantic.enabled,
     )
 
     # 9. Stability metrics
@@ -1078,7 +1121,10 @@ def _build_profile_mm(
         output_trace.steps, vocab_size=model.vocab_size
     )
     semantic_metrics = _semantic_metrics_for(
-        output_trace.steps, embedder=embedder, cluster_config=config.cluster
+        output_trace.steps,
+        embedder=embedder,
+        cluster_config=config.cluster,
+        enabled=config.semantic.enabled,
     )
 
     # 10. Stability metrics. Full-access models feed real per-variant

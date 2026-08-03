@@ -78,20 +78,45 @@ def collect_output_trace(
         seed=seed,
     )
 
+    # Hold every backend to the requested budget.
+    #
+    # `max_new_tokens` is a request, and some providers decline it: Gemini 2.5
+    # Pro on Vertex returned 2, 140, 367, 720, 1102, 1205, 1621 and 1650 steps
+    # across the eight prompt regimes for a budget of 64, all of it answer text
+    # rather than a reasoning trace. Measurements taken over runs of such
+    # different lengths are not comparable with each other, let alone with a
+    # model that stopped at 64 — and cross-model comparison is the point of
+    # taking them.
+    #
+    # Truncating here rather than per backend means a provider that starts
+    # ignoring the cap tomorrow does not silently change what the numbers mean.
+    # It is a cap on what is ANALYSED; the tokens were generated and paid for
+    # either way, and `generated_ids` is cut to match so the recorded text is
+    # the text the measurements describe.
+    steps = result.steps
+    generated_ids = result.generated_ids
+    if len(steps) > max_new_tokens:
+        logger.debug(
+            "%s returned %d steps for max_new_tokens=%d; analysing the first %d.",
+            result.model_name, len(steps), max_new_tokens, max_new_tokens,
+        )
+        steps = steps[:max_new_tokens]
+        generated_ids = generated_ids[:max_new_tokens]
+
     # Compute mean_step_entropy using nucleus entropy (95% mass, renormalized).
     # Nucleus entropy is comparable across model types regardless of top-k size.
     from hif.metrics.distribution import nucleus_entropy_bits
     step_entropies: list[float] = []
-    for step in result.steps:
+    for step in steps:
         probs = np.array([entry.prob for entry in step.topk], dtype=np.float64)
         step_entropies.append(nucleus_entropy_bits(probs, p=0.95))
 
     mean_step_entropy = float(np.mean(step_entropies)) if step_entropies else 0.0
 
     return OutputSideTrace(
-        steps=result.steps,
+        steps=steps,
         input_ids=result.input_ids,
-        generated_ids=result.generated_ids,
+        generated_ids=generated_ids,
         prompt_text=prompt,
         model_name=result.model_name,
         top_k=result.top_k,
@@ -239,19 +264,26 @@ def collect_output_trace_mm(
         top_k=top_k,
         seed=seed,
     )
+    # Same budget cap as the text path — one rule, both collectors.
+    steps = result.steps
+    generated_ids = result.generated_ids
+    if len(steps) > max_new_tokens:
+        steps = steps[:max_new_tokens]
+        generated_ids = generated_ids[:max_new_tokens]
+
 
     from hif.metrics.distribution import nucleus_entropy_bits
     step_entropies: list[float] = []
-    for step in result.steps:
+    for step in steps:
         probs = np.array([entry.prob for entry in step.topk], dtype=np.float64)
         step_entropies.append(nucleus_entropy_bits(probs, p=0.95))
 
     mean_step_entropy = float(np.mean(step_entropies)) if step_entropies else 0.0
 
     return OutputSideTrace(
-        steps=result.steps,
+        steps=steps,
         input_ids=result.input_ids,
-        generated_ids=result.generated_ids,
+        generated_ids=generated_ids,
         prompt_text=prompt_text,
         model_name=result.model_name,
         top_k=result.top_k,

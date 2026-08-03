@@ -44,6 +44,7 @@ from hif.cli_compat import (
     _signal_set_mismatch_exit,
 )
 from hif.cli_config import (
+    _check_acquisition,
     _check_mode,
     _explicit_generation_params,
     _load_config_file,
@@ -83,6 +84,8 @@ from hif.profile.record import (
     signals_record as _signals_record,
 )
 from hif.profile.registry import (
+    ACQUISITION_LEGEND,
+    ACQUISITIONS,
     MEASUREMENT_KEYS,
     MEASUREMENT_REGISTRY,
     MEASUREMENT_UNITS,
@@ -96,6 +99,84 @@ from hif.profile.registry import (
 # ---------------------------------------------------------------------------
 # The shared pipeline call
 # ---------------------------------------------------------------------------
+
+
+def _resolve_run_config(
+    model_name: str,
+    backend: str,
+    max_new_tokens: int,
+    top_k: int,
+    seed: int,
+    output_dir: Optional[Path],
+    *,
+    diagnostics: bool = False,
+    base_config=None,
+    explicit: frozenset = frozenset(),
+    n_perturbation_variants: int = 2,
+    trace: bool = False,
+    lite: bool = False,
+    acquisition: str = "elicited-output",
+):
+    """Every source of configuration, resolved in one place.
+
+    This is the SINGLE resolution path: `hif profile` runs whatever this
+    returns, and `hif config show` prints whatever this returns, so the two
+    can never drift. Precedence, later beats earlier:
+
+      schema defaults → --config-file → --mode/--diagnostics →
+      explicit CLI flags → --acquisition → --lite
+
+    --acquisition and --lite apply last because they are ceilings: a run
+    asking for less must never silently do more, regardless of what a config
+    file switched on.
+    """
+    config = _make_run_config(model_name, backend, max_new_tokens, top_k, seed, output_dir,
+                               diagnostics=diagnostics, base=base_config,
+                               explicit=explicit)
+    # Apply perturbation variant count from --mode — unless a --config-file
+    # set its own perturbation budget and the user didn't pass --mode.
+    if base_config is None or "mode" in explicit:
+        config.perturbation.n_variants = n_perturbation_variants
+    config.traceability.enabled = trace
+
+    # --acquisition is a CEILING on what the run may bring into existence, not
+    # a speed knob. It is applied before --lite because the two answer different
+    # questions and compose: this one says what the run is permitted to produce,
+    # --lite says how much work to do within that permission.
+    if acquisition == "observational":
+        # Nothing beyond the caller's own call. No authored prompts, no
+        # elicited continuations, no branches. variants_file too: the
+        # researcher wrote those strings, but sending them is still more than
+        # the one call the tier permits.
+        config.perturbation.generators = []
+        config.perturbation.n_variants = 0
+        config.perturbation.variants_file = None
+        config.trajectory.n_branches = 0
+    elif acquisition == "synthesized-input":
+        # Paraphrases are authored and teacher-forced; the model never
+        # generates from them, and branches are elicitation by definition.
+        config.perturbation.elicit_variant_outputs = False
+        config.trajectory.n_branches = 0
+
+    # --lite drops every stage that costs an extra generation pass or an
+    # embedding sweep: the paraphrase variants, the trajectory branches, and
+    # the per-step candidate geometry (which exposure reads). What survives is
+    # the single baseline pass plus input-side teacher forcing, so the
+    # entropy-side measurements come back unchanged and the rest come back
+    # ABSENT — omitted from the record rather than reported as zero. It applies
+    # last so it beats a --config-file that switched these stages on; a run
+    # asking for less should never silently do more.
+    if lite:
+        config.perturbation.generators = []
+        config.perturbation.n_variants = 0
+        config.perturbation.variants_file = None
+        config.trajectory.n_branches = 0
+        config.semantic.enabled = False
+        config.exposure.enabled = False
+        config.semantic_field.enabled = False
+        config.attention.enabled = False
+
+    return config
 
 
 def _run_single_profile(
@@ -120,6 +201,9 @@ def _run_single_profile(
     trace_dir: Optional[Path] = None,
     base_config=None,
     explicit: frozenset = frozenset(),
+    lite: bool = False,
+    acquisition: str = "elicited-output",
+    variant_output_sink: Optional[dict] = None,
 ) -> "tuple[BehavioralRangeProfile, Optional[Path]]":
     """Core pipeline: build the profile in memory, return (profile, trace_path).
 
@@ -135,14 +219,12 @@ def _run_single_profile(
     from hif.engine import SessionEngine
     from hif.profile.render_markdown import render_public, render_technical
 
-    config = _make_run_config(model_name, backend, max_new_tokens, top_k, seed, output_dir,
-                               diagnostics=diagnostics, base=base_config,
-                               explicit=explicit)
-    # Apply perturbation variant count from --mode — unless a --config-file
-    # set its own perturbation budget and the user didn't pass --mode.
-    if base_config is None or "mode" in explicit:
-        config.perturbation.n_variants = n_perturbation_variants
-    config.traceability.enabled = trace
+    config = _resolve_run_config(
+        model_name, backend, max_new_tokens, top_k, seed, output_dir,
+        diagnostics=diagnostics, base_config=base_config, explicit=explicit,
+        n_perturbation_variants=n_perturbation_variants, trace=trace,
+        lite=lite, acquisition=acquisition,
+    )
 
     if model is None:
         model = _load_model(model_name, backend)
@@ -160,8 +242,22 @@ def _run_single_profile(
             surrogate_model = _load_surrogate(surrogate_model_id)
 
     engine = SessionEngine(config, model, embedder, surrogate_model)
+
+    # Researcher-authored variants: resolved HERE, not in the builder, from
+    # the workload-format JSONL the config points at. The builder is handed
+    # texts, so what it measured is exactly what the caller resolved.
+    authored_variants: Optional[list] = None
+    if config.perturbation.variants_file is not None:
+        from hif.perturbation.authored import load_authored_variants
+
+        authored_variants = load_authored_variants(
+            config.perturbation.variants_file, prompt
+        )
+
     profile = engine.profile_one(mm_input if mm_input is not None else prompt,
-                                 regime=regime, seed=seed)
+                                 regime=regime, seed=seed,
+                                 authored_variants=authored_variants,
+                                 variant_output_sink=variant_output_sink)
 
     h = _profile_hash(model_name, prompt, seed)
 
@@ -270,6 +366,37 @@ def profile(
         "audit: full perturbation set (multimodal: exhaustive grid sweep). "
         "Input is always passed in full regardless of mode.",
     ),
+    variant_io: bool = typer.Option(
+        False,
+        "--variant-io",
+        help="Include a `variant_io` block in the --json record: each "
+        "perturbation variant's input text and the continuation it elicited "
+        "(null where none was — synthesized-input tier, or a failure). "
+        "Opt-in because it adds model-generated content to every record; "
+        "outputs live in records, inputs stay immutable.",
+    ),
+    acquisition: str = typer.Option(
+        "elicited-output",
+        "--acquisition",
+        help="Ceiling on what this run may bring into existence. "
+        "observational: read the prompt as given and the one continuation the "
+        "run produces — nothing else is sent to the model and no new model "
+        "output exists afterwards. synthesized-input: additionally author "
+        "paraphrased prompts and teacher-force over them (the model still does "
+        "not generate). elicited-output (default): additionally let the model "
+        "generate variant continuations and trajectory branches. "
+        "Measurements above the ceiling are absent, not zero. "
+        "Run `hif schema` to see each measurement's acquisition tier.",
+    ),
+    lite: bool = typer.Option(
+        False,
+        "--lite",
+        help="Skip every stage that costs an extra generation pass or an "
+        "embedding sweep: perturbation variants, trajectory branches, and "
+        "per-step candidate geometry. The entropy-side measurements are "
+        "unchanged; the ones those stages feed are omitted, not zeroed. "
+        "Overrides --mode and --config-file for the stages it disables.",
+    ),
     analysis_window: Optional[str] = typer.Option(
         None,
         help="Maximum output tokens to analyze (does not truncate inference). "
@@ -346,6 +473,7 @@ def profile(
         raise typer.Exit(3)
 
     _check_mode(mode)
+    _check_acquisition(acquisition)
 
     if metric is not None and metric not in MEASUREMENT_KEYS:
         err_console.print(
@@ -522,6 +650,7 @@ def profile(
             timings["embedder_load"] = time.perf_counter() - t0
             progress.update(task, description="Running pipeline...")
             t0 = time.perf_counter()
+            variant_output_sink: Optional[dict] = {} if variant_io else None
             p, trace_path = _run_single_profile(
                 model_name=model_name,
                 prompt=prompt,
@@ -544,6 +673,9 @@ def profile(
                 trace_dir=trace_dir,
                 base_config=base_config,
                 explicit=explicit,
+                lite=lite,
+                acquisition=acquisition,
+                variant_output_sink=variant_output_sink,
             )
             timings["pipeline"] = time.perf_counter() - t0
             progress.update(task, description="Done.")
@@ -602,6 +734,12 @@ def profile(
         if input_truncated:
             extras["input_truncated"] = True
             extras["input_truncate_tokens"] = truncate
+        if variant_io:
+            from hif.perturbation.authored import variant_io_block
+
+            # What was sent per variant and what came back — outputs live in
+            # records, so the record is the review surface for elicited text.
+            extras["variant_io"] = variant_io_block(p, variant_output_sink or {})
         record = _signals_record(
             p,
             model_name=model_name,
@@ -886,6 +1024,7 @@ def doctor() -> None:
 
 @app.command()
 def suite(
+    ctx: typer.Context,
     model_name: str = typer.Argument(..., help="Model name (e.g. gpt2)"),
     regime: Optional[str] = typer.Option(None, help="Single regime; None = all eight"),
     backend: str = typer.Option("hf", help="Model backend: hf | tlens | ollama"),
@@ -895,8 +1034,50 @@ def suite(
     top_k: int = typer.Option(50, help="Top-K candidates per step"),
     charts: bool = typer.Option(False, "--charts", help=CHARTS_HELP),
     units: bool = typer.Option(False, "--units", help=UNITS_HELP),
+    config_file: Optional[Path] = typer.Option(
+        None,
+        help="TOML run config (tables mirror RunConfig), applied to every "
+        "prompt. CLI flags you pass explicitly override the file.",
+    ),
+    mode: str = typer.Option(
+        "fast",
+        help="fast: fewer perturbation variants. audit: full perturbation set.",
+    ),
+    acquisition: str = typer.Option(
+        "elicited-output",
+        "--acquisition",
+        help="Ceiling on what this run may bring into existence, applied to "
+        "every prompt. observational | synthesized-input | elicited-output.",
+    ),
+    lite: bool = typer.Option(
+        False,
+        "--lite",
+        help="Skip perturbation variants, trajectory branches, and per-step "
+        "candidate geometry on every prompt.",
+    ),
+    export_workload: Optional[Path] = typer.Option(
+        None,
+        "--export-workload",
+        help="Write the suite's prompts as a workload JSONL and exit — no "
+        "model is loaded. Fork it, edit it, add `variants`, and run it with "
+        "`hif batch`.",
+    ),
 ) -> None:
-    """Run the full HI pipeline over the prompt suite (every regime, or one)."""
+    """Profile the built-in prompt suite: a FIXED stimulus set, every regime.
+
+    The suite's value is that it does not vary — 8 regimes x 5 prompts, the
+    same strings for every model, so numbers from two models were taken under
+    identical stimuli. That is the only condition under which a cross-model
+    comparison is a comparison at all.
+
+    It is NOT a benchmark: the prompts are unlabeled, there are no correct
+    answers, and nothing here scores a model (docs/PROMPT_SUITE.md). If you
+    have your own question, the prompts you need are your own — write a
+    workload file and use `hif batch`, which takes the same configuration and
+    the same ceilings as this command. Export the suite as a starting point:
+
+        hif suite --export-workload suite.jsonl
+    """
     from hif.prompts.suite import REGIMES, get_regime
 
     if regime is not None:
@@ -908,10 +1089,40 @@ def suite(
     else:
         selected_regimes = list(REGIMES)
 
+    # --export-workload: the fixed stimulus set as editable rows. The point of
+    # a static suite is comparability; the point of exporting it is that a
+    # researcher's own question needs their own prompts, and starting from the
+    # published set beats starting from nothing. No model is loaded.
+    if export_workload is not None:
+        lines = [
+            json.dumps({
+                "query_id": f"{reg.name}_{i:02d}",
+                "text": prompt_text,
+                "regime": reg.name,
+            })
+            for reg in selected_regimes
+            for i, prompt_text in enumerate(reg.prompts, 1)
+        ]
+        export_workload.write_text("\n".join(lines) + "\n")
+        console.print(
+            f"[green]Wrote:[/green] {export_workload} ({len(lines)} rows)\n"
+            f"[dim]Edit it, add per-row \"variants\", then: "
+            f"hif batch {export_workload} <model>[/dim]"
+        )
+        return
+
+    _check_mode(mode)
+    _check_acquisition(acquisition)
+
+    explicit = _explicit_generation_params(ctx)
+    base_config = _load_config_file(config_file) if config_file is not None else None
+
     console.print(f"[bold]HI Suite[/bold]")
     console.print(f"  Model:   {model_name} ({backend})")
     console.print(f"  Regimes: {len(selected_regimes)}")
     console.print(f"  Seed:    {seed}")
+    if acquisition != "elicited-output":
+        console.print(f"  Acquisition: {acquisition}")
     console.print()
 
     with Progress(
@@ -945,6 +1156,11 @@ def suite(
                     charts=charts,
                     model=model,
                     embedder=embedder,
+                    n_perturbation_variants=(2 if mode == "fast" else 5),
+                    base_config=base_config,
+                    explicit=explicit,
+                    lite=lite,
+                    acquisition=acquisition,
                 )
             except Exception as exc:  # noqa: BLE001 — per-prompt isolation
                 console.print(f"    [red]error: {exc}[/red]")
@@ -1285,6 +1501,201 @@ def render(
     console.print(f"[green]Rendered to:[/green] {output}")
 
 
+# ---------------------------------------------------------------------------
+# Commands — Config (resolution without a run)
+# ---------------------------------------------------------------------------
+
+config_app = typer.Typer(
+    help="Inspect and author run configuration without running a profile.",
+    no_args_is_help=True,
+)
+app.add_typer(config_app, name="config")
+
+
+def _toml_scalar(v) -> str:
+    """One TOML value. JSON string escaping is a valid TOML basic string."""
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    if isinstance(v, (int, float)):
+        return str(v)
+    if isinstance(v, str):
+        return json.dumps(v)
+    if isinstance(v, list):
+        return "[" + ", ".join(_toml_scalar(x) for x in v) + "]"
+    if isinstance(v, dict):
+        return "{ " + ", ".join(f"{k} = {_toml_scalar(x)}" for k, x in v.items()) + " }"
+    raise TypeError(f"cannot serialise {type(v).__name__} to TOML")
+
+
+def _emit_toml(data: dict, *, only_keys: dict | None = None) -> str:
+    """Render a resolved config dict as a run.toml.
+
+    The output is valid --config-file input, so `hif config show > run.toml`
+    round-trips (model name/backend still come from the CLI arguments at run
+    time — the [model] table's name/backend lines are informational). Keys
+    whose value is None are emitted as comments: TOML has no null, and a
+    silently missing line would be indistinguishable from a forgotten one.
+
+    `only_keys` (from --diff) limits each table to the listed keys.
+    """
+    lines: list[str] = []
+    for table, fields in data.items():
+        if not isinstance(fields, dict):
+            continue
+        keys = fields if only_keys is None else {
+            k: v for k, v in fields.items() if k in only_keys.get(table, set())
+        }
+        if not keys:
+            continue
+        lines.append(f"[{table}]")
+        for key, value in keys.items():
+            if value is None:
+                lines.append(f"# {key} = (unset)")
+            else:
+                lines.append(f"{key} = {_toml_scalar(value)}")
+        lines.append("")
+    return "\n".join(lines)
+
+
+@config_app.command("show")
+def config_show(
+    ctx: typer.Context,
+    model_name: str = typer.Argument("gpt2", help="Model name (affects [model] only)"),
+    backend: str = typer.Option("hf", help="Model backend"),
+    config_file: Optional[Path] = typer.Option(
+        None, help="TOML run config to resolve (same file `hif profile` takes)."
+    ),
+    mode: str = typer.Option("fast", help="fast | audit (perturbation budget)"),
+    lite: bool = typer.Option(False, "--lite", help="Apply the --lite stage budget"),
+    acquisition: str = typer.Option(
+        "elicited-output", "--acquisition",
+        help="observational | synthesized-input | elicited-output",
+    ),
+    max_new_tokens: int = typer.Option(64, help="Maximum new tokens"),
+    top_k: int = typer.Option(50, help="Top-K candidates per step"),
+    seed: int = typer.Option(42, help="Random seed"),
+    diagnostics: bool = typer.Option(False, "--diagnostics", help="Apply --diagnostics"),
+    diff: bool = typer.Option(
+        False, "--diff",
+        help="Show only departures from the schema defaults.",
+    ),
+    output_json: bool = typer.Option(
+        False, "--json", help="Emit JSON instead of TOML."
+    ),
+) -> None:
+    """Print the fully resolved run config — without loading a model or running.
+
+    Resolution goes through the SAME path `hif profile` uses
+    (_resolve_run_config), so what this prints is what that runs; the two
+    cannot drift. This is the confirmation step for any config change: author
+    the file, `hif config show --config-file run.toml --diff`, and check that
+    every key you set appears — a typo'd key now exits 3 at load, and a key
+    you expected to change but don't see here did not apply.
+
+    The TOML output is valid --config-file input, so `... > run.toml`
+    round-trips. Secrets are redacted.
+    """
+    from hif.config import RunConfig, public_config_dict
+
+    _check_mode(mode)
+    _check_acquisition(acquisition)
+
+    base_config = _load_config_file(config_file) if config_file is not None else None
+    explicit = _explicit_generation_params(ctx)
+    n_variants = 2 if mode == "fast" else 5
+
+    config = _resolve_run_config(
+        model_name, backend, max_new_tokens, top_k, seed, None,
+        diagnostics=diagnostics, base_config=base_config, explicit=explicit,
+        n_perturbation_variants=n_variants, lite=lite, acquisition=acquisition,
+    )
+    resolved = public_config_dict(config)
+
+    only_keys: dict | None = None
+    if diff:
+        defaults = public_config_dict(RunConfig())
+        only_keys = {}
+        for table, fields in resolved.items():
+            if not isinstance(fields, dict):
+                continue
+            changed = {
+                k for k, v in fields.items() if defaults.get(table, {}).get(k) != v
+            }
+            if changed:
+                only_keys[table] = changed
+
+    if output_json:
+        if only_keys is not None:
+            resolved = {
+                t: {k: v for k, v in f.items() if k in only_keys.get(t, set())}
+                for t, f in resolved.items()
+                if isinstance(f, dict) and only_keys.get(t)
+            }
+        print(json.dumps(resolved, indent=2))
+        return
+
+    header = (
+        "# resolved run config"
+        + (f" — departures from defaults only" if diff else "")
+        + f"\n# {model_name} ({backend}) · mode={mode}"
+        + (f" · --lite" if lite else "")
+        + (f" · --acquisition {acquisition}" if acquisition != "elicited-output" else "")
+        + (f" · --config-file {config_file}" if config_file else "")
+    )
+    print(header + "\n")
+    body = _emit_toml(resolved, only_keys=only_keys)
+    print(body if body.strip() else "# (no departures from defaults)")
+
+
+@config_app.command("init")
+def config_init(
+    output: Path = typer.Option(
+        Path("run.toml"), "--output", "-o", help="Where to write the template."
+    ),
+    force: bool = typer.Option(False, "--force", help="Overwrite an existing file."),
+) -> None:
+    """Write a run.toml of pure schema defaults to edit from.
+
+    Authoring from a canonical template beats composing tables from memory:
+    every key in the file is spelled correctly and set to its default, so the
+    diff between this file and yours IS your experimental condition. Keys are
+    the same names `hif config show` prints and docs/CONFIG.md documents.
+    """
+    from hif.config import RunConfig, public_config_dict
+
+    if output.exists() and not force:
+        err_console.print(
+            f"[red]{output} exists — pass --force to overwrite.[/red]"
+        )
+        raise typer.Exit(3)
+    defaults = public_config_dict(RunConfig())
+    # An EXPLICIT [generation] temperature is mirrored onto model.temperature
+    # (see _make_run_config), and an unset one keeps each backend's own
+    # default (0 for OpenAI). Writing the 1.0 default into the template would
+    # make it explicit — silently changing API-backend sampling for everyone
+    # who edits from this file. Leave it commented instead.
+    generation = dict(defaults["generation"])
+    default_temperature = generation.pop("temperature")
+    defaults["generation"] = generation
+    body = _emit_toml(defaults).replace(
+        "[generation]",
+        "[generation]\n"
+        f"# temperature = {default_temperature}  "
+        "# unset = each backend's own default (0 for OpenAI); "
+        "setting it forces this value on every backend",
+    )
+    output.write_text(
+        "# run.toml — every key at its schema default. Edit and pass via\n"
+        "#   hif profile <model> <prompt> --config-file run.toml\n"
+        "# Then confirm what will run:\n"
+        "#   hif config show --config-file run.toml --diff\n"
+        "# Reference: docs/CONFIG.md. Model name/backend always come from the\n"
+        "# CLI arguments; the [model] name/backend lines here are ignored.\n\n"
+        + body
+    )
+    console.print(f"[green]Wrote:[/green] {output}")
+
+
 @app.command()
 def schema(
     output_json: bool = typer.Option(
@@ -1342,6 +1753,12 @@ def schema(
             # `subject_under_surrogate`, when present, is what it becomes once
             # the surrogate named by `surrogate_group` stands in.
             "subjects": dict(SUBJECT_LEGEND),
+            # What taking each measurement had to bring into existence.
+            # `subject` says whose behaviour the number is about; this says
+            # whether getting it required authoring prompt text or eliciting
+            # model output the caller never asked for. `--acquisition` caps a
+            # run at one of these tiers.
+            "acquisitions": dict(ACQUISITION_LEGEND),
             "measurements": {
                 m.key: {
                     "name": m.name,
@@ -1352,6 +1769,7 @@ def schema(
                     "resolution": m.resolution,
                     "subject": m.subject,
                     "subject_under_surrogate": m.subject_under_surrogate,
+                    "acquisition": m.acquisition,
                     "surrogate_group": m.surrogate_group or None,
                 }
                 for m in MEASUREMENT_REGISTRY
@@ -1365,17 +1783,24 @@ def schema(
     table.add_column("Unit")
     table.add_column("Resolution")
     table.add_column("Subject")
+    table.add_column("Acquisition")
     table.add_column("Definition")
     for m in MEASUREMENT_REGISTRY:
         subject = m.subject
         if m.subject_under_surrogate is not None:
             subject = f"{m.subject} → {m.subject_under_surrogate} (surrogate)"
         table.add_row(
-            m.key, m.name, m.unit, m.resolution, subject, m.definition
+            m.key, m.name, m.unit, m.resolution, subject, m.acquisition, m.definition
         )
     console.print(table)
     console.print("\n[bold]Subject[/bold] — whose behaviour the number describes:")
     for value, gloss in SUBJECT_LEGEND.items():
+        console.print(f"  [bold]{value}[/bold] — {gloss}")
+    console.print(
+        "\n[bold]Acquisition[/bold] — what taking the measurement brings into "
+        "existence (cap a run with --acquisition):"
+    )
+    for value, gloss in ACQUISITION_LEGEND.items():
         console.print(f"  [bold]{value}[/bold] — {gloss}")
 
 
@@ -1419,6 +1844,26 @@ def batch(
     mode: str = typer.Option(
         "fast",
         help="fast: fewer perturbation variants. audit: full perturbation set.",
+    ),
+    acquisition: str = typer.Option(
+        "elicited-output",
+        "--acquisition",
+        help="Ceiling on what this run may bring into existence, applied to "
+        "every row. observational | synthesized-input | elicited-output. "
+        "Same meaning as `hif profile --acquisition`; run `hif schema` for "
+        "each measurement's tier.",
+    ),
+    lite: bool = typer.Option(
+        False,
+        "--lite",
+        help="Skip perturbation variants, trajectory branches, and per-step "
+        "candidate geometry on every row (see `hif profile --lite`).",
+    ),
+    variant_io: bool = typer.Option(
+        False,
+        "--variant-io",
+        help="Include a `variant_io` block in each record: every perturbation "
+        "variant's input text and the continuation it elicited.",
     ),
     surrogate: bool = typer.Option(
         False,
@@ -1473,6 +1918,7 @@ def batch(
         raise typer.Exit(3)
 
     _check_mode(mode)
+    _check_acquisition(acquisition)
 
     # --surrogate-model implies --surrogate; --trace-dir implies --trace
     # (same conventions as `profile`).
@@ -1504,13 +1950,14 @@ def batch(
 
     explicit = _explicit_generation_params(ctx)
     base_config = _load_config_file(config_file) if config_file is not None else None
-    config = _make_run_config(
+    # Same single resolution path `profile` and `config show` use, so the
+    # ceilings mean the same thing at every scale.
+    config = _resolve_run_config(
         model_name, backend, max_new_tokens, top_k, seed, output_dir,
-        base=base_config, explicit=explicit,
+        base_config=base_config, explicit=explicit,
+        n_perturbation_variants=(2 if mode == "fast" else 5),
+        trace=trace, lite=lite, acquisition=acquisition,
     )
-    if base_config is None or "mode" in explicit:
-        config.perturbation.n_variants = 2 if mode == "fast" else 5
-    config.traceability.enabled = trace
     # A --config-file [generation] seed wins over the CLI *default* (an
     # explicit --seed still beats the file) — the seed passed to the run must
     # match config.generation.seed or the record lies about reproducibility.
@@ -1544,6 +1991,7 @@ def batch(
             trace_dir=resolved_trace_dir,
             emit=_emit,
             include_units=units,
+            variant_io=variant_io,
             log=_log,
         )
     finally:

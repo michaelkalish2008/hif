@@ -90,7 +90,17 @@ from typing import Optional
 # quantity is in the terms it is computed in. No key, unit, definition, or
 # absence rule changed, so `hif compare` still intersects across the v3 family;
 # a consumer reading `label` off `hif schema` reads `name` instead.
-SIGNAL_SET_VERSION = "hif-v3.3"
+# hif-v3.4 (current): added the `acquisition` field. Every row now says what
+# taking the measurement had to bring into existence — nothing (observational),
+# authored prompt text (synthesized-input), or model output that did not exist
+# before (elicited-output). The fact was always true of the pipeline and was
+# recoverable only by reading builder.py and tracing which stage fed which key,
+# so `hif schema` could not distinguish an observation from an elicitation and
+# the two were reported side by side under one heading. Purely additive
+# metadata: no key, unit, definition, or absence rule changed, so `hif compare`
+# still intersects across the v3 family. A consumer that does not read
+# `acquisition` sees exactly what it saw before.
+SIGNAL_SET_VERSION = "hif-v3.4"
 
 
 # ---------------------------------------------------------------------------
@@ -167,6 +177,71 @@ SUBJECTS: tuple[str, ...] = (
     SUBJECT_PROMPT_ONLY,
 )
 
+# Acquisition — what taking the measurement COSTS in produced content.
+#
+# `subject` says whose behaviour a number describes. It does not say what had
+# to be brought into existence to get it, and those are different questions
+# with different consequences. Some measurements read the prompt and the one
+# continuation the caller already has; others require the tool to author new
+# prompt text, or to make the model generate continuations that did not exist
+# before and that the caller never asked for.
+#
+# The distinction is not a performance note. It decides:
+#   * whether profiling a hosted model sends text the user never wrote,
+#   * whether the run produces model output nobody reviewed,
+#   * whether a second run is reproducible from the same inputs (elicited
+#     content is resampled; observational readings are not),
+#   * and what a provider's terms and a billing line actually cover.
+#
+# It was previously implicit — recoverable only by reading builder.py and
+# tracing which stage fed which key — so a reader of `hif schema` could not
+# tell an observation from an elicitation. Now every row says.
+#
+#   "observational"      computed from the prompt as given and the single
+#                        continuation the run already produced. No text is sent
+#                        to the model beyond the one call the caller asked for,
+#                        and no model output exists afterwards that did not
+#                        exist before. Local instruments (embedder, analysis
+#                        encoder) may construct strings — exposure embeds
+#                        `prefix + candidate` counterfactuals — but nothing
+#                        constructed leaves the process or reaches a provider.
+#   "synthesized-input"  the tool AUTHORS new prompt text (paraphrase variants)
+#                        and puts it through the model's forward pass. The
+#                        model does not generate: this is teacher forcing over
+#                        text the tool wrote.
+#   "elicited-output"    the tool causes the model to GENERATE text that did
+#                        not exist before — variant continuations, trajectory
+#                        branch rollouts. This is the tier that costs tokens,
+#                        multiplies API calls, and produces unreviewed model
+#                        output.
+ACQUISITION_OBSERVATIONAL = "observational"
+ACQUISITION_SYNTHESIZED_INPUT = "synthesized-input"
+ACQUISITION_ELICITED_OUTPUT = "elicited-output"
+
+ACQUISITIONS: tuple[str, ...] = (
+    ACQUISITION_OBSERVATIONAL,
+    ACQUISITION_SYNTHESIZED_INPUT,
+    ACQUISITION_ELICITED_OUTPUT,
+)
+
+# One line per value — the legend `hif schema` prints.
+ACQUISITION_LEGEND: dict[str, str] = {
+    ACQUISITION_OBSERVATIONAL: (
+        "computed from the prompt as given and the one continuation the run "
+        "already produced; nothing is sent to the model beyond the call the "
+        "caller asked for, and no new model output exists afterwards"
+    ),
+    ACQUISITION_SYNTHESIZED_INPUT: (
+        "the tool authors new prompt text (paraphrase variants) and teacher-"
+        "forces the model over it; the model does not generate"
+    ),
+    ACQUISITION_ELICITED_OUTPUT: (
+        "the tool makes the model generate text that did not exist before "
+        "(variant continuations, trajectory branches); costs tokens and "
+        "produces unreviewed model output"
+    ),
+}
+
 # One line per value — the legend `hif schema` prints.
 SUBJECT_LEGEND: dict[str, str] = {
     SUBJECT_TARGET_DISTRIBUTION: (
@@ -227,6 +302,13 @@ class Measurement:
                     the target's own machinery produced it (the `[F]` case).
                     Required: a row that cannot say who it is about should not
                     be in the set.
+    acquisition     one of ACQUISITIONS — what taking the measurement had to
+                    bring into existence. `subject` says whose behaviour the
+                    number is about; `acquisition` says whether getting it
+                    required authoring prompt text or eliciting model output
+                    the caller never asked for. Required, and verifiable
+                    against hif/profile/builder.py: an "observational" row must
+                    read only the baseline trace and the prompt as given.
     surrogate_group which surrogate caveat applies when the target model could
                     not produce the quantity itself: "input" measurements
                     inherit findings.surrogate_model_name's proxy caveat,
@@ -263,6 +345,7 @@ class Measurement:
     functional: str
     resolution: str
     subject: str
+    acquisition: str = ACQUISITION_OBSERVATIONAL
     surrogate_group: str = ""
     subject_under_surrogate: Optional[str] = None
     needs_distribution_pair: bool = False
@@ -286,6 +369,7 @@ MEASUREMENT_REGISTRY: tuple[Measurement, ...] = (
         # target's; under --surrogate they are the surrogate's over prompt text
         # the target never saw a token of.
         subject=SUBJECT_TARGET_DISTRIBUTION,
+        acquisition=ACQUISITION_SYNTHESIZED_INPUT,
         subject_under_surrogate=SUBJECT_PROMPT_ONLY,
         surrogate_group="input",
     ),
@@ -305,6 +389,7 @@ MEASUREMENT_REGISTRY: tuple[Measurement, ...] = (
         # Same series as input_entropy_shift_bits (its standard deviation
         # rather than its mean), so the same subject and the same degradation.
         subject=SUBJECT_TARGET_DISTRIBUTION,
+        acquisition=ACQUISITION_SYNTHESIZED_INPUT,
         subject_under_surrogate=SUBJECT_PROMPT_ONLY,
         surrogate_group="input",
     ),
@@ -342,6 +427,7 @@ MEASUREMENT_REGISTRY: tuple[Measurement, ...] = (
         # would have to pass the Significance Gate on its own, and no run has
         # been shown to need it.
         subject=SUBJECT_TARGET_DISTRIBUTION,
+        acquisition=ACQUISITION_ELICITED_OUTPUT,
         # CORRECTED (was "output"): the surrogate recovery in builder.py step 6b
         # substitutes `semantic_steps` for the distribution/semantic/exposure
         # metrics and rebuilds the perturbation FIELD basis, but never touches
@@ -375,6 +461,7 @@ MEASUREMENT_REGISTRY: tuple[Measurement, ...] = (
         # because r says how the surrogate's reading of the prompt tracks the
         # target's reaction, which is a claim about the pair.
         subject=SUBJECT_TARGET_DISTRIBUTION,
+        acquisition=ACQUISITION_ELICITED_OUTPUT,
         subject_under_surrogate=SUBJECT_MIXED,
         surrogate_group="input",
         needs_distribution_pair=True,  # because of what it correlates: one of
@@ -403,6 +490,7 @@ MEASUREMENT_REGISTRY: tuple[Measurement, ...] = (
         # another model's behaviour standing in for the target's. No surrogate
         # path touches it.
         subject=SUBJECT_TARGET_OUTPUT_TEXT,
+        acquisition=ACQUISITION_ELICITED_OUTPUT,
     ),
     Measurement(
         key="prompt_surprisal_excess_bits",
@@ -647,6 +735,7 @@ MEASUREMENT_REGISTRY: tuple[Measurement, ...] = (
         # otherwise, so this quantity is absent rather than proxied on any
         # backend that cannot generate them itself. No surrogate path exists.
         subject=SUBJECT_TARGET_OUTPUT_TEXT,
+        acquisition=ACQUISITION_ELICITED_OUTPUT,
     ),
 )
 

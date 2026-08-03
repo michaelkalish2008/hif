@@ -16,6 +16,7 @@ from __future__ import annotations
 import hashlib
 from typing import Optional
 
+from hif.config import public_config_dict
 from hif.profile.measure import measurements, prompt_measurement_block
 from hif.profile.registry import MEASUREMENT_UNITS, SIGNAL_SET_VERSION
 
@@ -36,14 +37,25 @@ from hif.profile.registry import MEASUREMENT_UNITS, SIGNAL_SET_VERSION
 # `prompt-only` are no longer emitted inside `measurements` with a surrogate
 # flag — they move to a separate top-level `prompt_measurements` block naming
 # the reference model that produced them. See the "Subject" section below.
-# record-v5 (current): a `provenance` block carries which model actually filled
+# record-v5: a `provenance` block carries which model actually filled
 # each role in the run (teacher forcing, output distributions, attention
 # analysis) plus the degradation flags, so a published profile carries the
 # evidence behind its subject declarations rather than only the claim. The
 # record path cross-checks every emitted measurement against it and refuses to
 # emit a record that contradicts it (hif/profile/provenance.py). Absent — like
 # any other absent block — on a profile built before the block existed.
-RECORD_SCHEMA_VERSION = "record-v5"
+# record-v6 (current): a `run_config` block carries the RESOLVED run
+# configuration — the same dict `hif config show` prints, from the same
+# serializer (hif.config.public_config_dict). Three measurements are
+# comparisons against runs the tool constructs (perturbation variants,
+# trajectory branches, exposure thresholds); before this block, two records
+# that differed only in [perturbation] generators or distance_threshold were
+# identical in shape and different in value, with nothing in either to say
+# why. That is the provenance failure this record format exists to prevent,
+# applied to procedure instead of model identity. Secrets are redacted, not
+# omitted ("<redacted>" vs null distinguishes "authenticated" from "no key").
+# Absent on a profile built before the block existed.
+RECORD_SCHEMA_VERSION = "record-v6"
 
 
 def profile_hash(model_name: str, prompt: str, seed: int) -> str:
@@ -158,6 +170,18 @@ def signals_record(
         # quantity and unit means, and which subject it has.
         "measurements": measurements(profile),
         **({"prompt_measurements": prompt_block} if prompt_block else {}),
+
+        # The resolved configuration this run executed — same dict, same
+        # serializer as `hif config show`, so what was confirmed before the
+        # run is what the record attests after it. Three measurements are
+        # comparisons against constructed runs; without this block their
+        # numbers are not reproducible from the record alone. Omitted (never
+        # guessed) when the profile predates the block.
+        **(
+            {"run_config": public_config_dict(profile.config)}
+            if getattr(profile, "config", None) is not None
+            else {}
+        ),
 
         # Part 4 of docs/MEASUREMENTS.md — behaviour as a region rather than a
         # point. Named as the docs name them.

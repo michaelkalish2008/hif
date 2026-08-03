@@ -11,7 +11,12 @@ one stream can never mix two schema versions.
 
 Workload file: JSONL, one row per prompt:
 
-    {"query_id": str, "text": str, "image"?: str, "regime"?: str}
+    {"query_id": str, "text": str, "image"?: str, "regime"?: str,
+     "variants"?: [str, ...]}
+
+`variants` carries researcher-authored perturbation paraphrases for the row;
+when present they replace the configured generator pipeline for that row
+(same rule as [perturbation] variants_file, which reads this same format).
 
 `image` is a path relative to the workload file's directory (multimodal
 rows require a VLM backend). The whole file is validated up front — a
@@ -77,6 +82,13 @@ class BatchRow:
     text: str
     image: Optional[Path] = None  # resolved against the workload file's dir
     regime: Optional[str] = None  # overrides the run-level default
+    # Researcher-authored perturbation variants for this prompt. When present,
+    # the row's profile uses these INSTEAD of the generator pipeline — the
+    # same rule as [perturbation] variants_file, which reads this same row
+    # format. None means "no opinion" (generators apply as configured); an
+    # explicit [] is rejected at load, because "I authored zero variants" and
+    # "use the generators" must not be spelled the same way.
+    variants: Optional[list[str]] = None
 
 
 def load_workload(path: Path, *, limit: Optional[int] = None) -> list[BatchRow]:
@@ -129,12 +141,25 @@ def load_workload(path: Path, *, limit: Optional[int] = None) -> list[BatchRow]:
             raise WorkloadError(
                 f"{path}:{lineno}: \"regime\" must be a non-empty string"
             )
+        variants = data.get("variants")
+        if variants is not None:
+            if (
+                not isinstance(variants, list)
+                or not variants
+                or not all(isinstance(v, str) and v.strip() for v in variants)
+            ):
+                raise WorkloadError(
+                    f"{path}:{lineno}: \"variants\" must be a non-empty list of "
+                    f"non-empty strings (omit the key to use the configured "
+                    f"generators)"
+                )
         rows.append(
             BatchRow(
                 query_id=query_id,
                 text=text,
                 image=(path.parent / image) if image else None,
                 regime=regime,
+                variants=variants,
             )
         )
 
@@ -217,6 +242,7 @@ def run_batch(
     trace_dir: Optional[Path] = None,
     emit: Callable[[dict], None],
     include_units: bool = False,
+    variant_io: bool = False,
     log: Callable[[str], None] = lambda _msg: None,
 ) -> tuple[int, int]:
     """Profile every row against one engine; stream records via `emit`.
@@ -239,7 +265,14 @@ def run_batch(
         regime = row.regime or default_regime
         t0 = time.perf_counter()
         try:
-            profile = engine.profile_one(_row_input(row), regime=regime, seed=seed)
+            # Per-row sink: variant continuations are held only for this
+            # row's record, then dropped with the loop variable.
+            variant_output_sink: Optional[dict] = {} if variant_io else None
+            profile = engine.profile_one(
+                _row_input(row), regime=regime, seed=seed,
+                authored_variants=row.variants,
+                variant_output_sink=variant_output_sink,
+            )
             elapsed = time.perf_counter() - t0
 
             trace_path: Optional[Path] = None
@@ -248,6 +281,13 @@ def run_batch(
                     engine, profile, row, seed=seed, trace_dir=resolved_trace_dir
                 )
 
+            extras: dict = {"query_id": row.query_id}
+            if variant_io:
+                from hif.perturbation.authored import variant_io_block
+
+                extras["variant_io"] = variant_io_block(
+                    profile, variant_output_sink or {}
+                )
             record = engine.record_for(
                 profile,
                 prompt=row.text,
@@ -255,7 +295,7 @@ def run_batch(
                 seed=seed,
                 latency={"pipeline": round(elapsed, 3)},
                 trace_path=str(trace_path) if trace_path is not None else None,
-                extras={"query_id": row.query_id},
+                extras=extras,
                 include_units=include_units,
             )
             emit(record)

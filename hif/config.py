@@ -78,6 +78,47 @@ class PerturbationConfig(BaseModel):
     llm_api_key: Optional[str] = None
     llm_model: Optional[str] = None
 
+    # Researcher-authored variants, replacing the generator pipeline.
+    #
+    # A workload-format JSONL file (hif/batch.py — the same rows `hif batch`
+    # profiles), whose rows carry a `variants` list:
+    #
+    #   {"query_id": "q1", "text": "<prompt>", "variants": ["<paraphrase>", ...]}
+    #
+    # One row format for all case data, on purpose. Rows whose `text` exactly
+    # matches the run's prompt supply the variants; one file can therefore
+    # serve a whole suite or batch (`hif batch` reads the SAME rows directly
+    # and needs no pointer here). When variants apply, `generators` and
+    # `n_variants` are ignored: the researcher's file IS the perturbation
+    # set, every variant is a string a person wrote and can point to, and the
+    # profile's perturbation entries carry generator="authored". A prompt
+    # with no usable rows is a hard error, not an empty perturbation set —
+    # silence here would report an un-perturbed run under a perturbed run's
+    # config.
+    #
+    # This is the strongest form of perturbation control: the tool authors
+    # nothing. The file is resolved at the CLI layer (hif/perturbation/
+    # authored.py) — the builder is handed texts and does no file I/O.
+    variants_file: Optional[Path] = None
+
+    # Whether the variants are GENERATED from, or only teacher-forced over.
+    #
+    # The perturbation stage does two separable things that were previously
+    # welded together: it authors paraphrased prompts and teacher-forces the
+    # model over them (input-side, no new model output), and it generates a
+    # continuation for each variant (output-side, new model output that did not
+    # exist before). The input-side measurements never needed the second half —
+    # `input_entropy_shift_bits` and `input_entropy_std_bits` difference
+    # teacher-forced entropies and read no variant continuation at all.
+    #
+    # Set False to author and teacher-force the variants without generating
+    # from them. The two input-side measurements survive; the four that read a
+    # variant continuation (perturbation_jsd_bits, io_correlation_r,
+    # io_cosine_similarity, and the perturbation field) become absent. This is
+    # the `acquisition = synthesized-input` ceiling; see the `acquisition` axis
+    # in hif/profile/registry.py.
+    elicit_variant_outputs: bool = True
+
     # Media-side perturbation families (multimodal profiles only; ignored on
     # the text path). Separate namespace from `generators` — resolved via
     # hif.perturbation.get_family(). Default makes multimodal input Just
@@ -104,6 +145,18 @@ class ExposureConfig(BaseModel):
     enabled: bool = True
     min_prob: float = 0.01          # minimum candidate probability to consider
     distance_threshold: float = 0.3  # cosine distance at/above which a diffusion-zone step counts as exposed
+
+
+class SemanticConfig(BaseModel):
+    """Per-step semantic metrics — embedding and clustering each step's
+    candidate cloud.
+
+    On by default; this is the switch `--lite` throws. Disabling it costs the
+    measurements derived from candidate geometry (`candidate_cluster_entropy_bits`
+    and, transitively, counterfactual exposure) and leaves the entropy-side
+    readings untouched. It is the single most expensive per-step stage on a run
+    with no perturbation variants, which is why it is separable at all."""
+    enabled: bool = True
 
 
 class SemanticFieldConfig(BaseModel):
@@ -138,6 +191,26 @@ class TraceabilityConfig(BaseModel):
     enabled: bool = False
 
 
+def public_config_dict(config: "RunConfig") -> dict:
+    """The resolved config as a plain dict, safe to print or persist.
+
+    One serialization for both consumers — `hif config show` and the record's
+    `run_config` block — so what the researcher confirmed before the run is
+    byte-identical in shape to what the record attests afterwards.
+
+    Secrets are redacted, not omitted: a key that was set becomes
+    "<redacted>", a key that was not stays None. The difference matters —
+    "this run authenticated" is provenance; the credential itself must never
+    reach a record that gets shared. Paths become strings (JSON/TOML have no
+    Path type).
+    """
+    data = config.model_dump(mode="json")
+    for table, key in (("model", "api_key"), ("perturbation", "llm_api_key")):
+        if data.get(table, {}).get(key) is not None:
+            data[table][key] = "<redacted>"
+    return data
+
+
 class RunConfig(BaseModel):
     # populate_by_name lets callers construct by field name (exposure=) while
     # the validation alias keeps the pre-rename `hallucination` key loadable
@@ -156,6 +229,7 @@ class RunConfig(BaseModel):
         default_factory=ExposureConfig,
         validation_alias=AliasChoices("exposure", "hallucination"),
     )
+    semantic: SemanticConfig = Field(default_factory=SemanticConfig)
     semantic_field: SemanticFieldConfig = Field(default_factory=SemanticFieldConfig)
     # Defaults (disabled), so RunConfig JSON embedded in pre-0.7.0 profiles
     # still validates unchanged.

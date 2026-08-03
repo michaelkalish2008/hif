@@ -38,6 +38,157 @@ hif profile gpt2 "Explain why the sky appears blue." --json
 
 Real output, rounded for width — `gpt2` on CPU, no API key, no network.
 
+## Three of those numbers are procedures, and you control the procedure
+
+Most measurements above read one forward pass. Three do not — they compare the
+baseline run against runs the tool constructs, so the number means nothing until
+you know what was constructed. All three are configured through a TOML file
+passed to `--config-file`; its tables mirror the run config, and any CLI flag you
+type explicitly beats the file.
+
+`perturbation_jsd_bits` is the mean Jensen-Shannon divergence between the
+baseline output distribution and each **paraphrase** of the prompt. The default
+is three rule-based generators — `synonym`, `tone`, `reorder` — at two variants
+each, so six paraphrases. `substitution` and `ambiguity` are implemented and
+selectable. Rule-based generators are the default because they cost nothing and
+are deterministic; LLM-backed paraphrasing is opt-in and needs an endpoint you
+supply.
+
+`branch_pairwise_cosine_similarity` re-samples the generation from a branch point
+— **five branches, ten rollout steps** by default — embeds each branch's text,
+and averages the cosine similarity over every pair.
+
+`counterfactual_exposure_fraction` is the fraction of analysed steps that were
+both in the diffusion zone and had an alternative token **probable enough**
+(`min_prob`, default `0.01`) and **semantically far enough**
+(`distance_threshold`, default `0.3` cosine) to count as exposure. Both
+thresholds are choices, and the fraction moves when you change them.
+
+```toml
+# run.toml
+[perturbation]
+generators = ["synonym", "tone", "substitution", "ambiguity"]
+n_variants = 4
+# use_llm_perturbation = true    # then set llm_base_url / llm_api_key / llm_model
+
+[trajectory]
+n_branches = 8
+rollout_steps = 16
+
+[exposure]
+min_prob = 0.02
+distance_threshold = 0.25
+```
+
+```bash
+hif profile gpt2 "Explain why the sky appears blue." --config-file run.toml --verbose
+```
+
+`--mode audit` raises the perturbation variant count without a file;
+`--mode fast` (the default) lowers it. `--verbose` prints the paraphrase variants
+the run actually used, which is the only way to see the six strings the default
+compared against.
+
+Because the configuration is part of the measurement, the record carries it:
+every `--json` record (`record-v6`) embeds a `run_config` block — the resolved
+configuration the run executed, secrets redacted. Two runs that differ only in
+`distance_threshold` now say so in the records themselves.
+
+The authoring loop is three commands:
+
+```bash
+hif config init                                # run.toml, every key at its default
+hif config show --config-file run.toml --diff  # what will actually run, before it runs
+hif profile gpt2 "..." --config-file run.toml --json
+```
+
+`config show` resolves through the same path `profile` executes, so the two
+cannot drift, and a mistyped key anywhere in the file exits 3 rather than
+silently measuring with defaults.
+
+You can also author the perturbations yourself, so the tool writes no text at
+all. Case data travels in one format — the workload JSONL `hif batch` already
+profiles — with a `variants` list added:
+
+```jsonl
+{"query_id": "sky_1", "text": "Explain why the sky appears blue.", "variants": ["Explain why the sky looks blue."]}
+```
+
+`hif batch` profiles those rows directly; a single `hif profile` run reaches
+the same file through `[perturbation] variants_file`. Where variants apply
+they replace the generators entirely. Add `--variant-io` to put each
+variant's input and elicited continuation in the record — inputs stay
+immutable, outputs live in records. See [`docs/CONFIG.md`](docs/CONFIG.md).
+
+### `--acquisition`, when it matters what the run produces
+
+Those stages differ in a way the record used to hide: some measurements read the
+prompt and the one continuation you asked for, and others make the model
+generate text nobody asked for and nobody will read. `--acquisition` caps what a
+run is permitted to bring into existence.
+
+| tier | permits | adds |
+| --- | --- | --- |
+| `observational` | The prompt as given, the one continuation the run produces. Nothing else reaches the model. | the five entropy-side measurements, plus `candidate_cluster_entropy_bits` and `counterfactual_exposure_fraction` |
+| `synthesized-input` | Additionally authors paraphrased prompts and teacher-forces over them. The model does not generate. | `input_entropy_shift_bits`, `input_entropy_std_bits` |
+| `elicited-output` *(default)* | Additionally lets the model generate variant continuations and trajectory branches. | `perturbation_jsd_bits`, `io_correlation_r`, `io_cosine_similarity`, `branch_pairwise_cosine_similarity` |
+
+```bash
+hif profile gpt2 "Explain why the sky appears blue." --acquisition observational --json
+```
+
+Use `observational` when profiling a hosted model and sending authored
+paraphrases — or generating output nobody reviews — is a cost, privacy, or terms
+question. The tiers are strictly nested, surviving values are identical across
+them, and every row in `hif schema` carries its `acquisition`, so the partition
+is machine-readable rather than something to reconstruct from the source.
+
+`--acquisition` is a content policy; `--lite` is a speed budget. They compose.
+
+### `--lite`, when you only want the entropy side
+
+Those three stages are also where the time goes: the paraphrases cost one
+generation pass each, the branches cost five more, and the semantic stage embeds
+every candidate at every step. `--lite` skips all of it.
+
+```bash
+hif profile gpt2 "Explain why the sky appears blue." --json --lite
+```
+
+```
+              full     --lite
+pipeline     11.4s       1.3s     (gpt2, 16 new tokens, CPU)
+```
+
+What comes back is the single baseline pass plus input-side teacher forcing:
+
+| survives `--lite` | omitted under `--lite` |
+| --- | --- |
+| `output_entropy_bits` | `perturbation_jsd_bits` |
+| `output_entropy_step_delta_bits` | `input_entropy_shift_bits` |
+| `output_step_jsd_bits` | `input_entropy_std_bits` |
+| `output_step_topk_overlap_fraction` | `io_correlation_r` |
+| `prompt_surprisal_excess_bits` | `io_cosine_similarity` |
+| | `candidate_cluster_entropy_bits` |
+| | `counterfactual_exposure_fraction` |
+| | `branch_pairwise_cosine_similarity` |
+
+The surviving values are **identical** to what the same run reports without the
+flag — `--lite` removes stages, it does not approximate them. The omitted ones
+are absent from the record rather than reported as `0.0`, which is the same
+convention every other unavailable measurement follows: absence means not
+measured, and `0` always means measured zero.
+
+`--lite` overrides `--mode` and `--config-file` for the stages it disables, so a
+run asking for less never silently does more.
+
+To print a single measurement rather than the whole record, `--metric` selects
+what is *shown*; `--lite` selects what is *computed*. They compose:
+
+```bash
+hif profile gpt2 "Explain why the sky appears blue." --lite --metric output_entropy_bits
+```
+
 ## Install
 
 ```bash
@@ -86,11 +237,27 @@ lines that creates *shell* variables, and a child process inherits only the
 | command | what it does |
 |---|---|
 | `hif profile <model> <prompt>` | full pipeline on one (model, prompt) pair |
-| `hif suite <model>` | the same across every prompt regime |
 | `hif batch <workload.jsonl> <model>` | every row of a workload, model loaded once |
+| `hif suite <model>` | the fixed built-in stimulus set, every regime |
+| `hif config init` / `hif config show` | author a run.toml; see what will actually run |
 | `hif compare <a.json> <b.json>` | per-measurement difference between two profiles |
 | `hif validate-model <model>` | region-sensitivity check against a known-answer suite |
 | `hif render <profile.json>` | re-render Markdown from an existing profile |
+
+The three scales take the **same** `--config-file`, `--mode`, `--acquisition`,
+and `--lite`, resolved through one code path — so a ceiling means the same
+thing whether you run one prompt or forty, and a corpus is comparable with the
+single runs it aggregates.
+
+`hif suite` is fixed on purpose: a cross-model comparison is only a comparison
+when the stimulus was identical. It is not a benchmark (unlabeled prompts,
+nothing scored) and it is not where your own question lives — export it and
+edit instead:
+
+```bash
+hif suite --export-workload suite.jsonl gpt2   # 40 rows, no model loaded
+hif batch suite.jsonl gpt2
+```
 
 **stdout carries JSON and nothing else.** `profile --json`, `compare --json`,
 `models --json` and `schema` emit a single document; `suite` and `batch` emit
@@ -183,12 +350,31 @@ Known limitations, stated plainly:
 ## Documentation
 
 - [`docs/MEASUREMENTS.md`](docs/MEASUREMENTS.md) — every measurement as observable × functional × resolution: the run-level scalars, the token-level traces, the components, and the field descriptors
+- [`docs/CONFIG.md`](docs/CONFIG.md) — every config key and what it moves; how a run config is assembled and how to verify it applied
 - [`docs/PROMPT_SUITE.md`](docs/PROMPT_SUITE.md) — the prompt regimes; an unlabeled dataset, not a benchmark
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — model roles, module layout, data flow
 - [`docs/PHILOSOPHY.md`](docs/PHILOSOPHY.md) — why read behaviour distributionally at all
 
 Profiles generated with this tool are published and explorable at
 [ai-interpretability.com](https://ai-interpretability.com).
+
+### Driving hif from a coding agent
+
+`.claude/skills/hif/SKILL.md` is a skill for Claude Code: how to author and
+**verify** a `run.toml`, which knob moves which measurement, how to choose an
+acquisition tier, and the reporting rules (absence is not zero; no thresholds,
+no verdicts). It loads automatically when you work inside this repo.
+
+To use it from another project, copy or symlink it:
+
+```bash
+mkdir -p ~/.claude/skills
+ln -s "$PWD/.claude/skills/hif" ~/.claude/skills/hif
+```
+
+Codex and other agents that read `AGENTS.md` get the same rules from
+[`AGENTS.md`](AGENTS.md) at the repository root. Both point at `docs/CONFIG.md`
+as the reference; neither restates it.
 
 ## Contributing
 

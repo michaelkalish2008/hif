@@ -18,10 +18,27 @@ from rich.console import Console
 
 app = typer.Typer(
     name="hif",
-    help="Horizonal Interpretability — using the horizon of the possibility space to "
-    "describe model behaviour. Every measurement is reported in its natural unit "
-    "(bits, cosine distance, Pearson r, a fraction of steps); nothing is normalised, "
-    "inverted, or thresholded. Run `hif schema` for the full measurement set.",
+    help="""Horizonal Interpretability — using the horizon of the possibility space to describe model behaviour.
+
+Every measurement is reported in its natural unit (bits, cosine distance, Pearson r, a fraction of steps); nothing is normalised, inverted, or thresholded. A measurement missing from a record was NOT TAKEN — absence is never zero.
+
+SCALE — same configuration, same ceilings at every one:
+  hif profile <model> <prompt>       one case
+  hif batch <workload.jsonl> <model> many cases, model loaded once
+  hif suite <model>                  the fixed built-in stimulus set
+
+CONFIGURE — three measurements are comparisons against runs the tool constructs, so the configuration is part of the measurement:
+  hif config init                a run.toml with every key at its default
+  hif config show --diff         what will run, before running it
+  --config-file run.toml         apply it (a mistyped key exits 3)
+
+CONTROL what a run may bring into existence (--acquisition):
+  observational       the prompt as given, and the one continuation
+  synthesized-input   + authored paraphrases, teacher-forced only
+  elicited-output     + generated variants and branches (default)
+  --lite              skip the expensive stages (speed, not policy)
+
+INSPECT: `hif schema` (every measurement: unit, definition, subject, acquisition), `hif models` (what each backend can produce), `hif doctor` (what is installed and reachable).""",
 )
 # stdout is reserved for data. Every human-facing line — progress, warnings,
 # tables, errors — goes to stderr so `hif <cmd> ... | jq .` always parses.
