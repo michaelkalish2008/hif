@@ -28,6 +28,7 @@ from typing import Optional
 
 from hif.profile.registry import (
     MEASUREMENT_BY_KEY,
+    MEASUREMENT_REGISTRY,
     SUBJECT_PROMPT_ONLY,
     run_subjects,
 )
@@ -42,7 +43,7 @@ def _all_measured_values(p) -> dict[str, float]:
     subject field exists to prevent.
     """
     from hif.hourglass.input_side import mean_surprisal_excess
-    from hif.hourglass.output_side import output_distribution_degenerate
+    from hif.hourglass.output_side import output_distributions_unusable
 
     out: dict[str, float] = {}
     m = p.metrics
@@ -53,7 +54,7 @@ def _all_measured_values(p) -> dict[str, float]:
     # baseline and variant traces (builder.py step 6, before any surrogate
     # recovery), and every one of those traces came off the same backend as
     # `output_side` — so this one check answers it for all of them.
-    selected_only = output_distribution_degenerate(
+    selected_only = output_distributions_unusable(
         getattr(p.output_side, "steps", None) or []
     )
     # Did the step-6b recovery rebuild a real candidate cloud from the target's
@@ -167,6 +168,23 @@ def _all_measured_values(p) -> dict[str, float]:
         tr = row_entropy_trace(w_in)
         if tr:
             out["attention_entropy_input_bits"] = sum(tr) / len(tr)
+
+    # One enforcement of needs_distribution_pair, derived from the rows rather
+    # than hand-written per quantity.
+    #
+    # Four rows declare it; the gate was written into some of the branches
+    # above and missed on `io_correlation_r`, which is half a JSD series by
+    # construction. On a gpt-5 run that produced zero output steps that half
+    # was all zeros, pearsonr saw a constant series, and the documented
+    # "computable but degenerate → 0.0" rule fired — publishing a measured
+    # correlation of 0.0 between a real input series and a fabricated one.
+    #
+    # A row that says it needs a pair of real distributions is absent whenever
+    # the run has none, and adding a fifth such row now inherits that for free.
+    if selected_only:
+        for row in MEASUREMENT_REGISTRY:
+            if row.needs_distribution_pair:
+                out.pop(row.key, None)
 
     return out
 

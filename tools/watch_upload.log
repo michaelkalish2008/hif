@@ -1,0 +1,15 @@
+watching public/data — uploading each model at 8/8 regimes (every 120s)
+[21:01:22] gpt5 complete (8/8) — uploading
+
+data: 8 files from /Users/michaelkalish/Documents/Github/od/ai-interpretability/public/data
+  ✓ data/gpt5/adversarial_unstable.json
+  ✓ data/gpt5/ambiguous_moral.json
+  ✓ data/gpt5/healthcare_advice.json
+  ✓ data/gpt5/legal_compliance.json
+  ✓ data/gpt5/literary_continuation.json
+  ✓ data/gpt5/ordinary_conversation.json
+  ✓ data/gpt5/poetic_metaphorical.json
+  ✓ data/gpt5/technical_explanation.json
+
+Done: 8 uploaded, 0 failed.
+[21:01:41] gpt5 published

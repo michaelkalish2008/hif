@@ -15,6 +15,7 @@ from hif.hourglass.output_side import (
     OutputSideTrace,
     collect_output_trace,
     output_distribution_degenerate,
+    output_distributions_unusable,
     output_steps_via_surrogate,
 )
 from hif.hourglass.trajectory import TrajectoryAnalysis, analyze_trajectory
@@ -574,7 +575,7 @@ def build_profile(
     # three stay consistent with each other rather than only patching one.
     semantic_steps = output_trace.steps
     output_distribution_surrogate_name: str | None = None
-    if output_distribution_degenerate(output_trace.steps) and surrogate_model is not None:
+    if output_distributions_unusable(output_trace.steps) and surrogate_model is not None:
         continuation_text = "".join(s.selected_token_str for s in output_trace.steps)
         try:
             surrogate_steps = output_steps_via_surrogate(
@@ -630,7 +631,7 @@ def build_profile(
     from hif.metrics.field import compute_perturbation_field
 
     def _field_basis_trace(trace: OutputSideTrace) -> OutputSideTrace:
-        if output_distribution_degenerate(trace.steps) and surrogate_model is not None:
+        if output_distributions_unusable(trace.steps) and surrogate_model is not None:
             continuation = "".join(s.selected_token_str for s in trace.steps)
             try:
                 recovered = output_steps_via_surrogate(

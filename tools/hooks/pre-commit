@@ -1,0 +1,26 @@
+#!/bin/sh
+# Refuse a commit that leaves the website's copy of a document behind.
+#
+# The site renders copies of README.md and docs/*.md rather than restating
+# them (see tools/sync_docs.py). A copy that is only updated when someone
+# remembers is not a copy for long, so the check runs here.
+#
+# Only fires when one of those files is actually staged, and passes quietly
+# when the site is not checked out — working on the CLI alone must not need
+# the site present.
+#
+# Install: git config core.hooksPath tools/hooks
+
+staged=$(git diff --cached --name-only --diff-filter=ACM)
+case "$staged" in
+  *README.md*|*docs/*.md*) ;;
+  *) exit 0 ;;
+esac
+
+python3 tools/sync_docs.py --check || {
+  echo
+  echo "pre-commit: documentation the site publishes has drifted from this repo."
+  echo "Run the sync, review the change in the site repo, then commit again."
+  echo "To commit anyway: git commit --no-verify"
+  exit 1
+}

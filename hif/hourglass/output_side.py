@@ -106,8 +106,38 @@ def output_distribution_degenerate(steps: list[StepRecord]) -> bool:
     (topk length <= 1) — i.e. the backend returned no real logprobs at
     generation time (e.g. Anthropic), so any entropy computed directly from
     it is 0.0 by construction rather than measured.
+
+    This answers "were the distributions selected-only?" and nothing else, so
+    an empty run is False: it did not return point masses, it returned nothing.
+    Only the provenance flag wants this question. Anything deciding whether a
+    quantity is COMPUTABLE wants `output_distributions_unusable` below.
     """
     return bool(steps) and all(len(s.topk) <= 1 for s in steps)
+
+
+def output_distributions_unusable(steps: list[StepRecord]) -> bool:
+    """True when this run has no per-step distribution worth computing from.
+
+    Two ways that happens, and both must withhold:
+
+      no steps at all   the run generated nothing. Every divergence over an
+                        empty series is 0.0 by construction.
+      point masses      the backend returned only the selected token, so a
+                        "divergence between distributions" is really a
+                        token-disagreement rate.
+
+    The empty case used to fall through. `output_distribution_degenerate`
+    opens with `bool(steps)`, so an empty list answered False — "not
+    degenerate" — and every downstream computation proceeded on no data and
+    emitted a measured-looking 0.0. That is how a gpt-5 run which produced
+    ZERO output steps came to report `perturbation_jsd_bits = 0.0` and
+    `io_correlation_r = 0.0`, published as measurements of the model.
+
+    Absence of evidence is the stronger reason to withhold, not the weaker
+    one: a guard written to avoid `all([]) == True` inverted the rule it was
+    protecting.
+    """
+    return not steps or output_distribution_degenerate(steps)
 
 
 def output_steps_via_surrogate(

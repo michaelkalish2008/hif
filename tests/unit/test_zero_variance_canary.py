@@ -181,3 +181,47 @@ def test_one_surrogate_over_two_targets_returns_the_same_prompt_readings():
     # input side does not make the whole record prompt-only.
     ma, mb = measurements(a), measurements(b)
     assert ma["io_cosine_similarity"] != mb["io_cosine_similarity"]
+
+
+# ---------------------------------------------------------------------------
+# A run that produced nothing must measure nothing
+# ---------------------------------------------------------------------------
+
+
+def test_a_run_with_no_output_steps_measures_no_distribution_quantities():
+    """Zero generated steps is absence of evidence, not a measured zero.
+
+    A gpt-5 run returned no output steps at all — the backend refuses logprobs
+    — and the record carried `perturbation_jsd_bits = 0.0` and
+    `io_correlation_r = 0.0`, which were published as measurements of the
+    model. Both are 0.0 by construction over an empty series.
+
+    The cause was a guard written to stop `all([]) == True` claiming
+    degeneracy: `output_distribution_degenerate` opens with `bool(steps)`, so
+    an empty run answered "not degenerate" and every downstream computation
+    proceeded on no data. Absence of evidence is the stronger reason to
+    withhold, not the weaker one.
+    """
+    from hif.hourglass.output_side import (
+        output_distribution_degenerate,
+        output_distributions_unusable,
+    )
+
+    # The two predicates answer different questions, and only one of them is
+    # about computability.
+    assert output_distribution_degenerate([]) is False
+    assert output_distributions_unusable([]) is True
+
+
+def test_every_row_needing_a_distribution_pair_is_absent_without_one():
+    """The rule is derived from the rows, so a new row inherits it.
+
+    It used to be hand-written into individual branches, which is why
+    `io_correlation_r` — half a JSD series by construction — kept emitting.
+    """
+    from hif.profile.registry import MEASUREMENT_REGISTRY
+
+    pair_rows = [m.key for m in MEASUREMENT_REGISTRY if m.needs_distribution_pair]
+    assert pair_rows, "no row declares needs_distribution_pair — the guard has nothing to enforce"
+    assert "io_correlation_r" in pair_rows
+    assert "perturbation_jsd_bits" in pair_rows

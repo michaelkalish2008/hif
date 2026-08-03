@@ -47,7 +47,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from hif.hourglass.output_side import output_distribution_degenerate
+from hif.hourglass.output_side import output_distributions_unusable
 from hif.metrics.sensitivity import js_divergence
 
 LABEL = "Output step-to-step JSD (bits)"
@@ -135,7 +135,7 @@ def shift_trace(steps) -> list[StepShift]:
     distributions (see the module docstring's absence rule) — the caller
     reports absence rather than a fabricated series.
     """
-    if len(steps) < 2 or output_distribution_degenerate(steps):
+    if len(steps) < 2 or output_distributions_unusable(steps):
         return []
     dists = step_distributions(steps)
     return [
@@ -173,6 +173,6 @@ def unavailable_reason(steps) -> str | None:
     """Why Shift cannot be reported for these steps, or ``None`` when it can."""
     if len(steps) < 2:
         return NEEDS_TWO_STEPS
-    if output_distribution_degenerate(steps):
+    if output_distributions_unusable(steps):
         return NEEDS_DISTRIBUTIONS
     return None

@@ -276,3 +276,29 @@ derived from the registry row with no further edits.
 Part 1 (and Part 2 if the resolution is `per-step`/`per-position` with a
 surfaced trace), following the shape of the existing sections: Zone,
 Definition, Unit and range, Absent-when. No counts, anywhere.
+
+---
+
+## Editing documentation
+
+The [ai-interpretability](https://github.com/michaelkalish2008/ai-interpretability)
+site does not describe hif in its own words. Its home page and Docs tab render
+copies of `README.md` and `docs/*.md` from this repo, because the site once
+carried four rival copies of the measurement reference and no two of them
+agreed on a formula. A copy is only safe while it really is a copy:
+
+```bash
+python3 tools/sync_docs.py            # write the site's copies
+python3 tools/sync_docs.py --check    # exit 1 if any has drifted
+```
+
+Install the hook once, and a commit touching those files cannot leave the
+published version behind:
+
+```bash
+git config core.hooksPath tools/hooks
+```
+
+The check passes quietly when the site is not checked out — working on the CLI
+alone never requires it. The sync only writes the site's working tree;
+reviewing and committing there stays a deliberate act.
