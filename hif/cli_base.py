@@ -40,6 +40,25 @@ def _emit_json_line(record: dict) -> None:
     sys.stdout.flush()
 
 
+# Which dotenv file supplied each variable this process loaded. `doctor`
+# reports it, because "set" on its own is exactly what makes a stale, shadowed,
+# or never-read dotenv so hard to diagnose — the state you have to distinguish
+# is not set/unset but *which file won*.
+ENV_SOURCES: dict[str, Path] = {}
+
+# The credentials `doctor` reports and the backends check. One list, so a new
+# provider cannot be added to one and forgotten in the other.
+CREDENTIAL_VARS = (
+    "OPENAI_API_KEY",
+    "ANTHROPIC_API_KEY",
+    "GEMINI_API_KEY",
+    "GOOGLE_CLOUD_PROJECT",
+    "HF_TOKEN",
+)
+
+USER_ENV_FILE = Path.home() / ".config" / "hif" / ".env"
+
+
 def load_env_file(path: Path) -> int:
     """Read `KEY=value` lines into os.environ. Returns how many were set.
 
@@ -53,6 +72,8 @@ def load_env_file(path: Path) -> int:
 
     Values already in the environment win: an explicit `KEY=… hif …` or a real
     export is a deliberate override and must not be silently replaced by a file.
+    Because a value already present is never replaced, calling this over a list
+    of files in order gives first-file-wins precedence for free.
     """
     n = 0
     for raw in path.read_text().splitlines():
@@ -72,8 +93,54 @@ def load_env_file(path: Path) -> int:
         if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
             value = value[1:-1]
         os.environ[key] = value
+        ENV_SOURCES[key] = path
         n += 1
     return n
+
+
+def discover_env_files() -> list[Path]:
+    """Dotenv files to read when none was named, nearest first.
+
+    The nearest `.env` at or above the working directory, then the user-level
+    `~/.config/hif/.env`. The first covers the ordinary case — a project
+    directory with its own keys — and the second covers the installed user who
+    has no project directory at all and wants one file to serve every run.
+
+    Only the nearest project `.env` is read, not every one up the tree: two
+    dotenvs silently merging is worse than the one the user is standing in.
+    """
+    found: list[Path] = []
+    cwd = Path.cwd().resolve()
+    for directory in (cwd, *cwd.parents):
+        candidate = directory / ".env"
+        if candidate.is_file():
+            found.append(candidate)
+            break
+    if USER_ENV_FILE.is_file() and USER_ENV_FILE not in found:
+        found.append(USER_ENV_FILE)
+    return found
+
+
+def env_origin(key: str) -> str:
+    """Where `key` came from, for display: a file path, or the inherited
+    environment. Empty string when the variable is not set at all."""
+    if not os.environ.get(key):
+        return ""
+    path = ENV_SOURCES.get(key)
+    return _display_path(path) if path else "environment"
+
+
+def _display_path(path: Path) -> str:
+    """Shortest unambiguous spelling of `path` — relative to the working
+    directory when it is below it, else `~`-relative, else absolute."""
+    try:
+        return str(path.relative_to(Path.cwd()))
+    except ValueError:
+        pass
+    try:
+        return f"~/{path.relative_to(Path.home())}"
+    except ValueError:
+        return str(path)
 
 
 @app.callback()
@@ -82,10 +149,9 @@ def _main(
         None,
         "--env-file",
         envvar="HIF_ENV_FILE",
-        help="Read credentials from a dotenv file before running. Applies to "
-        "every command. Values already set in the environment are left alone. "
-        "Nothing is auto-discovered — hosted backends bill per token, so the "
-        "file that pays is named on the command line or in HIF_ENV_FILE.",
+        help="Read credentials from this dotenv file, ahead of any discovered "
+        "one. Applies to every command. Values already set in the real "
+        "environment are left alone.",
     ),
 ) -> None:
     """hif — Horizonal Interpretability CLI."""
@@ -95,6 +161,13 @@ def _main(
     # configure_logging(verbose=True) to restore full internal chatter.
     configure_logging(verbose=False)
 
+    # Credentials are resolved here and nowhere else, so every command sees the
+    # same environment. `doctor` predicting a run that a later, separate load
+    # would have changed is worse than no preflight at all.
+    #
+    # Precedence, first to set a name wins: the real environment, then
+    # --env-file / HIF_ENV_FILE, then discovery. A value that is already
+    # exported is a deliberate override and survives all of this.
     if env_file is not None:
         if not env_file.is_file():
             console.print(f"[red]--env-file: no such file: {env_file}[/red]")
@@ -103,6 +176,11 @@ def _main(
         # Names only. The whole point of the file is that the values do not
         # get printed.
         console.print(f"[dim]Loaded {n} variable(s) from {env_file}[/dim]")
+    for discovered in discover_env_files():
+        # Silent: this runs on every command, and a line of chatter per
+        # invocation is how a tool teaches people to stop reading stderr.
+        # `doctor` is where the resolved picture gets reported.
+        load_env_file(discovered)
 
 
 # ---------------------------------------------------------------------------

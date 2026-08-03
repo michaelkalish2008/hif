@@ -14,7 +14,7 @@ hif profile gpt2 "Explain why the sky appears blue." --json
 
 ```json
 {
-  "schema_version": "record-v4",
+  "schema_version": "record-v5",
   "model": "gpt2",
   "backend": "hf",
   "regime": "ordinary_conversation",
@@ -28,6 +28,8 @@ hif profile gpt2 "Explain why the sky appears blue." --json
     "candidate_cluster_entropy_bits": 0.4605,
     "output_entropy_bits": 2.526,
     "output_entropy_step_delta_bits": 1.403,
+    "output_step_jsd_bits": 0.78,
+    "output_step_topk_overlap_fraction": 0.1343,
     "counterfactual_exposure_fraction": 0.0833,
     "branch_pairwise_cosine_similarity": 0.099
   }
@@ -54,6 +56,31 @@ hif models     # backends, example models, and which signals each supports
 hif schema     # every measurement, its unit, and its definition
 ```
 
+## Credentials
+
+Open-weight backends (`hf`, `tlens`, `ollama`) need no credentials at all. The
+hosted ones read a key from the environment: `OPENAI_API_KEY`,
+`ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, plus `HF_TOKEN` for gated weights.
+
+Put them in a dotenv and hif will find it. The nearest `.env` at or above the
+working directory is read first, then `~/.config/hif/.env` — so a project keeps
+its own keys, and an install with no project directory still has one place to
+put them:
+
+```bash
+mkdir -p ~/.config/hif && printf 'OPENAI_API_KEY=sk-...\n' >> ~/.config/hif/.env
+```
+
+`--env-file path/to/.env` names one explicitly, ahead of anything discovered.
+**A variable already exported always wins** — a dotenv only ever fills a gap, so
+`OPENAI_API_KEY=… hif …` and a CI environment are never silently overridden.
+
+`hif doctor` prints where each credential came from. If it says `unset` for a key
+you believe you loaded, the usual cause is `source .env`: on bare `KEY=value`
+lines that creates *shell* variables, and a child process inherits only the
+*environment*, so hif never sees them. `set -a; source .env; set +a` exports them
+— or just let hif read the file itself.
+
 ## Commands
 
 | command | what it does |
@@ -65,9 +92,10 @@ hif schema     # every measurement, its unit, and its definition
 | `hif validate-model <model>` | region-sensitivity check against a known-answer suite |
 | `hif render <profile.json>` | re-render Markdown from an existing profile |
 
-**stdout carries JSON and nothing else.** `profile --json` and `compare --json`
-emit a single document; `suite` and `batch` emit JSONL, one record per prompt.
-Progress, warnings, and errors go to stderr, so this works:
+**stdout carries JSON and nothing else.** `profile --json`, `compare --json`,
+`models --json` and `schema` emit a single document; `suite` and `batch` emit
+JSONL, one record per prompt. Progress, warnings, and errors go to stderr, so
+this works:
 
 ```bash
 hif batch workload.jsonl gpt2 2>/dev/null | jq '.measurements.output_entropy_bits'
@@ -75,6 +103,18 @@ hif batch workload.jsonl gpt2 2>/dev/null | jq '.measurements.output_entropy_bit
 
 A failed row is still a record — it carries an `error` key instead of
 `measurements`, so one bad prompt does not lose the run.
+
+To see every model you can pass to `profile`, with the backend each one needs:
+
+```bash
+hif models --json 2>/dev/null | jq -r '.backends[] | .name as $b | .models[] | "\($b)\t\(.)"'
+```
+
+Those are worked examples, not a catalogue — any HuggingFace repo id is eligible
+on `hf`/`tlens`. Add `--list` to query each provider's live catalogue instead
+(needs that provider's key, or a running Ollama server); each backend then
+reports `models_source` as `live` or `examples`, so a provider that could not be
+reached is visible rather than silently thin.
 
 Units are **not** in the record by default. They are constant per
 `signal_set_version` and would repeat verbatim on every JSONL line, so pass

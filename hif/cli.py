@@ -665,6 +665,12 @@ def models(
              "input-side signals on closed/Ollama backends via --surrogate) and check each is currently "
              "reachable and ungated on the Hugging Face Hub.",
     ),
+    output_json: bool = typer.Option(
+        False, "--json",
+        help="Emit the catalogue as a single JSON document on stdout instead of the human table, "
+             "so the model list can be piped, scripted, or fed to a picker. Composes with --backend, "
+             "--list and --surrogates.",
+    ),
 ) -> None:
     """List the backends you can profile, example models, and which signals each supports.
 
@@ -676,9 +682,22 @@ def models(
     backend can produce them once --diagnostics runs that stage.
     Pass --list to check live model availability instead of static examples.
     Pass --surrogates to check --surrogate-model candidates instead.
+    Pass --json for the same catalogue on stdout, machine-readable.
     """
     from rich.markup import escape
+    from hif.engine import DEFAULT_SURROGATE_MODEL_ID
     from hif.models.capabilities import BACKENDS, signals_available
+
+    if surrogates and output_json:
+        print(json.dumps({
+            "signal_set_version": SIGNAL_SET_VERSION,
+            "surrogate_candidates": [
+                {"model": model_id, "status": status,
+                 "default": model_id == DEFAULT_SURROGATE_MODEL_ID}
+                for model_id, status in _check_surrogate_candidates()
+            ],
+        }, indent=2))
+        return
 
     if surrogates:
         console.print(
@@ -687,7 +706,7 @@ def models(
         )
         for model_id, status in _check_surrogate_candidates():
             marker = "[green]✓ ok[/green]" if status == "ok" else f"[yellow]{status}[/yellow]"
-            default_tag = "  [dim](default)[/dim]" if model_id == "unsloth/Llama-3.2-1B" else ""
+            default_tag = "  [dim](default)[/dim]" if model_id == DEFAULT_SURROGATE_MODEL_ID else ""
             console.print(f"  {model_id:<28} {marker}{default_tag}")
         console.print()
         return
@@ -696,6 +715,44 @@ def models(
     if backend and backend not in BACKENDS:
         err_console.print(f"[red]Unknown backend {backend!r}. Known: {', '.join(BACKENDS)}[/red]")
         raise typer.Exit(1)
+
+    if output_json:
+        # Built from BACKENDS and signals_available, the same two sources the
+        # text rendering below reads, so the machine-readable catalogue cannot
+        # come to disagree with the printed one.
+        document = {"signal_set_version": SIGNAL_SET_VERSION, "backends": []}
+        for info in infos:
+            models_note = None
+            if list_live:
+                live, note = _live_models_for_backend(info.name)
+                # A backend that could not be reached reports its examples and
+                # says so, rather than an empty list a caller would read as
+                # "this backend has no models".
+                catalogue = live if live is not None else info.example_models
+                source = "live" if live is not None else "examples"
+                models_note = note
+            else:
+                catalogue, source = info.example_models, "examples"
+            avail = signals_available(info.name)
+            document["backends"].append({
+                "name": info.name,
+                "kind": info.kind,
+                "deps": info.deps,
+                "setup": info.setup,
+                "teacher_forcing": info.teacher_forcing,
+                "logprobs": info.logprobs,
+                "multimodal": info.multimodal,
+                "models": catalogue,
+                "models_source": source,
+                "models_note": models_note,
+                "notes": info.notes,
+                "signals": {
+                    "available": [m for m, v in avail.items() if v],
+                    "unavailable": [m for m, v in avail.items() if not v],
+                },
+            })
+        print(json.dumps(document, indent=2))
+        return
 
     for info in infos:
         tf = "[green]yes[/green]" if info.teacher_forcing else "[dim]no[/dim]"
@@ -777,10 +834,25 @@ def doctor() -> None:
     except Exception:  # noqa: BLE001
         console.print("  ollama client (httpx): [dim]not installed — pip install 'hif[ollama]'[/dim]")
 
-    # Credentials
+    # Credentials. Each one names where it came from: the failure this command
+    # exists to catch is a dotenv that was never read, and "unset" next to a
+    # file the user believes they loaded is the whole diagnosis.
+    from hif.cli_base import CREDENTIAL_VARS, USER_ENV_FILE, env_origin
+
     console.print("\n[bold]credentials[/bold]")
-    for env in ("OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY", "GOOGLE_CLOUD_PROJECT", "HF_TOKEN"):
-        console.print(f"  {env}: {'[green]set[/green]' if os.environ.get(env) else '[dim]unset[/dim]'}")
+    for env in CREDENTIAL_VARS:
+        origin = env_origin(env)
+        if origin:
+            console.print(f"  {env}: [green]set[/green] [dim]({origin})[/dim]")
+        else:
+            console.print(f"  {env}: [dim]unset[/dim]")
+    if not any(os.environ.get(e) for e in CREDENTIAL_VARS):
+        console.print(
+            f"  [dim]None found. hif reads the nearest .env at or above the working "
+            f"directory, then {USER_ENV_FILE}; --env-file names one explicitly. "
+            f"Note that `source .env` on bare KEY=value lines sets shell variables, "
+            f"not environment ones, so hif never sees them.[/dim]"
+        )
 
     # Per-backend readiness
     console.print("\n[bold]backends[/bold]")
@@ -1245,6 +1317,9 @@ def schema(
                 "hif suite": "JSONL, one record per prompt",
                 "hif batch": "JSONL, one record per workload row",
                 "hif compare --json": "a single JSON document",
+                "hif models --json": "a single JSON document: the backend "
+                        "catalogue, each backend's model options, and the "
+                        "measurements it can and cannot produce",
                 "note": "stdout carries JSON only; progress, warnings and errors "
                         "go to stderr. A failed row is still a record, carrying "
                         "an \"error\" key instead of \"measurements\".",

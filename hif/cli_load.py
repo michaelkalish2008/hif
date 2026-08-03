@@ -18,15 +18,6 @@ import typer
 from hif.cli_base import console, err_console
 
 
-def _load_dotenv() -> None:
-    """Load .env from the repo root (walks up from cwd). Silent if python-dotenv absent."""
-    try:
-        from dotenv import load_dotenv
-        load_dotenv(override=False)  # searches cwd upward; don't clobber shell env vars
-    except ImportError:
-        pass
-
-
 def _resolve_backend(model_name: str, backend: str, *, warn: bool = True) -> str:
     """The backend a (model name, --backend) pair actually runs on.
 
@@ -49,7 +40,8 @@ def _resolve_backend(model_name: str, backend: str, *, warn: bool = True) -> str
 
 
 def _load_model(model_name: str, backend: str):
-    _load_dotenv()
+    # No dotenv load here. Credentials are resolved once, in the `hif`
+    # callback, so that what `doctor` reports is what this load will get.
     from hif.config import ModelConfig
     backend = _resolve_backend(model_name, backend)
     from hif.models.factory import load_model
