@@ -34,6 +34,7 @@ import traceback
 from pathlib import Path
 
 from hif.cli import _run_single_profile, _load_model, _load_embedder
+from hif.cli_base import discover_env_files, load_env_file
 from hif.config import RunConfig
 from hif.profile.measure import measurements, prompt_measurements
 from hif.prompts.suite import REGIMES
@@ -163,6 +164,17 @@ def run_plane(models, out: Path, *, surrogate: bool) -> int:
 
 
 def main() -> int:
+    # Load credentials with hif's own dotenv parser rather than relying on the
+    # caller to have sourced anything. `set -a; source .env` is not equivalent:
+    # the shell parses the file as script, so a value containing `&`, `(` or a
+    # space aborts it mid-way and silently leaves later variables unset. This
+    # file has exactly such a line, and the symptom was a Vertex AI run failing
+    # with "No credentials found" while `echo $GOOGLE_CLOUD_PROJECT` printed
+    # fine in the same shell.
+    for env_path in discover_env_files():
+        n = load_env_file(env_path)
+        print(f"loaded {n} variable(s) from {env_path}", flush=True)
+
     if len(sys.argv) < 3:
         print(__doc__)
         return 2
