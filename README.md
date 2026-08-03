@@ -155,8 +155,7 @@ limitation lives in provider opacity, not in the method.
 
 ## Scope and honesty
 
-This instrument **describes** behaviour. It does not detect drift, identify
-attacks, or judge quality, and it should not be used as though it does.
+This instrument **describes** behaviour.
 
 Interpretation is the researcher's, and it belongs in the work that cites this
 tool rather than in the tool. That division is the point: a number you can check
