@@ -23,7 +23,7 @@ from hif.viz._theme import (
 )
 from hif.profile.schema import BehavioralRangeProfile
 
-LABEL, GLYPH = "Continuity", None
+LABEL, GLYPH = "Branch pairwise cosine similarity", None
 
 GROUP_COLORS = ["#6366f1", "#22d3ee", "#f59e0b", "#10b981",
                 "#f43f5e", "#a78bfa", "#fb923c", "#34d399"]

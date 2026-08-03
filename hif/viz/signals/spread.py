@@ -22,7 +22,7 @@ from hif.viz._theme import AMBER, dark_layout
 from hif.viz.signals._attention import get_attention_map, row_entropy_trace
 from hif.profile.schema import BehavioralRangeProfile
 
-LABEL, GLYPH = "Spread", "■"
+LABEL, GLYPH = "Output attention-row entropy (bits)", "■"
 
 
 def available(profile: BehavioralRangeProfile) -> str | None:

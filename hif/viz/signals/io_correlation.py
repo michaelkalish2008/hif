@@ -20,7 +20,7 @@ from hif.viz.base import NEEDS_TEACHER_FORCING, na_figure, save_fig, signal_titl
 from hif.viz._theme import INDIGO, EMERALD, dark_layout
 from hif.profile.schema import BehavioralRangeProfile
 
-LABEL, GLYPH = "I/O Correlation", None
+LABEL, GLYPH = "Input/output correlation (r)", None
 
 
 def available(profile: BehavioralRangeProfile) -> str | None:

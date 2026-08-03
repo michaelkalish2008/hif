@@ -36,7 +36,7 @@ from hif.viz._theme import INDIGO, dark_layout
 from hif.viz.signals._attention import get_attention_map, row_entropy_trace
 from hif.profile.schema import BehavioralRangeProfile
 
-LABEL, GLYPH = "Input attention entropy", None
+LABEL, GLYPH = "Input attention-row entropy (bits)", None
 
 
 def available(profile: BehavioralRangeProfile) -> str | None:

@@ -26,7 +26,7 @@ from hif.viz.base import NEEDS_EXPOSURE, na_figure, save_fig, signal_title
 from hif.viz._theme import INDIGO, AMBER, EMERALD, TEXT_SEC, dark_layout
 from hif.profile.schema import BehavioralRangeProfile
 
-LABEL, GLYPH = "Exposure", "◇"
+LABEL, GLYPH = "Counterfactual exposure (fraction)", "◇"
 
 # Neutral divergence scale (NOT a risk scale): low → high semantic divergence.
 _LOW = EMERALD

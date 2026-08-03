@@ -50,7 +50,7 @@ import numpy as np
 from hif.hourglass.output_side import output_distribution_degenerate
 from hif.metrics.sensitivity import js_divergence
 
-LABEL, GLYPH = "Shift", "◆"
+LABEL, GLYPH = "Output step-to-step JSD (bits)", "◆"
 
 # Reason strings, so the chart's "not available" panel and the measurement's
 # absence agree on why.

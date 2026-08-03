@@ -18,7 +18,7 @@ from hif.viz.base import na_figure, save_fig, signal_title
 from hif.viz._theme import INDIGO, EMERALD, AMBER, dark_layout
 from hif.profile.schema import BehavioralRangeProfile
 
-LABEL, GLYPH = "Similarity", None
+LABEL, GLYPH = "Input/output cosine similarity", None
 _NEEDS = "Requires perturbation variant pairs (no (input, output) pairs were recorded)."
 
 

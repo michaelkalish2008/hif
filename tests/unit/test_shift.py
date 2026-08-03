@@ -235,7 +235,7 @@ def test_the_chart_imports_the_canonical_computation():
 
     assert chart.shift_trace is canonical.shift_trace
     assert chart.shift_summary is canonical.shift_summary
-    assert chart.LABEL == canonical.LABEL == "Shift"
+    assert chart.LABEL == canonical.LABEL == "Output step-to-step JSD (bits)"
     assert chart.GLYPH == canonical.GLYPH == "◆"
     # No private reimplementation left behind.
     assert not hasattr(chart, "_jsd")

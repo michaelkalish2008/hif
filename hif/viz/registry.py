@@ -69,40 +69,43 @@ class SignalViz:
     measurement_key: str | None = None
 
 
-# Ordered as the v1 signal set. `module` supplies generate/available.
-# The last column is the measurement key the chart draws (or None).
+# Ordered as the v1 signal set. `module` supplies generate/available, and also
+# LABEL/GLYPH — the display name and legend marker are read off the module that
+# draws the chart, not restated here. They used to be restated here, and the two
+# copies drifted: this table said "Stability" while the module said "Input
+# entropy trace", and the chart a reader actually saw was titled from the
+# module.
+#
+# NOTE on `stability`: the chart draws the per-position input entropy TRACE,
+# not the aggregate its measurement reduces it to (input_entropy_std_bits, the
+# spread of per-variant entropy shifts). The aggregate is a single scalar with
+# no informative direct chart; the trace is the series behind it.
 _SPEC = [
-    # id, label, kind, module, measurement_key
-    # NOTE: the `stability` chart draws the per-position input entropy TRACE,
-    # not the aggregate the measurement labelled "Stability" reduces it to
-    # (input_entropy_std_bits, the spread of per-variant entropy shifts). The
-    # aggregate is a single scalar with no informative direct chart; the trace
-    # is the series behind it, which is why docs/ARCHITECTURE.md describes it
-    # as "Stability (rendered as the input entropy trace)".
-    ("stability",      "Input entropy trace",                "aggregate", stability,      "input_entropy_std_bits"),
+    # id, kind, module, measurement_key
+    ("stability",      "aggregate", stability,      "input_entropy_std_bits"),
     # Breadth draws per-step effective support size — deliberately NOT a
     # measurement (ESS is entropy in different units; docs/MEASUREMENTS.md
     # excludes it), so it maps to no key.
-    ("breadth",        "Effective support size",             "aggregate", breadth,        None),
+    ("breadth",        "aggregate", breadth,        None),
     # Surprise draws the same per-position excess-surprisal series as the
     # wager reading; wager is the designated chart for the measurement, so
     # only wager carries the key (one measurement must resolve to one chart).
-    ("surprise",       "Prompt surprisal excess (trace)",    "aggregate", surprise,       None),
-    ("io_correlation", "Input/output correlation (r)",       "aggregate", io_correlation, "io_correlation_r"),
-    ("sensitivity",    "Perturbation JSD (bits)",            "aggregate", sensitivity,    "perturbation_jsd_bits"),
-    ("continuity",     "Branch pairwise cosine similarity",  "aggregate", continuity,     "branch_pairwise_cosine_similarity"),
-    ("similarity",     "Input/output cosine similarity",     "aggregate", similarity,     "io_cosine_similarity"),
-    ("entropy",        "Output entropy (bits)",              "reading",   entropy,        "output_entropy_bits"),
-    ("shift",          "Output step-to-step JSD (bits)",     "reading",   shift,          "output_step_jsd_bits"),
-    ("wager",          "Prompt surprisal excess (bits)",     "reading",   wager,          "prompt_surprisal_excess_bits"),
-    ("spread",         "Output attention-row entropy (bits)","reading",   spread,         "attention_entropy_output_bits"),
-    ("horizon",        "Input attention-row entropy (bits)", "reading",   horizon,        "attention_entropy_input_bits"),
-    ("exposure",       "Counterfactual exposure (fraction)", "reading",   exposure,       "counterfactual_exposure_fraction"),
+    ("surprise",       "aggregate", surprise,       None),
+    ("io_correlation", "aggregate", io_correlation, "io_correlation_r"),
+    ("sensitivity",    "aggregate", sensitivity,    "perturbation_jsd_bits"),
+    ("continuity",     "aggregate", continuity,     "branch_pairwise_cosine_similarity"),
+    ("similarity",     "aggregate", similarity,     "io_cosine_similarity"),
+    ("entropy",        "reading",   entropy,        "output_entropy_bits"),
+    ("shift",          "reading",   shift,          "output_step_jsd_bits"),
+    ("wager",          "reading",   wager,          "prompt_surprisal_excess_bits"),
+    ("spread",         "reading",   spread,         "attention_entropy_output_bits"),
+    ("horizon",        "reading",   horizon,        "attention_entropy_input_bits"),
+    ("exposure",       "reading",   exposure,       "counterfactual_exposure_fraction"),
 ]
 
 SIGNALS: list[SignalViz] = [
     SignalViz(
-        id=sid, label=label, kind=kind,
+        id=sid, label=mod.LABEL, kind=kind,
         # One vocabulary: the chart's family IS its measurement's functional.
         # Breadth (no measurement) draws support size off the output
         # distribution — information-theoretic like the entropy it re-scales.
@@ -115,7 +118,7 @@ SIGNALS: list[SignalViz] = [
         generate=mod.generate, available=mod.available,
         measurement_key=mkey,
     )
-    for (sid, label, kind, mod, mkey) in _SPEC
+    for (sid, kind, mod, mkey) in _SPEC
 ]
 
 SIGNALS_BY_ID: dict[str, SignalViz] = {s.id: s for s in SIGNALS}

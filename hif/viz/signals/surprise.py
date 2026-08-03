@@ -20,7 +20,7 @@ from hif.viz.base import NEEDS_TEACHER_FORCING, add_click_to_dim_js, na_figure, 
 from hif.viz._theme import AMBER, TEXT_SEC, dark_layout
 from hif.profile.schema import BehavioralRangeProfile
 
-LABEL, GLYPH = "Surprise", None
+LABEL, GLYPH = "Prompt surprisal excess (trace)", None
 
 
 def available(profile: BehavioralRangeProfile) -> str | None:

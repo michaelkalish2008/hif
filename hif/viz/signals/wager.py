@@ -24,7 +24,7 @@ from hif.viz.base import NEEDS_TEACHER_FORCING, add_click_to_dim_js, na_figure, 
 from hif.viz._theme import AMBER, INDIGO, RED, TEXT_SEC, dark_layout
 from hif.profile.schema import BehavioralRangeProfile
 
-LABEL, GLYPH = "Wager", "▲"
+LABEL, GLYPH = "Prompt surprisal excess (bits)", "▲"
 
 
 def available(profile: BehavioralRangeProfile) -> str | None:

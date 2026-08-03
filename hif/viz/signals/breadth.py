@@ -20,7 +20,7 @@ from hif.viz.base import NEEDS_DISTRIBUTION, na_figure, save_fig, signal_title
 from hif.viz._theme import INDIGO, AMBER, dark_layout
 from hif.profile.schema import BehavioralRangeProfile
 
-LABEL, GLYPH = "Breadth", None
+LABEL, GLYPH = "Effective support size", None
 
 
 def available(profile: BehavioralRangeProfile) -> str | None:

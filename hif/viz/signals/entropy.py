@@ -20,7 +20,7 @@ from hif.viz.base import NEEDS_DISTRIBUTION, na_figure, save_fig, signal_title
 from hif.viz._theme import EMERALD, TEXT_MUTED, dark_layout
 from hif.profile.schema import BehavioralRangeProfile
 
-LABEL, GLYPH = "Entropy", "●"
+LABEL, GLYPH = "Output entropy (bits)", "●"
 
 
 def available(profile: BehavioralRangeProfile) -> str | None:

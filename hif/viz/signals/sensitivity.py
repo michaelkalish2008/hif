@@ -19,7 +19,7 @@ from hif.viz.base import NEEDS_PERTURBATION, na_figure, save_fig, signal_title
 from hif.viz._theme import VIOLET, AMBER, dark_layout
 from hif.profile.schema import BehavioralRangeProfile
 
-LABEL, GLYPH = "Sensitivity", None
+LABEL, GLYPH = "Perturbation JSD (bits)", None
 
 
 def available(profile: BehavioralRangeProfile) -> str | None:
