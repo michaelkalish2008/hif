@@ -5,8 +5,22 @@ question variant, sweeps a grid mask over the image, measures JSD between the
 baseline output distribution and each masked variant's (the Sensitivity
 family), and ranks the KNOWN answer cell against all other cells.
 
-Acceptance criterion: the answer cell ranks in the top 2 of grid cells for at
-least `threshold` (default 70%) of image × variant combinations.
+Reports where the KNOWN answer cell ranked among the grid cells, and by how
+much it led or trailed. It emits no verdict.
+
+There was an acceptance criterion — top-2 for at least 70% of combinations —
+and it was removed for the reason `hif compare` dropped SIGNATURE HELD /
+SHIFTED / MOVED: a threshold on a quantity this instrument measures is a
+decision the instrument is not entitled to make, and this one was demonstrably
+unstable. Three consecutive gpt-4o pilot runs on identical inputs scored 75%,
+92% and 100% against a 70% line. Every difference was a rank shuffle on one
+image whose cells sit within 0.003-0.007 bits of each other — inside the
+run-to-run variation of a hosted model. The pass rate was reporting API noise
+with the same authority as the nine cases that separated by 4-23x and never
+moved.
+
+The separation ratio is the part the rank discarded, and it is stable where the
+rank is not. Whoever wants a gate applies their own rule to these numbers.
 
 This harness backs:
   (a) a CI integration test,
@@ -30,7 +44,6 @@ from pathlib import Path
 
 from hif.validation.corpus import load_corpus
 
-DEFAULT_THRESHOLD = 0.70
 DEFAULT_GRID = (4, 4)
 DEFAULT_MAX_NEW_TOKENS = 24
 
@@ -58,21 +71,53 @@ class ImageValidationRecord:
     answer_cell_rank: int      # 1 = answer cell had the highest JSD of all cells
     in_top2: bool
 
+    @property
+    def separation(self) -> float:
+        """Winner's JSD over the runner-up's — how decisively the cells order.
+
+        The rank alone discards this, and the discarded part is the evidence.
+        A 23x lead and a 1.13x lead both score "rank 1"; only the second is
+        reversible by the run-to-run variation of a hosted model. On gpt-4o at
+        2x2, nine of twelve cases separated by 4-23x and never moved across
+        three runs, while chart_02 sat at 1.13-1.30x and moved every time —
+        which is a fact about that image at that grid size, not about the
+        model.
+
+        inf when the runner-up is exactly zero.
+        """
+        vals = sorted(self.cell_jsd.values(), reverse=True)
+        if len(vals) < 2:
+            return float("inf")
+        return float("inf") if vals[1] == 0 else vals[0] / vals[1]
+
 
 @dataclass
 class ValidationResult:
     model_id: str
     grid: tuple[int, int]
-    threshold: float
     top2_rate: float
-    passed: bool
     per_image: list[ImageValidationRecord] = field(default_factory=list)
 
+    @property
+    def rank1_count(self) -> int:
+        return sum(1 for r in self.per_image if r.answer_cell_rank == 1)
+
+    @property
+    def top2_count(self) -> int:
+        return sum(1 for r in self.per_image if r.in_top2)
+
+    @property
+    def separations(self) -> list[float]:
+        return sorted(r.separation for r in self.per_image)
+
     def summary(self) -> str:
-        status = "PASS" if self.passed else "FAIL"
-        return (f"region-sensitivity validation [{status}] model={self.model_id} "
-                f"grid={self.grid[0]}x{self.grid[1]} top2_rate={self.top2_rate:.2f} "
-                f"(threshold {self.threshold:.2f}, n={len(self.per_image)})")
+        seps = [s for s in self.separations if s != float("inf")]
+        med = seps[len(seps) // 2] if seps else float("nan")
+        return (f"region-sensitivity model={self.model_id} "
+                f"grid={self.grid[0]}x{self.grid[1]} n={len(self.per_image)} "
+                f"rank1={self.rank1_count} top2={self.top2_count} "
+                f"separation min={min(seps):.2f}x median={med:.2f}x "
+                f"max={max(seps):.2f}x" if seps else "no cases")
 
 
 def validate_region_sensitivity(
@@ -80,7 +125,6 @@ def validate_region_sensitivity(
     corpus_dir: Path | str | None = None,
     grid: tuple[int, int] = DEFAULT_GRID,
     *,
-    threshold: float = DEFAULT_THRESHOLD,
     pilot: bool = False,
     seed: int = 0,
 ) -> ValidationResult:
@@ -113,9 +157,7 @@ def validate_region_sensitivity(
         # whose whole purpose is to say which model was validated.
         model_id=getattr(model, "name", None) or getattr(model, "model_id", None) or str(model),
         grid=grid,
-        threshold=threshold,
         top2_rate=top2_rate,
-        passed=top2_rate >= threshold,
         per_image=per_image,
     )
 

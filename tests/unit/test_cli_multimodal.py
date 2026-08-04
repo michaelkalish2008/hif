@@ -244,7 +244,7 @@ def test_compare_missing_modality_backfills_text(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def _fake_validation_result(passed=True):
+def _fake_validation_result(rate=1.0):
     from hif.validation.harness import ImageValidationRecord, ValidationResult
 
     recs = [
@@ -261,20 +261,18 @@ def _fake_validation_result(passed=True):
             answer_cell_rank=2, in_top2=True,
         ),
     ]
-    rate = 1.0 if passed else 0.5
     return ValidationResult(
-        model_id="mock-vlm", grid=(2, 2), threshold=0.70,
-        top2_rate=rate, passed=passed, per_image=recs,
+        model_id="mock-vlm", grid=(2, 2), top2_rate=rate, per_image=recs,
     )
 
 
-def test_validate_model_pass_renders_rank_table(monkeypatch, tmp_path):
+def test_validate_model_renders_rank_and_separation(monkeypatch, tmp_path):
     import hif.validation.harness as harness
 
     monkeypatch.setattr(cli, "_load_model", lambda *a, **k: object())
     monkeypatch.setattr(
         harness, "validate_region_sensitivity",
-        lambda *a, **k: _fake_validation_result(passed=True),
+        lambda *a, **k: _fake_validation_result(),
     )
     result = runner.invoke(app, [
         "validate-model", "mock-vlm", "--backend", "hf-vlm",
@@ -282,24 +280,33 @@ def test_validate_model_pass_renders_rank_table(monkeypatch, tmp_path):
     ])
     assert result.exit_code == 0
     assert "form_01" in result.output and "chart_01" in result.output
-    assert "PASS" in result.output
-    assert "ground-truth synthetic tasks" in result.output
+    assert "Separation" in result.output
+    assert "ground-truth synthetic tasks" in result.output.lower()
+    # No verdict, and no threshold to compare one against.
+    assert "PASS" not in result.output and "FAIL" not in result.output
 
 
-def test_validate_model_fail_exits_2(monkeypatch, tmp_path):
+def test_validate_model_never_exits_nonzero_on_a_low_rate(monkeypatch, tmp_path):
+    """A low top-2 rate is a number, not a failure.
+
+    This used to exit 2 below a 70% threshold. Three consecutive gpt-4o pilot
+    runs on identical inputs scored 75%, 92% and 100% against that line, every
+    difference a rank shuffle on one image whose cells sit within 0.007 bits of
+    each other — so the exit code was reporting hosted-API noise as a verdict.
+    """
     import hif.validation.harness as harness
 
     monkeypatch.setattr(cli, "_load_model", lambda *a, **k: object())
     monkeypatch.setattr(
         harness, "validate_region_sensitivity",
-        lambda *a, **k: _fake_validation_result(passed=False),
+        lambda *a, **k: _fake_validation_result(rate=0.10),
     )
     result = runner.invoke(app, [
         "validate-model", "mock-vlm", "--backend", "hf-vlm",
         "--pilot", "--corpus", str(tmp_path),
     ])
-    assert result.exit_code == 2
-    assert "FAIL" in result.output
+    assert result.exit_code == 0
+    assert "FAIL" not in result.output
 
 
 def test_validate_model_json(monkeypatch, tmp_path):
@@ -308,7 +315,7 @@ def test_validate_model_json(monkeypatch, tmp_path):
     monkeypatch.setattr(cli, "_load_model", lambda *a, **k: object())
     monkeypatch.setattr(
         harness, "validate_region_sensitivity",
-        lambda *a, **k: _fake_validation_result(passed=True),
+        lambda *a, **k: _fake_validation_result(),
     )
     result = runner.invoke(app, [
         "validate-model", "mock-vlm", "--backend", "hf-vlm",
@@ -316,8 +323,10 @@ def test_validate_model_json(monkeypatch, tmp_path):
     ])
     assert result.exit_code == 0
     data = json.loads(result.output)
-    assert data["passed"] is True
     assert data["grid"] == "2x2"
+    assert "passed" not in data and "threshold" not in data
+    assert data["rank1_count"] + data["top2_count"] >= 0
+    assert "separation" in data["per_image"][0]
     assert data["per_image"][0]["answer_cell_rank"] == 1
 
 

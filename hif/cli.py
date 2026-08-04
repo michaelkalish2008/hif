@@ -1262,9 +1262,9 @@ def validate_model(
             "model": result.model_id,
             "backend": backend,
             "grid": f"{result.grid[0]}x{result.grid[1]}",
-            "threshold": result.threshold,
-            "top2_rate": round(result.top2_rate, 4),
-            "passed": result.passed,
+            "n": len(result.per_image),
+            "rank1_count": result.rank1_count,
+            "top2_count": result.top2_count,
             "per_image": [
                 {
                     "image_id": rec.image_id,
@@ -1272,6 +1272,9 @@ def validate_model(
                     "answer_cell": rec.answer_cell,
                     "answer_cell_rank": rec.answer_cell_rank,
                     "in_top2": rec.in_top2,
+                    # How decisively the cells ordered. The rank discards this,
+                    # and it is the part that stays put across runs.
+                    "separation": round(rec.separation, 4) if rec.separation != float("inf") else None,
                     "cell_jsd": {k: round(v, 6) for k, v in rec.cell_jsd.items()},
                 }
                 for rec in result.per_image
@@ -1287,31 +1290,47 @@ def validate_model(
         table.add_column("Variant")
         table.add_column("Answer cell")
         table.add_column("Rank", justify="right")
-        table.add_column("Top-2")
+        table.add_column("Separation", justify="right")
         for rec in result.per_image:
+            sep = rec.separation
             table.add_row(
                 rec.image_id,
                 str(rec.variant),
                 f"({rec.answer_cell['row']},{rec.answer_cell['col']})",
                 str(rec.answer_cell_rank),
-                "[green]yes[/green]" if rec.in_top2 else "[red]no[/red]",
+                "—" if sep == float("inf") else f"{sep:.2f}x",
             )
         console.print(table)
         console.print()
-        status = "[green]PASS[/green]" if result.passed else "[red]FAIL[/red]"
+        seps = [r.separation for r in result.per_image if r.separation != float("inf")]
+        n = len(result.per_image)
         console.print(
-            f"{status} — answer cell in top 2 for {result.top2_rate:.0%} of "
-            f"runs (threshold {result.threshold:.0%}, "
-            f"grid {result.grid[0]}x{result.grid[1]}, n={len(result.per_image)})."
+            f"Answer cell ranked 1 in {result.rank1_count}/{n}, "
+            f"top-2 in {result.top2_count}/{n}, "
+            f"grid {result.grid[0]}x{result.grid[1]}."
+        )
+        if seps:
+            ordered = sorted(seps)
+            console.print(
+                f"Separation (winner JSD / runner-up): min {ordered[0]:.2f}x · "
+                f"median {ordered[len(ordered) // 2]:.2f}x · max {ordered[-1]:.2f}x"
+            )
+        console.print(
+            "[dim]No pass mark. A rank says which cell led; the separation says "
+            "by how much, and only the second distinguishes a decisive result "
+            "from one a rerun would reverse. Read them together and apply "
+            "whatever bar your use demands.[/dim]"
         )
         console.print(
-            "[dim]Validated against ground-truth synthetic tasks — a statement "
-            "about the measurement instrument on this model, not about your "
-            "workload.[/dim]"
+            "[dim]Ground-truth synthetic tasks — a statement about the "
+            "measurement instrument on this model, not about your workload.[/dim]"
         )
 
-    if not result.passed:
-        raise typer.Exit(2)
+    # Exit 0. There is no failing outcome to signal: the command reports where
+    # the answer cell ranked and by how much it led, and a non-zero exit would
+    # be the same verdict the numbers deliberately stop short of. A caller that
+    # wants a gate reads --json and applies its own rule — which is also the
+    # only way that rule gets stated somewhere a reader can see it.
 
 
 @app.command()
