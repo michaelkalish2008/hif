@@ -44,21 +44,31 @@ from hif.utils.seeding import seed_everything
 
 logger = get_logger(__name__)
 
-# Warnings that state a fact about the RUN, not about a case. `validate-model`
-# and `batch` call the builder once per case, so a per-call logger.warning
-# prints the same sentence eleven or a hundred times and buries anything that
-# is actually about one case. Keyed by what makes the fact distinct, so two
-# models in one process each get their own line.
+# Facts about the RUN, not about a case, and not anomalies.
 #
+# WARNING is for something a reader should act on. Neither of the two notes
+# below qualifies: both describe a backend behaving exactly as its capability
+# row says it will, on a default the user never chose. Raising them to WARNING
+# taught readers that this tool warns during normal operation, which is how a
+# real warning gets scrolled past.
+#
+# The information is not lost. An absent measurement is reported as absent in
+# the measurement table (ABSENT_TEXT in cli_render.py), omitted from the record
+# rather than zeroed, and explained by the subject/provenance blocks. That is
+# where a reader looks for it; a log line during a validation sweep that never
+# reads the input side is not.
+#
+# DEBUG, so `--verbose` restores them. Still deduped, because `--verbose` on a
+# hundred-case batch should not print one sentence a hundred times either.
 # Same pattern as _warned_top_k_combos in hif/hourglass/output_side.py.
-_warned_once: set[tuple] = set()
+_noted_once: set[tuple] = set()
 
 
-def _warn_once(key: tuple, message: str, *args) -> None:
-    if key in _warned_once:
+def _note_once(key: tuple, message: str, *args) -> None:
+    if key in _noted_once:
         return
-    _warned_once.add(key)
-    logger.warning(message, *args)
+    _noted_once.add(key)
+    logger.debug(message, *args)
 
 
 # ---------------------------------------------------------------------------
@@ -125,7 +135,7 @@ def _zeroed_input_analysis(
     """
     import math
 
-    _warn_once(
+    _note_once(
         ("no-input-side", model.name),
         "%s cannot teacher-force and no surrogate was given, so nothing read "
         "the prompt: the input-side measurements are ABSENT from this run's "
@@ -913,7 +923,7 @@ def _build_profile_mm(
                 "in M1 (docs/ARCHITECTURE.md § Multimodal notes). Set "
                 "perturbation.generators=[] for multimodal profiles."
             )
-        _warn_once(
+        _note_once(
             ("mm-generators", tuple(config.perturbation.generators)),
             "Ignoring default text perturbation generators %s on multimodal "
             "input — media perturbation families %s will run instead.",

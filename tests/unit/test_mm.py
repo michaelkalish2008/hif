@@ -276,10 +276,14 @@ class TestBuilderGuards:
                 embedder=FakeEmbeddingModel(),
             )
 
-    def test_default_text_generators_ignored_with_warning(self, caplog):
+    def test_default_text_generators_ignored_not_an_error(self, caplog):
         """Ambiguity #1 resolution: an untouched default generators list is
-        ignored (warning), not a hard error — only EXPLICIT text generator
-        names raise. Proven by getting past the guard to prepare()."""
+        ignored, not a hard error — only EXPLICIT text generator names raise.
+        Proven by getting past the guard to prepare().
+
+        The note is DEBUG, not WARNING: a default the user never chose, on a
+        backend doing what its capability row says, is not something to act on.
+        """
         import logging
 
         from hif.config import PerturbationConfig
@@ -296,7 +300,13 @@ class TestBuilderGuards:
         vlm.prepare = _boom
         config = _make_run_config()
         config.perturbation = PerturbationConfig(n_variants=1)  # default generators
-        with caplog.at_level(logging.WARNING):
+        # The note is emitted once per process; clear the ledger so this test
+        # does not depend on whether an earlier test already tripped it.
+        from hif.profile.builder import _noted_once
+        _noted_once.clear()
+        # Name the logger: hif configures its own level, so raising the root
+        # alone does not reach it.
+        with caplog.at_level(logging.DEBUG, logger="hif.profile.builder"):
             with pytest.raises(_Sentinel):
                 _build_profile_mm(
                     vlm,
