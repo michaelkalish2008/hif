@@ -167,6 +167,8 @@ def _make_run_config(
         # Temperature plumbing (see docstring): [model] temperature wins;
         # otherwise mirror an explicitly-set [generation] temperature onto
         # the model config the sampling adapters actually read.
+        if "extra_body" in base.model.model_fields_set:
+            cfg.model.extra_body = base.model.extra_body
         if "temperature" in base.model.model_fields_set:
             cfg.model.temperature = base.model.temperature
         elif "temperature" in base.generation.model_fields_set:

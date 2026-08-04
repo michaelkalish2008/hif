@@ -93,7 +93,10 @@ def run_plane(models, out: Path, *, surrogate: bool) -> int:
                 base_config.model.extra_body = extra_body
 
         try:
-            model = _load_model(name, backend)
+            # base_url/extra_body must be given HERE. The model is loaded once
+            # per model and handed to every run, so anything set only on the
+            # per-run config never reaches the client that makes the request.
+            model = _load_model(name, backend, base_url=base_url, extra_body=extra_body)
         except Exception as exc:
             print(f"  LOAD FAILED: {exc}", flush=True)
             n_fail += len(REGIMES)

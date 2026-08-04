@@ -39,14 +39,34 @@ def _resolve_backend(model_name: str, backend: str, *, warn: bool = True) -> str
     return backend
 
 
-def _load_model(model_name: str, backend: str):
+def _load_model(
+    model_name: str,
+    backend: str,
+    *,
+    base_url: str | None = None,
+    extra_body: dict | None = None,
+):
+    """Load a model. `base_url` and `extra_body` reach OpenAI-compatible
+    providers that are not OpenAI.
+
+    They are parameters rather than something the caller patches afterwards
+    because the client is built here: without a base_url this constructs an
+    OpenAI client and asks it for the named model, and a DeepSeek model name
+    against OpenAI's endpoint answers `404 model_not_found` — an error that
+    reads as "the provider retired the model" and is really "you asked the
+    wrong provider". That cost three full regeneration passes before it was
+    diagnosed.
+    """
     # No dotenv load here. Credentials are resolved once, in the `hif`
     # callback, so that what `doctor` reports is what this load will get.
     from hif.config import ModelConfig
     backend = _resolve_backend(model_name, backend)
     from hif.models.factory import load_model
     try:
-        return load_model(ModelConfig(name=model_name, backend=backend))
+        return load_model(ModelConfig(
+            name=model_name, backend=backend,
+            base_url=base_url, extra_body=extra_body,
+        ))
     except ValueError as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(1)
