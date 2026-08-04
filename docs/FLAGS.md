@@ -17,7 +17,7 @@ Profile many prompts against one loaded model.
 
 | flag | meaning |
 | --- | --- |
-| `--backend` | Model backend: hf \| tlens \| ollama \| openai \| anthropic \| gemini \| hf-vlm \| openai-vlm. Workloads containing image rows require hf-vlm or openai-vlm. *(default: `hf`)* |
+| `--backend` | Model backend: hf \| tlens \| ollama \| openai \| anthropic \| gemini \| hf-vlm \| openai-vlm. Workloads containing image rows require hf-vlm or openai-vlm; image rows are EXPERIMENTAL — see `hif profile --input`. *(default: `hf`)* |
 | `--regime` | Default prompt regime (a per-row "regime" key overrides it). *(default: `batch`)* |
 | `--seed` | Random seed *(default: `42`)* |
 | `--max-new-tokens` | Maximum new tokens to generate *(default: `64`)* |
@@ -111,8 +111,8 @@ Run the full HI pipeline on a single (model, prompt) pair.
 | flag | meaning |
 | --- | --- |
 | `--regime` | Prompt regime *(default: `ordinary_conversation`)* |
-| `--backend` | Model backend: hf \| tlens \| ollama \| openai \| anthropic \| gemini \| hf-vlm \| openai-vlm. For image inputs (--input) use an explicit VLM backend: hf-vlm (local AutoModelForImageTextToText checkpoints, e.g. SmolVLM/Gemma 3 multimodal) or openai-vlm (hosted vision API, e.g. gpt-4o). *(default: `hf`)* |
-| `--input` | Image file (PNG/JPEG) to include as model input; repeatable. Images are presented before the prompt text. Requires --backend hf-vlm or openai-vlm. *(default: `[]`)* |
+| `--backend` | Model backend: hf \| tlens \| ollama \| openai \| anthropic \| gemini \| hf-vlm \| openai-vlm. For image inputs (--input) use an explicit VLM backend: hf-vlm (local AutoModelForImageTextToText checkpoints, e.g. SmolVLM/Gemma 3 multimodal) or openai-vlm (hosted vision API, e.g. gpt-4o). Both VLM backends are EXPERIMENTAL — see --input. *(default: `hf`)* |
+| `--input` | EXPERIMENTAL. Image file (PNG/JPEG) to include as model input; repeatable. Images are presented before the prompt text. Requires --backend hf-vlm or openai-vlm. The image path is not yet covered by the measurement-set guarantees the text path carries: treat its records as provisional and do not compare them across hif versions. *(default: `[]`)* |
 | `--seed` | Random seed *(default: `42`)* |
 | `--output-dir` | Write derived reports (technical + public markdown, --charts plots) here. Default: nothing is written to disk — results print to the terminal only (privacy-first compute-and-discard). |
 | `--max-new-tokens` | Maximum new tokens to generate *(default: `64`)* |
@@ -167,7 +167,7 @@ Validate region-sensitivity measurement for a model against HIF's known-answer s
 
 | flag | meaning |
 | --- | --- |
-| `--backend` | Model backend: hf-vlm \| openai-vlm |
+| `--backend` | Model backend: hf-vlm \| openai-vlm. EXPERIMENTAL — this command validates the image path, which is not yet covered by the measurement-set guarantees the text path carries. |
 | `--grid` | Mask grid as ROWSxCOLS (default: 4x4; 2x2 with --pilot). |
 | `--corpus` | Directory containing a corpus.jsonl known-answer suite (default: built-in suite, generated to ~/.hif/validation-corpus/ on first use). |
 | `--pilot` | Fast smoke run: 4 images on a 2x2 grid instead of 10 images on 4x4. |

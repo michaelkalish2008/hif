@@ -308,14 +308,17 @@ def profile(
         help="Model backend: hf | tlens | ollama | openai | anthropic | gemini | "
         "hf-vlm | openai-vlm. For image inputs (--input) use an explicit VLM "
         "backend: hf-vlm (local AutoModelForImageTextToText checkpoints, e.g. "
-        "SmolVLM/Gemma 3 multimodal) or openai-vlm (hosted vision API, e.g. gpt-4o).",
+        "SmolVLM/Gemma 3 multimodal) or openai-vlm (hosted vision API, e.g. "
+        "gpt-4o). Both VLM backends are EXPERIMENTAL — see --input.",
     ),
     input_files: list[Path] = typer.Option(
         [],
         "--input",
-        help="Image file (PNG/JPEG) to include as model input; repeatable. "
-        "Images are presented before the prompt text. Requires --backend "
-        "hf-vlm or openai-vlm.",
+        help="EXPERIMENTAL. Image file (PNG/JPEG) to include as model input; "
+        "repeatable. Images are presented before the prompt text. Requires "
+        "--backend hf-vlm or openai-vlm. The image path is not yet covered by "
+        "the measurement-set guarantees the text path carries: treat its "
+        "records as provisional and do not compare them across hif versions.",
     ),
     seed: int = typer.Option(42, help="Random seed"),
     output_dir: Optional[Path] = typer.Option(
@@ -1171,7 +1174,12 @@ def compare(
 @app.command("validate-model")
 def validate_model(
     model_name: str = typer.Argument(..., help="Model name (e.g. a HF VLM checkpoint or gpt-4o)"),
-    backend: str = typer.Option(..., "--backend", help="Model backend: hf-vlm | openai-vlm"),
+    backend: str = typer.Option(
+        ..., "--backend",
+        help="Model backend: hf-vlm | openai-vlm. EXPERIMENTAL — this command "
+        "validates the image path, which is not yet covered by the "
+        "measurement-set guarantees the text path carries.",
+    ),
     grid: Optional[str] = typer.Option(
         None, "--grid",
         help="Mask grid as ROWSxCOLS (default: 4x4; 2x2 with --pilot).",
@@ -1751,7 +1759,7 @@ def batch(
         "hf",
         help="Model backend: hf | tlens | ollama | openai | anthropic | gemini | "
         "hf-vlm | openai-vlm. Workloads containing image rows require hf-vlm "
-        "or openai-vlm.",
+        "or openai-vlm; image rows are EXPERIMENTAL — see `hif profile --input`.",
     ),
     regime: str = typer.Option(
         "batch", help="Default prompt regime (a per-row \"regime\" key overrides it)."
