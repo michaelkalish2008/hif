@@ -3,7 +3,14 @@
 This is the fidelity contract in `hif/viz/registry.py` stated as an
 executable equivalence rather than a promise:
 
-    chart.available(p) is None  <=>  chart.measurement_key in measurements(p)
+    chart.available(p) is None
+        <=>  chart.measurement_key in measurements(p) | prompt_measurements(p)
+
+Both blocks on the right, because the question the gate answers is "did this
+run publish the value", and a row whose effective subject is prompt-only under
+`--surrogate` leaves `measurements()` for `prompt_measurements()` carrying its
+number. That is a change of subject, not an absence, and a chart that declined
+it would contradict the record beside it.
 
 The two sides are decided in different modules by different code.
 `hif/profile/measure.py` withholds a measurement when the evidence for it
@@ -27,7 +34,7 @@ from __future__ import annotations
 import pytest
 
 from hif.profile.builder import build_profile
-from hif.profile.measure import measurements
+from hif.profile.measure import measurements, prompt_measurements
 from hif.viz.registry import SIGNALS_BY_MEASUREMENT
 
 from mock_backends import (
@@ -37,6 +44,7 @@ from mock_backends import (
     contract_config,
     install_attention_analyzer,
     install_perturbation_generator,
+    surrogate_model,
 )
 
 PROMPT = "Explain why the sky appears blue."
@@ -48,7 +56,7 @@ def _offline_stages(monkeypatch):
     install_attention_analyzer(monkeypatch)
 
 
-def _profile(model, backend: str):
+def _profile(model, backend: str, surrogate=None):
     return build_profile(
         model=model,
         prompt=PROMPT,
@@ -56,24 +64,45 @@ def _profile(model, backend: str):
         config=contract_config(backend),
         embedder=TextHashEmbedder(),
         seed=42,
+        surrogate_model=surrogate,
     )
 
 
-# The two ends of the access range. `hf` has full logprob access and should
-# publish everything; `anthropic` is selected-only, which is the case that
-# exercises every absence rule at once.
+# The access range, plus the case that changes a row's subject rather than its
+# presence. `hf` has full logprob access and should publish everything;
+# `anthropic` is selected-only, which exercises every absence rule at once;
+# `anthropic+surrogate` is the documented use of --surrogate, where the input
+# rows are recovered by a reference model and so move to `prompt_measurements`
+# with their values intact. Without that third case the equivalence below
+# passes vacuously for `wager` — the only keyed chart whose measurement
+# declares `subject_under_surrogate=prompt-only`.
 CASES = [
-    ("hf", lambda: alpha_model()),
-    ("anthropic", lambda: alpha_model(tier=TIER_SELECTED_ONLY)),
+    ("hf", lambda: alpha_model(), None),
+    ("anthropic", lambda: alpha_model(tier=TIER_SELECTED_ONLY), None),
+    (
+        "anthropic+surrogate",
+        lambda: alpha_model(tier=TIER_SELECTED_ONLY),
+        surrogate_model,
+    ),
 ]
 
 
-@pytest.mark.parametrize("backend,make_model", CASES, ids=[c[0] for c in CASES])
+@pytest.mark.parametrize(
+    "backend,make_model,make_surrogate", CASES, ids=[c[0] for c in CASES]
+)
 def test_every_keyed_chart_declines_the_runs_its_measurement_declines(
-    backend, make_model
+    backend, make_model, make_surrogate
 ):
-    profile = _profile(make_model(), backend)
-    published = set(measurements(profile))
+    profile = _profile(
+        make_model(),
+        backend.split("+")[0],
+        surrogate=make_surrogate() if make_surrogate else None,
+    )
+    # Both blocks: the gate asks whether the run published the value at all,
+    # and a row that moved to `prompt_measurements` under --surrogate changed
+    # subject, not existence. Reading `measurements()` alone would assert that
+    # `wager` MUST decline a surrogate run whose record carries its number.
+    published = set(measurements(profile)) | set(prompt_measurements(profile))
 
     disagreements = []
     for key, signal in SIGNALS_BY_MEASUREMENT.items():

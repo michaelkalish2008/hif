@@ -152,9 +152,20 @@ def _gated(mod, mkey: str | None, draws: bool):
         # Imported here: `hif.profile.measure` is the authority on absence,
         # and a module-level import would make the viz package a dependency
         # of nothing it needs at import time.
-        from hif.profile.measure import measurements
+        from hif.profile.measure import measurements, prompt_measurements
 
-        if mkey not in measurements(profile):
+        # Both blocks, because the gate asks "did the run publish this value"
+        # and `measurements()` alone answers a narrower question: "did the run
+        # publish this value ABOUT THE TARGET". A row whose effective subject
+        # is prompt-only under `--surrogate` leaves `measurements()` for
+        # `prompt_measurements()` with its value intact — that is a change of
+        # subject, not an absence. Reading only the first block would make
+        # `wager` write "the evidence does not exist here" onto every
+        # surrogate run, beside a record carrying the number.
+        published = mkey in measurements(profile) or (
+            mkey in prompt_measurements(profile)
+        )
+        if not published:
             return WITHHELD.format(key=mkey)
         return None
 
