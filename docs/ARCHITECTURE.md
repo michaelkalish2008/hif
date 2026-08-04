@@ -33,7 +33,7 @@ Example model ids per backend live in `BACKENDS` in `hif/models/capabilities.py`
 
 A sentence-transformer used internally to embed candidate token strings and generated text for semantic clustering. Default and fallback: `sentence-transformers/all-MiniLM-L6-v2` at its native 384 dimensions. `google/embeddinggemma-300m` is available as an opt-in override (pair it with `matryoshka_dim=256`).
 
-The embedding model is measurement infrastructure. It does not analyze the model under analysis — it helps group outputs by meaning. Its quality affects semantic clustering granularity but does not affect distribution metrics, sensitivity metrics, or raw top-K data. Switching encoders changes what the similarity, Veer, and Exposure numbers mean, so the *effective* embedder — the one that actually loaded — is written back into `config.embedding.model_name` on every profile.
+The embedding model is measurement infrastructure. It does not analyze the model under analysis — it helps group outputs by meaning. Its quality affects semantic clustering granularity but does not affect distribution metrics, sensitivity metrics, or raw top-K data. Switching encoders changes what `io_cosine_similarity`, `semantic_centroid_veer_cosine`, and `counterfactual_exposure_fraction` mean, so the *effective* embedder — the one that actually loaded — is written back into `config.embedding.model_name` on every profile.
 
 **3. Analysis transformer**
 
@@ -68,22 +68,54 @@ Nothing is normalised into `[0, 1]`, inverted into a score, or bucketed into a l
 
 `hif/viz/registry.py` is the single source of truth for the chart set: one visualization per signal, ordered aggregates-then-readings. Each entry supplies a generator and an *availability predicate*, so a signal whose backing data is missing renders an explicit "requires teacher forcing / attention capture / …" placeholder rather than a flat or zero chart.
 
-**Aggregates** (`kind="aggregate"`) — Stability (rendered as the input entropy trace), Breadth, Surprise, I/O Correlation, Sensitivity, Continuity, Similarity.
+**Aggregates** (`kind="aggregate"`) — by registry `id`, with the chart label and the measurement each joins to:
+
+| Registry `id` | Chart label | `measurement_key` |
+|---|---|---|
+| `stability` | Input entropy trace | `input_entropy_std_bits` |
+| `sensitivity` | Perturbation JSD (bits) | `perturbation_jsd_bits` |
+| `continuity` | Branch pairwise cosine similarity | `branch_pairwise_cosine_similarity` |
+| `io_correlation` | Input/output correlation (r) | `io_correlation_r` |
+| `similarity` | Input/output cosine similarity | `io_cosine_similarity` |
+| `breadth` | Effective support size | — (chart only) |
+| `surprise` | Prompt surprisal excess (trace) | — (chart only) |
+
+Note `stability` → `input_entropy_std_bits`: the id is a leftover shorthand and the measurement is a standard deviation, where a *higher* value means *less* stable. The label and the key say so; the id does not. This is the mismatch that got the shorthand vocabulary retired — see below.
 
 **Readings** (`kind="reading"`) — the per-token/per-step traces:
 
-| Symbol | Reading | Source signal |
-|--------|---------|--------------|
-| ● | **Entropy** | Per-output-step Shannon entropy, in bits (nucleus and raw top-K both drawn) |
-| ◆ | **Shift** | Step-to-step Jensen-Shannon divergence between consecutive output distributions — computed in `hif/metrics/shift.py` and reported as `output_step_jsd_bits`, so the chart and the measurement are one arithmetic |
-| ▲ | **Wager** | Per-prompt-position surprisal excess over entropy — where the model committed and the actual token overrode that commitment |
-| ■ | **Spread** | Attention-row entropy per generated token, in bits — how broadly attention was distributed over prior context |
-| — | **Horizon** (labelled *Input attention entropy*) | Attention-row entropy per prompt position, in bits |
-| ◇ | **Exposure** | Fraction of steps where a probabilistically accessible alternative diverged in meaning |
+Each row's `id` is an internal, stable identifier; the `label` is what a chart
+is titled with, and it names the quantity in the terms the quantity is computed
+in. Read the `measurement_key` column as the join to `hif schema`.
+
+| Registry `id` | Chart label | `measurement_key` | Source signal |
+|---|---|---|---|
+| `entropy` | Output entropy (bits) | `output_entropy_bits` | Per-output-step Shannon entropy, in bits (nucleus and raw top-K both drawn) |
+| `shift` | Output step-to-step JSD (bits) | `output_step_jsd_bits` | Jensen-Shannon divergence between consecutive output distributions — computed in `hif/metrics/shift.py`, so the chart and the measurement are one arithmetic |
+| `wager` | Prompt surprisal excess (bits) | `prompt_surprisal_excess_bits` | Per-prompt-position surprisal excess over entropy — where the model committed and the actual token overrode that commitment |
+| `spread` | Output attention-row entropy (bits) | `attention_entropy_output_bits` | Attention-row entropy per generated token, in bits — how broadly attention was distributed over prior context |
+| `horizon` | Input attention-row entropy (bits) | `attention_entropy_input_bits` | Attention-row entropy per prompt position, in bits |
+| `exposure` | Counterfactual exposure (fraction) | `counterfactual_exposure_fraction` | Fraction of steps where a probabilistically accessible alternative diverged in meaning |
+
+**There is no glyph column, and no glyph.** Charts were once headed with one —
+● ◆ ▲ ■ ◇ — and a symbol set does not extend: adding a measurement means either
+picking a mark nobody has taken or subscripting one that is (this project
+reached ▼p and ▼g), and ◆ against ◈ was two near-identical marks on two
+quantities a reader is specifically likely to confuse. A colour swatch indexes a
+legend without pretending to be a mnemonic; a name says what the thing is. See
+`hif/viz/base.py::signal_title`.
+
+The same applies to the names. Registry rows used to carry a shorthand from this
+project's own vocabulary — Entropy, Shift, Wager, Spread, Horizon, Exposure,
+Veer, Stability — beside the descriptive name. That was removed in `hif-v3.3`:
+two names for one quantity is one name too many, and the shorthand was the one
+that went wrong, with "Stability" landing on `input_entropy_std_bits`, a
+standard deviation where a *higher* number means *less* stable. The shorthands
+survive only as `id`s, which are internal and never displayed.
 
 Both attention readings come from the stored `attention_capture` via `hif/viz/signals/_attention.py::row_entropy_trace`, in raw bits. The historical `log₂(seq_len)` normaliser is gone: the denominator is sequence length, so it leaked position metadata into a number presented as behaviour.
 
-Veer (◈) — the per-step semantic-centroid displacement from `hif/analysis/semantic_field.py` — is a measurement (`semantic_centroid_veer_cosine`) and a persisted per-step trace (`profile.semantic_field`), but has no entry in the viz registry.
+`semantic_centroid_veer_cosine` — the per-step semantic-centroid displacement from `hif/analysis/semantic_field.py` — is a measurement and a persisted per-step trace (`profile.semantic_field`), but has no entry in the viz registry, so it has no chart label.
 
 ### Hermeneutic Attention (DistilBERT)
 
@@ -95,7 +127,7 @@ Four readings:
 3. **Resonance comparison** — which continuation tokens echo the load-bearing structure of the input
 4. **Joint trajectory trace** — DistilBERT run on `[prompt + continuation[:k]]` at `trajectory_interval` checkpoints, tracking which prompt tokens hold or release cross-attention as the continuation grows
 
-No concatenation in readings 1–3, no joint forward pass, and the generation process is never observed. The stored result (`BehavioralRangeProfile.attention_capture`, a `TextAttentionAnalysis`) is also the substrate the Spread ■ and Horizon readings derive from — so those two readings describe an independent reader's attention over the texts, not the generating model's own attention.
+No concatenation in readings 1–3, no joint forward pass, and the generation process is never observed. The stored result (`BehavioralRangeProfile.attention_capture`, a `TextAttentionAnalysis`) is also the substrate the `spread` and `horizon` readings derive from — so those two readings describe an independent reader's attention over the texts, not the generating model's own attention.
 
 ---
 
@@ -189,18 +221,18 @@ hif/
       sensitivity.py       # per-generator JSD bars
       continuity.py        # trajectory branch convergence
       similarity.py        # input/output/io cosine bars
-      entropy.py           # ● per-step output entropy
-      shift.py             # ◆ step-to-step output JSD
-      wager.py             # ▲ surprisal vs. entropy, two-panel
-      spread.py            # ■ output attention-row entropy
+      entropy.py           # per-step output entropy
+      shift.py             # step-to-step output JSD
+      wager.py             # surprisal vs. entropy, two-panel
+      spread.py            # output attention-row entropy
       horizon.py           # input attention-row entropy
-      exposure.py          # ◇ counterfactual semantic exposure
+      exposure.py          # counterfactual semantic exposure
 
   analysis/
     __init__.py            # module docstring explaining the text-instrument role
     attention.py           # AttentionAnalyzer, TextAttentionAnalysis, and Pydantic schemas
     exposure.py            # ExposureAnalyzer → ExposureProfile (per-step counterfactual exposure)
-    semantic_field.py      # SemanticFieldAnalyzer → SemanticFieldReading (Veer ◈)
+    semantic_field.py      # SemanticFieldAnalyzer → SemanticFieldReading
     region_sensitivity.py  # per-grid-cell perturbation JSD artifact (multimodal)
 
   validation/
@@ -254,13 +286,13 @@ The full pipeline, as orchestrated by `build_profile()` in `hif/profile/builder.
 11. **Findings** — `generate_findings()` collects run provenance only: `similarity_trend_slope` plus the two surrogate model names. No levels, no verdict, no summary sentence.
     - **11b.** Exposure analysis (`config.exposure.enabled`, on by default) → `ExposureProfile`.
     - **11c.** Attention analysis (`config.attention.enabled`, off by default; set by `--diagnostics`) → `TextAttentionAnalysis`.
-    - **11d.** Within-generation semantic field (`config.semantic_field.enabled`, off by default; set by `--diagnostics`) → `SemanticFieldReading` (Veer).
+    - **11d.** Within-generation semantic field (`config.semantic_field.enabled`, off by default; set by `--diagnostics`) → `SemanticFieldReading`.
 12. **Profile assembly** — `BehavioralRangeProfile` constructed from all of the above plus `ModelIdentity` and `PromptRecord` metadata, and the effective embedder recorded into the persisted config. Raw traces are attached only under the traceability opt-in.
 13. **Measurement extraction** — `hif/profile/measure.py::measurements()` reduces the profile to the flat measurement dict, splitting off the prompt-only quantities by subject; `signals_record()` wraps both with provenance for `--json`, `suite`, and `batch`.
 14. **Rendering (optional)** — `render_json()` writes the full profile as JSON; `render_technical()` and `render_public()` write Markdown reports. Nothing is written unless an output directory is requested — the privacy-first default writes nothing.
 15. **Charts (optional)** — `generate_signal_plots()` renders the registry's signal charts plus a combined dashboard index.
 
-`SessionEngine` (`hif/engine.py`) wraps steps 1–13 for the load-once/profile-many callers (`hif profile`, `hif batch`, `hif suite`); it never writes an artifact implicitly.
+`SessionEngine` (`hif/engine.py`) wraps steps 1–13 for the load-once/profile-many callers (`hif profile`, `hif batch`); it never writes an artifact implicitly.
 
 ---
 
@@ -374,9 +406,9 @@ authority for them.
   cloud to one mean-pairwise-cosine scalar, `BranchField` restores its shape
   — centroid radii plus `cluster_count`, which detects multi-modality a mean
   cannot see (`hif/hourglass/trajectory.py`).
-- **Veer ◈ (within-generation semantic field).** The admitted instruments
-  read one generation event; Veer reads the trajectory of the output's
-  semantic possibility field *within* a generation — per-step displacement of
+- **Within-generation semantic field (`semantic_centroid_veer_cosine`).** The admitted instruments
+  read one generation event; the semantic field reads the trajectory of the
+  output's possibility field *within* a generation — per-step displacement of
   the probability-weighted candidate-cloud centroid (translation) and the
   step-to-step change in its spread (deformation). It is the geometric twin
-  of Shift ◆ (`hif/analysis/semantic_field.py`).
+  of `output_step_jsd_bits` (`hif/analysis/semantic_field.py`).

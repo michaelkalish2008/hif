@@ -29,11 +29,20 @@ NEEDS_TEACHER_FORCING = (
     "expose it)."
 )
 NEEDS_ATTENTION = (
-    "Requires attention capture — open HuggingFace models only (GPT-2, Gemma). "
-    "Not available for API or Ollama models."
+    "Requires attention capture, which is off by default — re-run with "
+    "--diagnostics. It also needs an open HuggingFace model (GPT-2, Gemma); "
+    "API and Ollama backends cannot produce it at all."
 )
-NEEDS_PERTURBATION = "Requires perturbation variants (run with paraphrase generators enabled)."
-NEEDS_TRAJECTORY = "Requires trajectory branching (no branch rollout was recorded for this run)."
+NEEDS_PERTURBATION = (
+    "Requires perturbation variants — none were produced. Either no paraphrase "
+    "generators were enabled, or the run was capped by --lite or "
+    "--acquisition observational."
+)
+NEEDS_TRAJECTORY = (
+    "Requires trajectory branching — no branch rollout was recorded. Either "
+    "the backend cannot teacher-force, [trajectory] n_branches is 0, or the "
+    "run was capped by --lite or an --acquisition tier below elicited-output."
+)
 NEEDS_DISTRIBUTION = "Requires per-step output distributions (no generation steps recorded)."
 NEEDS_EXPOSURE = "Requires the Exposure analysis extension (top-K probabilities + an embedding encoder)."
 

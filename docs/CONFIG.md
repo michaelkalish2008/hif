@@ -17,24 +17,28 @@ version control next to whatever you do with the output.
 
 ---
 
-## One control surface, three scales
+## One control surface, every scale
 
-`profile` (one case), `batch` (a workload file, model loaded once), and `suite`
-(the fixed built-in stimulus set) are three scales of one operation. All three
-take `--config-file`, `--mode`, `--acquisition`, and `--lite`, resolved through
-the same code path, so a ceiling means the same thing at every scale and a
-corpus is comparable with the single runs it aggregates.
+`profile` (one case) and `batch` (many cases, model loaded once) are two
+scales of one operation. Both take `--config-file`, `--mode`, `--acquisition`,
+`--lite`, and `--variant-io`, resolved through the same code path, so a
+ceiling means the same thing at either scale and a corpus is comparable with
+the single runs it aggregates.
 
-`--variant-io` applies to `profile` and `batch` — the two that emit records.
+**The built-in prompt suite is a row source, not a third command.**
+`hif batch --sample-set all <model>` feeds `batch` the fixed 8 x 5 stimulus
+set; `--sample-set <regime>` narrows it. Because it is a row source it
+inherits every control above — which the old standalone `hif suite` did not,
+having drifted to where it accepted no config file and no ceilings at all.
 
-**On `suite`.** Its prompts are fixed and that is the entire point: a
-cross-model comparison is only a comparison when the stimulus was identical.
-It is not a benchmark — the prompts are unlabeled, nothing is scored — and it
-is not where your own research question lives. For that, export it and edit:
+Its prompts are fixed and that is the entire point: a cross-model comparison
+is only a comparison when the stimulus was identical. It is not a benchmark —
+the prompts are unlabeled, nothing is scored — and it is not where your own
+research question lives. For that, fork it:
 
 ```bash
-hif suite --export-workload suite.jsonl gpt2   # 40 rows, no model loaded
-$EDITOR suite.jsonl                            # add prompts, add `variants`
+hif batch --sample-set all --export-workload suite.jsonl   # 40 rows, no model
+$EDITOR suite.jsonl                                        # add prompts, add `variants`
 hif batch suite.jsonl gpt2
 ```
 

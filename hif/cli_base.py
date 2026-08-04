@@ -22,10 +22,10 @@ app = typer.Typer(
 
 Every measurement is reported in its natural unit (bits, cosine distance, Pearson r, a fraction of steps); nothing is normalised, inverted, or thresholded. A measurement missing from a record was NOT TAKEN — absence is never zero.
 
-SCALE — same configuration, same ceilings at every one:
+SCALE — same configuration, same ceilings at both:
   hif profile <model> <prompt>       one case
   hif batch <workload.jsonl> <model> many cases, model loaded once
-  hif suite <model>                  the fixed built-in stimulus set
+  hif batch --sample-set all <model> the built-in fixed stimulus set
 
 CONFIGURE — three measurements are comparisons against runs the tool constructs, so the configuration is part of the measurement:
   hif config init                a run.toml with every key at its default
@@ -38,7 +38,13 @@ CONTROL what a run may bring into existence (--acquisition):
   elicited-output     + generated variants and branches (default)
   --lite              skip the expensive stages (speed, not policy)
 
-INSPECT: `hif schema` (every measurement: unit, definition, subject, acquisition), `hif models` (what each backend can produce), `hif doctor` (what is installed and reachable).""",
+SEE — nothing is written to disk unless you ask:
+  --output-dir DIR    Markdown reports
+  --charts            one interactive Plotly HTML per signal, plus an
+                      index.html dashboard (needs --output-dir)
+  --trace             the full profile artifact, for recomputation
+
+INSPECT: `hif schema` (every measurement: unit, definition, subject, acquisition), `hif models` (what each backend can produce), `hif doctor` (what is installed and reachable, including chart support).""",
 )
 # stdout is reserved for data. Every human-facing line — progress, warnings,
 # tables, errors — goes to stderr so `hif <cmd> ... | jq .` always parses.

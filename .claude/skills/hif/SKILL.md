@@ -117,17 +117,19 @@ with `--acquisition`). `--mode fast|audit` changes only the variant budget.
 
 ## Scale
 
-`profile` (one case), `batch` (a workload file, model loaded once), and `suite`
-(the fixed built-in stimulus set) take the same `--config-file`, `--mode`,
-`--acquisition`, and `--lite`. Past one prompt, propose `batch` — a workload
-JSONL is also where authored `variants` live.
+`profile` (one case) and `batch` (many, model loaded once) take the same
+`--config-file`, `--mode`, `--acquisition`, `--lite`, and `--variant-io`. Past
+one prompt, propose `batch` — a workload JSONL is also where authored
+`variants` live.
 
-`suite` is fixed on purpose: identical stimuli are the condition for a
-cross-model comparison being a comparison. It is not a benchmark and not where
-the researcher's own question lives. When they want their own prompts, offer:
+The built-in prompt suite is a row source, not a command:
+`hif batch --sample-set all <model>`, or `--sample-set <regime>` for one. It is
+fixed on purpose: identical stimuli are the condition for a cross-model
+comparison being a comparison. It is not a benchmark and not where the
+researcher's own question lives. When they want their own prompts, offer:
 
 ```bash
-hif suite --export-workload suite.jsonl <model>   # 40 rows, no model loaded
+hif batch --sample-set all --export-workload suite.jsonl   # 40 rows, no model
 ```
 
 Then they edit it — add prompts, add per-row `variants` — and run `hif batch`.

@@ -16,7 +16,7 @@ The HIF prompt suite is a curated set of prompts (`hif/prompts/regimes.py` is th
 
 The purpose of the suite is structured sampling across the range of conditions under which language models are actually deployed: common social exchanges, regulated professional advice, open-ended creative tasks, value-laden deliberation, and adversarial edge cases. No single prompt characterizes a model; the suite characterizes the model's distributional behavior across the context bands that matter for deployment.
 
-Each context band has exactly five prompts. The `hi suite` command runs the full pipeline on every prompt in every band (or a single selected band) and produces a per-prompt profile plus a cross-prompt summary table.
+Each context band has exactly five prompts. `hif batch --sample-set all <model>` runs the full pipeline on every prompt in every band; `--sample-set <band>` selects one. The suite is a row source rather than its own command, so it inherits every control `hif batch` has — `--config-file`, `--acquisition`, `--lite`. To take it as a starting point for your own prompts, `--export-workload` writes the rows to a file you can edit.
 
 ---
 
@@ -185,15 +185,14 @@ Regime(
         "Third prompt text.",
         # Minimum 3 prompts; 5 is the convention
     ],
-    expected_dispersion="description of characteristic behavioral signature for this band",
 )
 ```
 
-3. The band will immediately be available to `hi suite --regime your_band_name` and will be included in `hi suite` (all bands).
+3. The band will immediately be available to `hif batch --sample-set your_band_name` and included in `hif batch --sample-set all`.
 
 **Design guidelines for new prompts.**
 
 - Each prompt should represent a distinct scenario within the regime, not a trivial paraphrase of another prompt in the same regime (paraphrases are what the perturbation analysis is for).
 - Prompts should be minimal — just enough context to specify the scenario. Longer prompts reduce the amount of output-side analysis per token budget.
-- The expected dispersion field is descriptive, not a metric threshold. It guides interpretation but does not affect pipeline behavior.
+- Do not add a field naming the dispersion you expect. A regime carries a `rationale` — why the band is interesting — and nothing more. An `expected_dispersion` field existed and was removed: nothing read it, but a per-regime expectation surfaced beside a measured value is a pass/fail, and this suite is unlabeled by design. Put the reasoning in the rationale, as prose, where it reads as authorial framing rather than a machine-readable answer key.
 - Include at least one prompt that sits at the boundary of the regime — where the model's behavior becomes interesting or uncertain. Boundary cases are the most informative for characterizing behavioral range.

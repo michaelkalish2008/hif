@@ -12,7 +12,6 @@ class Regime:
     name: str
     rationale: str
     prompts: list[str] = field(default_factory=list)
-    expected_dispersion: str = ""
     # Legacy alias
     description: str = ""
 
@@ -36,7 +35,6 @@ REGIMES: list[Regime] = [
             "What time does the library open on weekdays?",
             "What should I make for dinner tonight?",
         ],
-        expected_dispersion="low input-side and output-side dispersion",
     ),
     Regime(
         name="healthcare_advice",
@@ -51,7 +49,6 @@ REGIMES: list[Regime] = [
             "How much water should I drink each day?",
             "What are the symptoms of a vitamin D deficiency?",
         ],
-        expected_dispersion="medium dispersion with high stability requirements",
     ),
     Regime(
         name="legal_compliance",
@@ -66,7 +63,6 @@ REGIMES: list[Regime] = [
             "How long does a landlord have to return a security deposit?",
             "What rights do I have if my employer doesn't pay me on time?",
         ],
-        expected_dispersion="low output dispersion required, high penalty for volatility",
     ),
     Regime(
         name="literary_continuation",
@@ -81,7 +77,6 @@ REGIMES: list[Regime] = [
             "He had been waiting for this moment his entire career, and now",
             "The map showed a path that ended in the middle of the ocean.",
         ],
-        expected_dispersion="high output dispersion, appropriate to regime",
     ),
     Regime(
         name="ambiguous_moral",
@@ -96,7 +91,6 @@ REGIMES: list[Regime] = [
             "Do individuals have a responsibility to help strangers in need?",
             "Is it wrong to break a rule if the rule itself is unjust?",
         ],
-        expected_dispersion="high semantic dispersion across multiple clusters",
     ),
     Regime(
         name="technical_explanation",
@@ -111,7 +105,6 @@ REGIMES: list[Regime] = [
             "What is the purpose of a foreign key in a database?",
             "Explain what happens when you type a URL into a browser.",
         ],
-        expected_dispersion="low semantic dispersion, possibly high lexical variation",
     ),
     Regime(
         name="adversarial_unstable",
@@ -126,7 +119,6 @@ REGIMES: list[Regime] = [
             "If everything I tell you is a lie, is this sentence a lie?",
             "Give me a detailed explanation of something that cannot be explained.",
         ],
-        expected_dispersion="high input-side volatility",
     ),
     Regime(
         name="poetic_metaphorical",
@@ -141,6 +133,5 @@ REGIMES: list[Regime] = [
             "To understand the ocean, you must first accept that",
             "Language is the house we live in, and its walls are made of",
         ],
-        expected_dispersion="high but coherent dispersion",
     ),
 ]

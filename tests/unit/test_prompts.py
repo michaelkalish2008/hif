@@ -46,12 +46,22 @@ class TestRegimes:
         for regime in REGIMES:
             assert regime.rationale, f"Regime {regime.name!r} has no rationale"
 
-    def test_all_regimes_have_expected_dispersion(self):
+    def test_no_regime_declares_an_expected_result(self):
+        """A regime carries a rationale, not an expectation.
+
+        `expected_dispersion` used to sit here — a per-regime string like
+        "low output dispersion required, high penalty for volatility". Nothing
+        read it, but it was a threshold in waiting: surfaced next to a measured
+        value it becomes a pass/fail, which is exactly what the `levels` block
+        was removed for (see SIGNAL_SET_VERSION history in
+        hif/profile/registry.py). The prompt suite is unlabeled by design; a
+        field naming the right answer contradicts that.
+        """
         from hif.prompts.regimes import REGIMES
 
         for regime in REGIMES:
-            assert regime.expected_dispersion, (
-                f"Regime {regime.name!r} has no expected_dispersion"
+            assert not hasattr(regime, "expected_dispersion"), (
+                f"Regime {regime.name!r} declares an expected result"
             )
 
 

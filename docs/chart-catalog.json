@@ -1,0 +1,114 @@
+{
+  "generated_by": "tools/gen_chart_catalog.py",
+  "command": "hif profile <model> \"<prompt>\" --charts --output-dir out",
+  "sample": {
+    "model": "google/gemma-3-1b-it",
+    "max_new_tokens": 48
+  },
+  "signals": [
+    {
+      "id": "breadth",
+      "label": "Effective support size",
+      "kind": "aggregate",
+      "measurement_key": null,
+      "needs_diagnostics": false,
+      "file": "breadth.html"
+    },
+    {
+      "id": "continuity",
+      "label": "Branch pairwise cosine similarity",
+      "kind": "aggregate",
+      "measurement_key": "branch_pairwise_cosine_similarity",
+      "needs_diagnostics": false,
+      "file": "continuity.html"
+    },
+    {
+      "id": "io_correlation",
+      "label": "Input/output correlation (r)",
+      "kind": "aggregate",
+      "measurement_key": "io_correlation_r",
+      "needs_diagnostics": false,
+      "file": "io_correlation.html"
+    },
+    {
+      "id": "sensitivity",
+      "label": "Perturbation JSD (bits)",
+      "kind": "aggregate",
+      "measurement_key": "perturbation_jsd_bits",
+      "needs_diagnostics": false,
+      "file": "sensitivity.html"
+    },
+    {
+      "id": "similarity",
+      "label": "Input/output cosine similarity",
+      "kind": "aggregate",
+      "measurement_key": "io_cosine_similarity",
+      "needs_diagnostics": false,
+      "file": "similarity.html"
+    },
+    {
+      "id": "stability",
+      "label": "Input entropy trace",
+      "kind": "aggregate",
+      "measurement_key": "input_entropy_std_bits",
+      "needs_diagnostics": false,
+      "file": "stability.html"
+    },
+    {
+      "id": "surprise",
+      "label": "Prompt surprisal excess (trace)",
+      "kind": "aggregate",
+      "measurement_key": null,
+      "needs_diagnostics": false,
+      "file": "surprise.html"
+    },
+    {
+      "id": "entropy",
+      "label": "Output entropy (bits)",
+      "kind": "reading",
+      "measurement_key": "output_entropy_bits",
+      "needs_diagnostics": false,
+      "file": "entropy.html"
+    },
+    {
+      "id": "exposure",
+      "label": "Counterfactual exposure (fraction)",
+      "kind": "reading",
+      "measurement_key": "counterfactual_exposure_fraction",
+      "needs_diagnostics": false,
+      "file": "exposure.html"
+    },
+    {
+      "id": "horizon",
+      "label": "Input attention-row entropy (bits)",
+      "kind": "reading",
+      "measurement_key": "attention_entropy_input_bits",
+      "needs_diagnostics": true,
+      "file": "horizon.html"
+    },
+    {
+      "id": "shift",
+      "label": "Output step-to-step JSD (bits)",
+      "kind": "reading",
+      "measurement_key": "output_step_jsd_bits",
+      "needs_diagnostics": false,
+      "file": "shift.html"
+    },
+    {
+      "id": "spread",
+      "label": "Output attention-row entropy (bits)",
+      "kind": "reading",
+      "measurement_key": "attention_entropy_output_bits",
+      "needs_diagnostics": true,
+      "file": "spread.html"
+    },
+    {
+      "id": "wager",
+      "label": "Prompt surprisal excess (bits)",
+      "kind": "reading",
+      "measurement_key": "prompt_surprisal_excess_bits",
+      "needs_diagnostics": false,
+      "file": "wager.html"
+    }
+  ]
+}

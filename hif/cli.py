@@ -950,6 +950,17 @@ def doctor() -> None:
     console.print(f"  core (numpy, plotly): {'[green]ok[/green]' if core_ok else '[red]missing[/red]'}")
     console.print(f"  embedder (sentence-transformers): "
                   f"{'[green]ok[/green]' if _has('sentence_transformers') else '[yellow]missing — run: pip install sentence-transformers[/yellow]'}")
+    # Charts: HTML needs plotly (a core dep); PNG additionally needs kaleido,
+    # which is imported only inside fig.write_image() and so fails at WRITE
+    # time, after a full pipeline has already run. Report it here instead.
+    if core_ok:
+        png_ok = _has("kaleido")
+        console.print(
+            f"  charts (--charts): [green]ok[/green] — HTML"
+            + (", PNG" if png_ok else "")
+            + ("" if png_ok else
+               " [dim](PNG needs kaleido: pip install kaleido)[/dim]")
+        )
 
     # Ollama server reachability
     ollama_up = False
@@ -1021,174 +1032,6 @@ def doctor() -> None:
                   "`hif profile gpt2 \"hello\" --backend hf`. "
                   "Run `hif models` for the full capability matrix.[/dim]\n")
 
-
-@app.command()
-def suite(
-    ctx: typer.Context,
-    model_name: str = typer.Argument(..., help="Model name (e.g. gpt2)"),
-    regime: Optional[str] = typer.Option(None, help="Single regime; None = all eight"),
-    backend: str = typer.Option("hf", help="Model backend: hf | tlens | ollama"),
-    seed: int = typer.Option(42, help="Random seed"),
-    output_dir: Path = typer.Option(Path("outputs"), help="Output directory"),
-    max_new_tokens: int = typer.Option(64, help="Maximum new tokens to generate"),
-    top_k: int = typer.Option(50, help="Top-K candidates per step"),
-    charts: bool = typer.Option(False, "--charts", help=CHARTS_HELP),
-    units: bool = typer.Option(False, "--units", help=UNITS_HELP),
-    config_file: Optional[Path] = typer.Option(
-        None,
-        help="TOML run config (tables mirror RunConfig), applied to every "
-        "prompt. CLI flags you pass explicitly override the file.",
-    ),
-    mode: str = typer.Option(
-        "fast",
-        help="fast: fewer perturbation variants. audit: full perturbation set.",
-    ),
-    acquisition: str = typer.Option(
-        "elicited-output",
-        "--acquisition",
-        help="Ceiling on what this run may bring into existence, applied to "
-        "every prompt. observational | synthesized-input | elicited-output.",
-    ),
-    lite: bool = typer.Option(
-        False,
-        "--lite",
-        help="Skip perturbation variants, trajectory branches, and per-step "
-        "candidate geometry on every prompt.",
-    ),
-    export_workload: Optional[Path] = typer.Option(
-        None,
-        "--export-workload",
-        help="Write the suite's prompts as a workload JSONL and exit — no "
-        "model is loaded. Fork it, edit it, add `variants`, and run it with "
-        "`hif batch`.",
-    ),
-) -> None:
-    """Profile the built-in prompt suite: a FIXED stimulus set, every regime.
-
-    The suite's value is that it does not vary — 8 regimes x 5 prompts, the
-    same strings for every model, so numbers from two models were taken under
-    identical stimuli. That is the only condition under which a cross-model
-    comparison is a comparison at all.
-
-    It is NOT a benchmark: the prompts are unlabeled, there are no correct
-    answers, and nothing here scores a model (docs/PROMPT_SUITE.md). If you
-    have your own question, the prompts you need are your own — write a
-    workload file and use `hif batch`, which takes the same configuration and
-    the same ceilings as this command. Export the suite as a starting point:
-
-        hif suite --export-workload suite.jsonl
-    """
-    from hif.prompts.suite import REGIMES, get_regime
-
-    if regime is not None:
-        try:
-            selected_regimes = [get_regime(regime)]
-        except ValueError as e:
-            console.print(f"[red]{e}[/red]")
-            raise typer.Exit(1)
-    else:
-        selected_regimes = list(REGIMES)
-
-    # --export-workload: the fixed stimulus set as editable rows. The point of
-    # a static suite is comparability; the point of exporting it is that a
-    # researcher's own question needs their own prompts, and starting from the
-    # published set beats starting from nothing. No model is loaded.
-    if export_workload is not None:
-        lines = [
-            json.dumps({
-                "query_id": f"{reg.name}_{i:02d}",
-                "text": prompt_text,
-                "regime": reg.name,
-            })
-            for reg in selected_regimes
-            for i, prompt_text in enumerate(reg.prompts, 1)
-        ]
-        export_workload.write_text("\n".join(lines) + "\n")
-        console.print(
-            f"[green]Wrote:[/green] {export_workload} ({len(lines)} rows)\n"
-            f"[dim]Edit it, add per-row \"variants\", then: "
-            f"hif batch {export_workload} <model>[/dim]"
-        )
-        return
-
-    _check_mode(mode)
-    _check_acquisition(acquisition)
-
-    explicit = _explicit_generation_params(ctx)
-    base_config = _load_config_file(config_file) if config_file is not None else None
-
-    console.print(f"[bold]HI Suite[/bold]")
-    console.print(f"  Model:   {model_name} ({backend})")
-    console.print(f"  Regimes: {len(selected_regimes)}")
-    console.print(f"  Seed:    {seed}")
-    if acquisition != "elicited-output":
-        console.print(f"  Acquisition: {acquisition}")
-    console.print()
-
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        console=console,
-        transient=True,
-    ) as progress:
-        t = progress.add_task("Loading model...", total=None)
-        model = _load_model(model_name, backend)
-        progress.update(t, description="Loading embedder...")
-        embedder = _load_embedder()
-
-    n_ok = 0
-    n_failed = 0
-
-    for reg in selected_regimes:
-        console.print(f"[bold]Regime:[/bold] {reg.name}")
-        for prompt_text in reg.prompts:
-            console.print(f"  [dim]{prompt_text[:70]!r}[/dim]")
-            try:
-                p, _ = _run_single_profile(
-                    model_name=model_name,
-                    prompt=prompt_text,
-                    regime=reg.name,
-                    backend=backend,
-                    seed=seed,
-                    output_dir=output_dir / reg.name,
-                    max_new_tokens=max_new_tokens,
-                    top_k=top_k,
-                    charts=charts,
-                    model=model,
-                    embedder=embedder,
-                    n_perturbation_variants=(2 if mode == "fast" else 5),
-                    base_config=base_config,
-                    explicit=explicit,
-                    lite=lite,
-                    acquisition=acquisition,
-                )
-            except Exception as exc:  # noqa: BLE001 — per-prompt isolation
-                console.print(f"    [red]error: {exc}[/red]")
-                _emit_json_line({
-                    "schema_version": SIGNAL_RECORD_VERSION,
-                    "regime": reg.name,
-                    "prompt": prompt_text,
-                    "error": str(exc) or exc.__class__.__name__,
-                })
-                n_failed += 1
-                continue
-            _emit_json_line(_signals_record(
-                p,
-                model_name=model_name,
-                backend=backend,
-                regime=reg.name,
-                seed=seed,
-                prompt=prompt_text,
-                include_units=units,
-            ))
-            n_ok += 1
-
-    console.print(
-        f"suite complete: {n_ok} ok, {n_failed} failed. "
-        f"Reports written to {output_dir}/"
-    )
-    if n_ok == 0:
-        raise typer.Exit(1)
 
 
 # ---------------------------------------------------------------------------
@@ -1709,8 +1552,7 @@ def schema(
     unit, definition, and its triple (observable, functional, resolution).
     A row carries one name and no coined shorthand; see the
     SIGNAL_SET_VERSION history in hif/profile/registry.py (hif-v3.3).
-    This is the contract for `hif profile --json`, `hif suite`
-    and `hif batch` records, and the machine-readable mirror of
+    This is the contract for `hif profile --json` and `hif batch` records, and the machine-readable mirror of
     docs/MEASUREMENTS.md. Every measurement is in natural units; there is no
     normalised variant and no level.
     """
@@ -1725,8 +1567,7 @@ def schema(
                         "never inside \"measurements\", which carries "
                         "measurements of the model named in the record and "
                         "nothing else.",
-                "hif suite": "JSONL, one record per prompt",
-                "hif batch": "JSONL, one record per workload row",
+                "hif batch": "JSONL, one record per workload row (or per prompt of the built-in suite under --sample-set)",
                 "hif compare --json": "a single JSON document",
                 "hif models --json": "a single JSON document: the backend "
                         "catalogue, each backend's model options, and the "
@@ -1809,6 +1650,50 @@ def schema(
 # ---------------------------------------------------------------------------
 
 
+def _sample_set_rows(selector: str, *, limit: Optional[int] = None) -> list:
+    """The built-in prompt suite as workload rows.
+
+    The suite is a FIXED stimulus set — 8 regimes x 5 prompts — and that is
+    its whole value: two models profiled on it were profiled on identical
+    strings, which is the condition for a cross-model comparison being a
+    comparison at all. It is not a benchmark; the prompts are unlabeled and
+    nothing here scores anything (docs/PROMPT_SUITE.md).
+
+    Producing ROWS rather than running its own pipeline is the point: the
+    sample set is one source of workload rows among others, so it inherits
+    every control `hif batch` has instead of needing its own command that
+    drifts from it.
+    """
+    from hif.batch import BatchRow
+    from hif.prompts.suite import REGIMES, get_regime
+
+    if selector == "all":
+        selected = list(REGIMES)
+    else:
+        try:
+            selected = [get_regime(selector)]
+        except ValueError:
+            names = ", ".join(r.name for r in REGIMES)
+            err_console.print(
+                f"[red]--sample-set must be 'all' or a regime name — got "
+                f"{selector!r}.[/red]\n[dim]Regimes: {names}[/dim]"
+            )
+            raise typer.Exit(3)
+
+    rows = [
+        BatchRow(
+            query_id=f"{reg.name}_{i:02d}",
+            text=prompt_text,
+            regime=reg.name,
+        )
+        for reg in selected
+        for i, prompt_text in enumerate(reg.prompts, 1)
+    ]
+    if limit is not None:
+        rows = rows[: max(limit, 0)]
+    return rows
+
+
 def _open_records_file(output_dir: Optional[Path]):
     """Open <output-dir>/records.jsonl for the batch stream mirror (or None)."""
     if output_dir is None:
@@ -1820,10 +1705,13 @@ def _open_records_file(output_dir: Optional[Path]):
 @app.command()
 def batch(
     ctx: typer.Context,
-    workload: Path = typer.Argument(
-        ..., help="Workload JSONL file: one {\"query_id\", \"text\"[, \"image\", \"regime\"]} row per line."
+    workload: Optional[Path] = typer.Argument(
+        None,
+        help="Workload JSONL file: one {\"query_id\", \"text\"[, \"image\", "
+        "\"regime\", \"variants\"]} row per line. Omit it when using "
+        "--sample-set.",
     ),
-    model_name: str = typer.Argument(..., help="Model name (e.g. gpt2)"),
+    model_name: Optional[str] = typer.Argument(None, help="Model name (e.g. gpt2)"),
     backend: str = typer.Option(
         "hf",
         help="Model backend: hf | tlens | ollama | openai | anthropic | gemini | "
@@ -1887,6 +1775,23 @@ def batch(
     trace_dir: Optional[Path] = typer.Option(
         None, "--trace-dir", help=TRACE_DIR_HELP
     ),
+    sample_set: Optional[str] = typer.Option(
+        None,
+        "--sample-set",
+        help="Use the built-in prompt suite instead of a workload file: "
+        "`all` (8 regimes x 5 prompts) or a single regime name. A FIXED "
+        "stimulus set — identical prompts for every model, which is the "
+        "condition for a cross-model comparison being a comparison. It is "
+        "not a benchmark: the prompts are unlabeled and nothing is scored. "
+        "Pair with --export-workload to fork it.",
+    ),
+    export_workload: Optional[Path] = typer.Option(
+        None,
+        "--export-workload",
+        help="Write the resolved rows as a workload JSONL and exit — no model "
+        "is loaded. With --sample-set, this is how you fork the built-in "
+        "suite: edit the rows, add per-row `variants`, then run it back.",
+    ),
     limit: Optional[int] = typer.Option(
         None, "--limit", help="Profile only the first N workload rows."
     ),
@@ -1897,18 +1802,46 @@ def batch(
     ),
     units: bool = typer.Option(False, "--units", help=UNITS_HELP),
 ) -> None:
-    """Profile every prompt in a workload file (model loaded once).
+    """Profile many prompts against one loaded model.
 
-    Streams one compact JSON record per row to stdout (pipe-safe; all
-    progress/logs go to stderr). Row failures emit an error record and the
-    run continues.
+    Rows come from a workload JSONL file, or from the built-in prompt suite
+    via --sample-set. Streams one compact JSON record per row to stdout
+    (pipe-safe; all progress/logs go to stderr). Row failures emit an error
+    record and the run continues.
+
+        hif batch workload.jsonl gpt2
+        hif batch --sample-set all gpt2
+        hif batch --sample-set all --export-workload suite.jsonl   # fork it
     """
     from hif import batch as batch_mod
 
+    # With --sample-set there is no workload path, so the single positional
+    # the user typed is the MODEL. Click binds positionals left to right and
+    # would call it `workload`; shift it back rather than making the model a
+    # named option, which would break `hif batch <file> <model>`.
+    if sample_set is not None and model_name is None and workload is not None:
+        model_name, workload = str(workload), None
+
+    if sample_set is not None and workload is not None:
+        err_console.print(
+            "[red]Pass either a workload file or --sample-set, not both — "
+            "they are two sources for the same rows.[/red]"
+        )
+        raise typer.Exit(3)
+    if sample_set is None and workload is None:
+        err_console.print(
+            "[red]Nothing to profile: pass a workload JSONL file, or "
+            "--sample-set all to use the built-in prompt suite.[/red]"
+        )
+        raise typer.Exit(3)
+    # --export-workload writes rows and exits; everything else needs a model.
+    if model_name is None and export_workload is None:
+        err_console.print("[red]Missing argument: model name (e.g. gpt2).[/red]")
+        raise typer.Exit(3)
 
     # Backend validation FIRST — cheap, and an unknown backend should fail
     # fast (exit 3) before any model load.
-    backend = _resolve_backend(model_name, backend)
+    backend = _resolve_backend(model_name or "gpt2", backend)
     from hif.models.factory import KNOWN_BACKENDS
     if backend not in KNOWN_BACKENDS:
         err_console.print(
@@ -1927,12 +1860,35 @@ def batch(
     if trace_dir is not None:
         trace = True
 
-    # Validate the whole workload up front — before any model load.
-    try:
-        rows = batch_mod.load_workload(workload, limit=limit)
-    except batch_mod.WorkloadError as exc:
-        err_console.print(f"[red]{exc}[/red]")
-        raise typer.Exit(3)
+    # Resolve rows up front — before any model load — whichever source.
+    if sample_set is not None:
+        rows = _sample_set_rows(sample_set, limit=limit)
+    else:
+        try:
+            rows = batch_mod.load_workload(workload, limit=limit)
+        except batch_mod.WorkloadError as exc:
+            err_console.print(f"[red]{exc}[/red]")
+            raise typer.Exit(3)
+
+    # --export-workload: write the rows and stop. No model, no inference.
+    if export_workload is not None:
+        export_workload.write_text(
+            "\n".join(
+                json.dumps(
+                    {"query_id": r.query_id, "text": r.text}
+                    | ({"regime": r.regime} if r.regime else {})
+                    | ({"variants": r.variants} if r.variants else {})
+                )
+                for r in rows
+            )
+            + "\n"
+        )
+        console.print(
+            f"[green]Wrote:[/green] {export_workload} ({len(rows)} rows)\n"
+            f"[dim]Edit it, add per-row \"variants\", then: "
+            f"hif batch {export_workload} <model>[/dim]"
+        )
+        return
 
     if not rows:
         err_console.print(

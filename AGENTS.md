@@ -14,8 +14,11 @@ against a threshold.
    Never report it as `0`, never substitute an average, and never infer it from
    another measurement.
 2. **Configuration is part of the measurement.** Three measurements are
-   comparisons against runs the tool constructs, and **the record does not carry
-   the settings that produced them**. Keep the config file with the output.
+   comparisons against runs the tool constructs, so their numbers mean nothing
+   without the settings. The record carries them (`record-v6`'s `run_config`
+   block) — cite that, not your memory. Numbers taken under different
+   `max_new_tokens`, encoders, generator sets, thresholds, or access tiers are
+   different measurements wearing the same key; do not compare them.
 
 ## Orientation
 
@@ -27,14 +30,18 @@ hif schema     # every measurement: unit, definition, subject, acquisition
 
 ## Scale
 
-`profile` (one case), `batch` (a workload file, model loaded once), and `suite`
-(the fixed built-in stimulus set) all take the same `--config-file`, `--mode`,
-`--acquisition`, and `--lite`. Prefer `batch` for anything past one prompt.
+`profile` (one case) and `batch` (many, model loaded once) take the same
+`--config-file`, `--mode`, `--acquisition`, `--lite`, and `--variant-io`.
+Prefer `batch` for anything past one prompt.
 
-`suite` is fixed on purpose — identical stimuli are what make a cross-model
-comparison a comparison — but it is not a benchmark and not where a
-researcher's own question lives. Offer `hif suite --export-workload
-suite.jsonl <model>` as the starting point for their own workload.
+The built-in prompt suite is a row source, not a command:
+`hif batch --sample-set all <model>` (or `--sample-set <regime>`). It is fixed
+on purpose — identical stimuli are what make a cross-model comparison a
+comparison — but it is not a benchmark and not where a researcher's own
+question lives. Offer
+`hif batch --sample-set all --export-workload suite.jsonl` as the starting
+point for their own workload: they edit it, add per-row `variants`, run it
+back.
 
 `hif schema --json` is the machine-readable contract. Read it instead of
 guessing key names or units.

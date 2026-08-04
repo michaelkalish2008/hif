@@ -32,6 +32,8 @@ DEFAULT_SITE_DOCS = REPO.parent / "ai-interpretability" / "public" / "docs"
 DOCS = {
     Path("README.md"): "README.md",
     Path("docs/ARCHITECTURE.md"): "ARCHITECTURE.md",
+    Path("docs/CONFIG.md"): "CONFIG.md",
+    Path("docs/FLAGS.md"): "FLAGS.md",
     Path("docs/MEASUREMENTS.md"): "MEASUREMENTS.md",
     Path("docs/PHILOSOPHY.md"): "PHILOSOPHY.md",
     Path("docs/PROMPT_SUITE.md"): "PROMPT_SUITE.md",
@@ -43,10 +45,20 @@ DOCS = {
 # later should not need this table to be found and extended by hand.
 LINK_REWRITES = {
     "](docs/MEASUREMENTS.md)": "](/writing#measurements)",
+    "](docs/CONFIG.md)": "](/writing#config)",
     "](docs/PROMPT_SUITE.md)": "](/writing#prompt-suite)",
     "](docs/ARCHITECTURE.md)": "](/writing#architecture)",
     "](docs/PHILOSOPHY.md)": "](/writing#philosophy)",
     "](CONTRIBUTING.md)": "](https://github.com/michaelkalish2008/hif/blob/main/CONTRIBUTING.md)",
+    "](AGENTS.md)": "](https://github.com/michaelkalish2008/hif/blob/main/AGENTS.md)",
+    # Sibling links inside docs/ — these files reference each other without the
+    # `docs/` prefix, and the site renders them all from one route.
+    "](MEASUREMENTS.md)": "](/writing#measurements)",
+    "](CONFIG.md)": "](/writing#config)",
+    "](ARCHITECTURE.md)": "](/writing#architecture)",
+    "](PROMPT_SUITE.md)": "](/writing#prompt-suite)",
+    "](PHILOSOPHY.md)": "](/writing#philosophy)",
+    "](../CONTRIBUTING.md)": "](https://github.com/michaelkalish2008/hif/blob/main/CONTRIBUTING.md)",
 }
 
 

@@ -14,7 +14,7 @@ hif profile gpt2 "Explain why the sky appears blue." --json
 
 ```json
 {
-  "schema_version": "record-v5",
+  "schema_version": "record-v6",
   "model": "gpt2",
   "backend": "hf",
   "regime": "ordinary_conversation",
@@ -238,24 +238,27 @@ lines that creates *shell* variables, and a child process inherits only the
 |---|---|
 | `hif profile <model> <prompt>` | full pipeline on one (model, prompt) pair |
 | `hif batch <workload.jsonl> <model>` | every row of a workload, model loaded once |
-| `hif suite <model>` | the fixed built-in stimulus set, every regime |
+| `hif batch --sample-set all <model>` | the same, over the built-in fixed stimulus set |
 | `hif config init` / `hif config show` | author a run.toml; see what will actually run |
 | `hif compare <a.json> <b.json>` | per-measurement difference between two profiles |
 | `hif validate-model <model>` | region-sensitivity check against a known-answer suite |
 | `hif render <profile.json>` | re-render Markdown from an existing profile |
 
-The three scales take the **same** `--config-file`, `--mode`, `--acquisition`,
-and `--lite`, resolved through one code path — so a ceiling means the same
-thing whether you run one prompt or forty, and a corpus is comparable with the
-single runs it aggregates.
+Both scales take the **same** `--config-file`, `--mode`, `--acquisition`,
+`--lite`, and `--variant-io`, resolved through one code path — so a ceiling
+means the same thing whether you run one prompt or forty, and a corpus is
+comparable with the single runs it aggregates.
 
-`hif suite` is fixed on purpose: a cross-model comparison is only a comparison
-when the stimulus was identical. It is not a benchmark (unlabeled prompts,
-nothing scored) and it is not where your own question lives — export it and
-edit instead:
+The built-in prompt suite is a **row source**, not a separate command:
+`--sample-set all` (or a single regime name) feeds `batch` the same 8 x 5
+fixed stimulus set, and inherits every control above. It is fixed on purpose —
+a cross-model comparison is only a comparison when the stimulus was identical
+— but it is not a benchmark (unlabeled prompts, nothing scored), and it is not
+where your own question lives. Fork it:
 
 ```bash
-hif suite --export-workload suite.jsonl gpt2   # 40 rows, no model loaded
+hif batch --sample-set all --export-workload suite.jsonl   # 40 rows, no model
+$EDITOR suite.jsonl                                        # add prompts, add `variants`
 hif batch suite.jsonl gpt2
 ```
 
@@ -285,9 +288,45 @@ reached is visible rather than silently thin.
 
 Units are **not** in the record by default. They are constant per
 `signal_set_version` and would repeat verbatim on every JSONL line, so pass
-`--units` to `profile`, `suite`, or `batch` when you want records that describe
+`--units` to `profile` or `batch` when you want records that describe
 themselves, or run `hif schema` to print every measurement with its unit and
 definition without touching a model.
+
+## Charts
+
+Nothing is written to disk unless you ask. `--charts` (with `--output-dir`)
+renders one interactive Plotly HTML per signal plus an `index.html` dashboard
+that embeds them, grouped into **Aggregate views** and **Per-step views**:
+
+```bash
+hif profile gpt2 "Explain why the sky appears blue." \
+  --charts --output-dir out --diagnostics
+```
+
+Thirteen charts, one per entry in `hif/viz/registry.py` — the same registry the
+measurement table joins to, so a chart and its number are one arithmetic rather
+than two:
+
+| Aggregate views | Per-step views |
+|---|---|
+| `stability`, `sensitivity`, `continuity` | `entropy`, `shift`, `wager` |
+| `io_correlation`, `similarity` | `spread`, `horizon`, `exposure` |
+| `breadth`, `surprise` | |
+
+A signal whose backing data is missing renders an explicit *"requires teacher
+forcing / attention capture / …"* placeholder rather than a flat or zero chart —
+the same absence-is-not-zero rule the records follow. `spread` and `horizon`
+need `--diagnostics` (they read the DistilBERT attention capture); without it
+they render as unavailable rather than empty.
+
+HTML needs only plotly, which is a core dependency. PNG output additionally
+needs `kaleido`, and plotly imports it inside `write_image()` — so without it a
+PNG run fails *after* the whole pipeline has completed. `hif doctor` reports
+both, up front:
+
+```
+  charts (--charts): ok — HTML (PNG needs kaleido: pip install kaleido)
+```
 
 ## What you can measure depends on the backend
 
