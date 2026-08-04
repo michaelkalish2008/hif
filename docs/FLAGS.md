@@ -121,7 +121,7 @@ Run the full HI pipeline on a single (model, prompt) pair.
 | `--trace` | Opt-in traceability: persist the full profile artifact (raw per-step top-K distributions — reconstructable content) so signals can be recomputed or audited later without re-running the model. Default off: compute-and-discard. |
 | `--trace-dir` | Where --trace artifacts are written (default: <output-dir>/traces, or ./traces when no --output-dir). Passing this implies --trace. |
 | `--charts` | Generate plots + the combined dashboard locally (off by default). |
-| `--diagnostics` | Also run the two optional analysis stages — attention capture (the two attention-row entropy measurements) and the semantic field (centroid veer). Both cost extra compute, so they are off by default; the measurements they produce are simply absent from the record when they have not run. |
+| `--diagnostics` | Also run the two optional analysis stages — attention capture and the semantic field. Neither produces a measurement in hif-v4; their blocks ship in the --trace artifact as evidence. Off by default because both cost extra compute. |
 | `--application` | Application archetype (support-chatbot, rag-qa, coding-assistant, summarization, extraction, classification, agent-tool-use, multimodal-qa, document-understanding). Labels the run and supplies the default --analysis-window; both are recorded in the JSON record. It does not change how anything is measured. |
 | `--mode` | fast: fewer perturbation variants. audit: full perturbation set (multimodal: exhaustive grid sweep). Input is always passed in full regardless of mode. *(default: `fast`)* |
 | `--variant-io` | Include a `variant_io` block in the --json record: each perturbation variant's input text and the continuation it elicited (null where none was — synthesized-input tier, or a failure). Opt-in because it adds model-generated content to every record; outputs live in records, inputs stay immutable. |
@@ -133,7 +133,7 @@ Run the full HI pipeline on a single (model, prompt) pair.
 | `--json` | Output machine-readable JSON profile |
 | `--units` | Include a per-measurement units block in each record. Constant per signal_set_version and identical on every record, so off by default; `hif schema` prints the same information without running a model. |
 | `--truncate` | Truncate input to N tokens before analysis. Results reflect truncated context only. |
-| `--surrogate` | Recover the input-side signals (stability, surprise, io_correlation, wager) on backends that cannot teacher-force (ollama, openai, gemini, anthropic) by teacher-forcing a small local proxy model over the prompt+output — the same technique the study harness uses. Ignored when the target backend already teacher-forces (hf/tlens/hf-vlm). Implied by --surrogate-model, so passing that alone is enough. |
+| `--surrogate` | Recover the input-side measurements (input_entropy_shift_bits, input_entropy_std_bits, prompt_surprisal_excess_bits) on backends that cannot teacher-force (ollama, openai, gemini, anthropic) by teacher-forcing a small local proxy model over the prompt+output — the same technique the study harness uses. Ignored when the target backend already teacher-forces (hf/tlens/hf-vlm). Implied by --surrogate-model, so passing that alone is enough. |
 | `--surrogate-model` | Open-weight HF model id used for --surrogate (default: Llama 3.2 1B, ungated mirror). Passing this flag implies --surrogate — you don't need both. |
 
 ## `hif render`

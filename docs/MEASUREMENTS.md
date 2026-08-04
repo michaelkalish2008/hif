@@ -29,9 +29,9 @@ Every registry row now declares an `acquisition`, and `hif schema` prints it:
 
 | acquisition | measurements |
 | --- | --- |
-| `observational` | `output_entropy_bits`, `output_entropy_step_delta_bits`, `output_step_jsd_bits`, `output_step_topk_overlap_fraction`, `prompt_surprisal_excess_bits`, `candidate_cluster_entropy_bits`, `counterfactual_exposure_fraction`, `semantic_centroid_veer_cosine`, `attention_entropy_input_bits`, `attention_entropy_output_bits` |
+| `observational` | `prompt_surprisal_excess_bits`, `output_entropy_bits` |
 | `synthesized-input` | `input_entropy_shift_bits`, `input_entropy_std_bits` |
-| `elicited-output` | `perturbation_jsd_bits`, `io_correlation_r`, `io_cosine_similarity`, `branch_pairwise_cosine_similarity` |
+| `elicited-output` | `perturbation_jsd_bits`, `io_cosine_similarity` |
 
 `--acquisition observational|synthesized-input|elicited-output` caps a run at one of these tiers; measurements above the ceiling are **absent, not zero**. The tiers are strictly nested and the surviving values are identical across them, so raising the ceiling only ever adds keys. See [CONFIG.md](CONFIG.md).
 
@@ -39,7 +39,7 @@ Every registry row now declares an `acquisition`, and `hif schema` prints it:
 
 ## Significance Gate — the bar for admitting a measurement
 
-A computable triple is not automatically a measurement. **This gate is the acceptance criterion for contributing a new measurement** (see [CONTRIBUTING.md](../CONTRIBUTING.md)). Two conditions, both required:
+A computable triple is not automatically a measurement. **This gate is the acceptance criterion for contributing a new measurement** (see [CONTRIBUTING.md](../CONTRIBUTING.md)). Six conditions, all required — 1–2 admit a quantity at all, 3–6 are what removed ten rows in hif-v4:
 
 1. **Derivability** — computable from the distributional observable alone, no inference to hidden structure.
 2. **Distinct disclosure** — discloses a facet no admitted measurement already captures; must move independently somewhere across contexts.
@@ -48,7 +48,7 @@ A computable triple is not automatically a measurement. **This gate is the accep
 5. **No embedded thresholds** — a fraction of threshold-crossings is a verdict wearing a unit. Report the underlying quantity in its natural unit instead.
 6. **Present where it claims to be** — a row absent from most of the corpus it was designed for is not carrying its weight; either the requirement is declared honestly or the row does not enter.
 
-The second condition is why several plausible quantities are *not* in the set: `continuity` was `1 − sensitivity` computed from the same JS divergences, the historical `wager` aggregate was byte-for-byte the `surprise` aggregate, and ESS is entropy in different units. Each quantity appears exactly once.
+The *distinct disclosure* condition is why several plausible quantities are *not* in the set: `continuity` was `1 − sensitivity` computed from the same JS divergences, the historical `wager` aggregate was byte-for-byte the `surprise` aggregate, and ESS is entropy in different units. Each quantity appears exactly once.
 
 ## Natural units
 
@@ -83,20 +83,18 @@ The triple says *what* was measured and at what granularity. It does not say *wh
 
 The prompt-only quantities are not worthless — "how surprising is this prompt under a fixed reference model" is a real question, and its answer is comparable across targets *precisely because* the target does not enter it. That is why they are reported rather than dropped, and why they are reported somewhere other than the model's measurement set.
 
-**How to see it for yourself.** The two attention measurements come from the *same* reader — a fixed encoder that reads text as an object. They differ only in whose text it reads. Profile `gpt2` and `gpt2-medium` on one prompt with `--diagnostics`:
+**How to see it for yourself.** Profile any model twice — once on an open-weight backend, once on a hosted one with `--surrogate` — and compare `input_entropy_std_bits`:
 
-| | reads the **prompt** (`attention_entropy_input_bits`) | reads the **generated text** (`attention_entropy_output_bits`) |
+| | subject | value |
 |---|---|---|
-| `gpt2` | 1.6677721955190443 | 3.4767 |
-| `gpt2-medium` | 1.6677721955190443 | 3.6143 |
+| `gpt2` on `hf` | `target-distribution` | moves with the model |
+| `gpt-4.1` with `--surrogate` | `prompt-only` | identical to every other hosted model on the same prompt |
 
-The output-side value moves, because the two models generated different text and the reader read it. The input-side value is bit-identical, because the reader read your prompt and your prompt did not change — no property of either model can reach it. Same instrument, two subjects.
+Under the surrogate the number is the reference model reading the prompt, so it is bit-identical across targets — which is exactly what a quantity that cannot see the target looks like, and why it is reported in `prompt_measurements` rather than `measurements`.
 
 That is the distinction `subject` records: not which tool computed a number, but whose data it was computed from. A quantity that returns the same value whichever model you profiled is measuring something other than that model. `tests/unit/test_zero_variance_canary.py` asserts this for every row, so a mislabelled subject fails without anyone reviewing the label.
 
-**`io_correlation_r` is the genuine mixed case**, and is classified as such rather than lumped either way. Under a surrogate it is the Pearson r between a surrogate-read per-variant input entropy shift and the *target's own* per-variant JSD. The target's data does enter, so the quantity stays in `measurements`; but a correlation cannot be attributed to one of its two series, so its subject degrades to `mixed` and the CLI marks the row. On `[F]` both series are the target's and the subject is `target-distribution`.
-
-**One row is prompt-only on every backend, `[F]` included:** `attention_entropy_input_bits` (Horizon). Attention here is not the target's — `hif/analysis/attention.py` runs a bidirectional analysis encoder over text as an object, and never accesses the generation mechanism of the model under analysis. The output-side row reads the target's actual generated continuation and is therefore `target-output-text`; the input-side row reads the prompt, so it is a function of prompt text and encoder weights alone. No access tier can make it a measurement of the target.
+**No row is prompt-only on every backend.** One was — `attention_entropy_input_bits`, a fixed encoder reading the prompt, bit-identical across all fifteen corpus models — and hif-v4 cut it on exactly that ground: a measurement set for models should not carry a quantity that is never about one. The canary now asserts the class stays empty.
 
 This section is the companion to [Why measure behaviour at all on closed models](#why-measure-behaviour-at-all-on-closed-models) below. That one concedes how little a closed surface exposes and commits to reporting absence rather than approximation when the surface cannot support a quantity; this one draws the line the concession implies — a number produced by something other than the target is not a degraded reading of the target, and the record must not be able to say it is.
 
@@ -280,10 +278,8 @@ When `sᵢ > H(Pᵢ)` the actual token was more surprising than the distribution
 
 A run's scalar measurements (Part 1) compress a full generation into one number per quantity. The token-level traces restore what compression hides: which specific tokens drove a value, where entropy and attention converge or diverge step-by-step, and whether a flat mean reflects genuine uniformity or cancellation between extremes. These are the same measurements at their native resolution — a row whose `resolution` is `per-step` or `per-position` has its trace here.
 
-The traces with a chart live in the viz registry (`hif/viz/registry.py`, `kind="reading"`); Veer has no chart, but its per-step trace is persisted on `profile.semantic_field` and its mean is reported as `semantic_centroid_veer_cosine`. Every trace here now has an aggregate in the measurement set. Shift was the exception until hif-v3.1 — it existed as a chart and nothing else, so the instrument was visible on the companion website and unreachable from the CLI. That is fixed: its run-level mean is `output_step_jsd_bits`, and the chart and the key call one function (`hif/metrics/shift.py`) so they cannot drift apart.
+Both traces here have a chart in the viz registry (`hif/viz/registry.py`, `kind="reading"`) and an aggregate in the measurement set, and the chart and the key read the same series, so they cannot drift apart. That invariant is why hif-v3.1 admitted a chart-only quantity to the set rather than leaving it visible on the companion website and unreachable from the CLI — and why hif-v4, cutting that same quantity, cut its chart with it.
 
-| Symbol | Name | Space measured | Measurement (Part 1) | Access |
-|--------|------|----------------|----------------------|--------|
 | Trace | What it shows, per token | Run-level key | Requires |
 |-------|--------------------------|---------------|----------|
 | Prompt surprisal excess | Surprisal excess over entropy, per prompt position | `prompt_surprisal_excess_bits` | Teacher forcing (open-weight, or `--surrogate`) |

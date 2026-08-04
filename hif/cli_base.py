@@ -27,7 +27,7 @@ SCALE — same configuration, same ceilings at both:
   hif batch <workload.jsonl> <model> many cases, model loaded once
   hif batch --sample-set all <model> the built-in fixed stimulus set
 
-CONFIGURE — three measurements are comparisons against runs the tool constructs, so the configuration is part of the measurement:
+CONFIGURE — several measurements are comparisons against runs the tool constructs, so the configuration is part of the measurement:
   hif config init                a run.toml with every key at its default
   hif config show --diff         what will run, before running it
   --config-file run.toml         apply it (a mistyped key exits 3)

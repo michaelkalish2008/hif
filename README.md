@@ -31,156 +31,24 @@ hif profile gpt2 "Explain why the sky appears blue." --json
 
 Real output, rounded for width — `gpt2` on CPU, no API key, no network.
 
-## Three of those numbers are procedures, and you control the procedure
+## Four of those numbers are comparisons, and you control the comparison
 
-Most measurements above read one forward pass. Three do not — they compare the
-baseline run against runs the tool constructs, so the number means nothing until
-you know what was constructed. All three are configured through a TOML file
-passed to `--config-file`; its tables mirror the run config, and any CLI flag you
-type explicitly beats the file.
+Two measurements read the prompt and the one continuation you asked for:
+`prompt_surprisal_excess_bits` and `output_entropy_bits`. The other four compare
+that baseline against runs the tool constructs, so the number means nothing
+until you know what was constructed.
 
-`perturbation_jsd_bits` is the mean Jensen-Shannon divergence between the
-baseline output distribution and each **paraphrase** of the prompt. The default
-is three rule-based generators — `synonym`, `tone`, `reorder` — at two variants
-each, so six paraphrases. `substitution` and `ambiguity` are implemented and
-selectable. Rule-based generators are the default because they cost nothing and
-are deterministic; LLM-backed paraphrasing is opt-in and needs an endpoint you
-supply.
+`input_entropy_shift_bits` and `input_entropy_std_bits` teacher-force the model
+over meaning-preserving paraphrases of your prompt and report how far, and how
+unevenly, its input-side uncertainty moved. `perturbation_jsd_bits` reports how
+far the output distribution moved over the same variants.
+`io_cosine_similarity` compares the prompt's embedding against the
+continuation's across those runs.
 
-`branch_pairwise_cosine_similarity` re-samples the generation from a branch point
-— **five branches, ten rollout steps** by default — embeds each branch's text,
-and averages the cosine similarity over every pair.
-
-`counterfactual_exposure_fraction` is the fraction of analysed steps that were
-both in the diffusion zone and had an alternative token **probable enough**
-(`min_prob`, default `0.01`) and **semantically far enough**
-(`distance_threshold`, default `0.3` cosine) to count as exposure. Both
-thresholds are choices, and the fraction moves when you change them.
-
-```toml
-# run.toml
-[perturbation]
-generators = ["synonym", "tone", "substitution", "ambiguity"]
-n_variants = 4
-# use_llm_perturbation = true    # then set llm_base_url / llm_api_key / llm_model
-
-[trajectory]
-n_branches = 8
-rollout_steps = 16
-
-[exposure]
-min_prob = 0.02
-distance_threshold = 0.25
-```
-
-```bash
-hif profile gpt2 "Explain why the sky appears blue." --config-file run.toml --verbose
-```
-
-`--mode audit` raises the perturbation variant count without a file;
-`--mode fast` (the default) lowers it. `--verbose` prints the paraphrase variants
-the run actually used, which is the only way to see the six strings the default
-compared against.
-
-Because the configuration is part of the measurement, the record carries it:
-every `--json` record (`record-v6`) embeds a `run_config` block — the resolved
-configuration the run executed, secrets redacted. Two runs that differ only in
-`distance_threshold` now say so in the records themselves.
-
-The authoring loop is three commands:
-
-```bash
-hif config init                                # run.toml, every key at its default
-hif config show --config-file run.toml --diff  # what will actually run, before it runs
-hif profile gpt2 "..." --config-file run.toml --json
-```
-
-`config show` resolves through the same path `profile` executes, so the two
-cannot drift, and a mistyped key anywhere in the file exits 3 rather than
-silently measuring with defaults.
-
-You can also author the perturbations yourself, so the tool writes no text at
-all. Case data travels in one format — the workload JSONL `hif batch` already
-profiles — with a `variants` list added:
-
-```jsonl
-{"query_id": "sky_1", "text": "Explain why the sky appears blue.", "variants": ["Explain why the sky looks blue."]}
-```
-
-`hif batch` profiles those rows directly; a single `hif profile` run reaches
-the same file through `[perturbation] variants_file`. Where variants apply
-they replace the generators entirely. Add `--variant-io` to put each
-variant's input and elicited continuation in the record — inputs stay
-immutable, outputs live in records. See [`docs/CONFIG.md`](docs/CONFIG.md).
-
-### `--acquisition`, when it matters what the run produces
-
-Those stages differ in a way the record used to hide: some measurements read the
-prompt and the one continuation you asked for, and others make the model
-generate text nobody asked for and nobody will read. `--acquisition` caps what a
-run is permitted to bring into existence.
-
-| tier | permits | adds |
-| --- | --- | --- |
-| `observational` | The prompt as given, the one continuation the run produces. Nothing else reaches the model. | the five entropy-side measurements, plus `candidate_cluster_entropy_bits` and `counterfactual_exposure_fraction` |
-| `synthesized-input` | Additionally authors paraphrased prompts and teacher-forces over them. The model does not generate. | `input_entropy_shift_bits`, `input_entropy_std_bits` |
-| `elicited-output` *(default)* | Additionally lets the model generate variant continuations and trajectory branches. | `perturbation_jsd_bits`, `io_correlation_r`, `io_cosine_similarity`, `branch_pairwise_cosine_similarity` |
-
-```bash
-hif profile gpt2 "Explain why the sky appears blue." --acquisition observational --json
-```
-
-Use `observational` when profiling a hosted model and sending authored
-paraphrases — or generating output nobody reviews — is a cost, privacy, or terms
-question. The tiers are strictly nested, surviving values are identical across
-them, and every row in `hif schema` carries its `acquisition`, so the partition
-is machine-readable rather than something to reconstruct from the source.
-
-`--acquisition` is a content policy; `--lite` is a speed budget. They compose.
-
-### `--lite`, when you only want the entropy side
-
-Those three stages are also where the time goes: the paraphrases cost one
-generation pass each, the branches cost five more, and the semantic stage embeds
-every candidate at every step. `--lite` skips all of it.
-
-```bash
-hif profile gpt2 "Explain why the sky appears blue." --json --lite
-```
-
-```
-              full     --lite
-pipeline     11.4s       1.3s     (gpt2, 16 new tokens, CPU)
-```
-
-What comes back is the single baseline pass plus input-side teacher forcing:
-
-| survives `--lite` | omitted under `--lite` |
-| --- | --- |
-| `output_entropy_bits` | `perturbation_jsd_bits` |
-| `output_entropy_step_delta_bits` | `input_entropy_shift_bits` |
-| `output_step_jsd_bits` | `input_entropy_std_bits` |
-| `output_step_topk_overlap_fraction` | `io_correlation_r` |
-| `prompt_surprisal_excess_bits` | `io_cosine_similarity` |
-| | `candidate_cluster_entropy_bits` |
-| | `counterfactual_exposure_fraction` |
-| | `branch_pairwise_cosine_similarity` |
-
-The surviving values are **identical** to what the same run reports without the
-flag — `--lite` removes stages, it does not approximate them. The omitted ones
-are absent from the record rather than reported as `0.0`, which is the same
-convention every other unavailable measurement follows: absence means not
-measured, and `0` always means measured zero.
-
-`--lite` overrides `--mode` and `--config-file` for the stages it disables, so a
-run asking for less never silently does more.
-
-To print a single measurement rather than the whole record, `--metric` selects
-what is *shown*; `--lite` selects what is *computed*. They compose:
-
-```bash
-hif profile gpt2 "Explain why the sky appears blue." --lite --metric output_entropy_bits
-```
+All four therefore depend on `[perturbation]`: which generators ran, and how
+many variants each produced. Change that and you have changed the measurement,
+not just its precision — so the config travels in the record, and
+`hif config show --diff` prints what will run before anything runs.
 
 ## Install
 
@@ -281,17 +149,18 @@ A workload run streams one record per row. Two prompts, `--lite`, trimmed to
 the measurements for width:
 
 ```bash
-hif batch workload.jsonl gpt2 --lite --json 2>/dev/null | jq -c
+hif batch workload.jsonl gpt2 --lite 2>/dev/null | jq -c
 ```
 
 ```json
-{"query_id": "sky", "model": "gpt2", "measurements": {"prompt_surprisal_excess_bits": 0.6556, "output_entropy_bits": 2.3932, "output_entropy_step_delta_bits": 1.9093, "output_step_jsd_bits": 0.8475, "output_step_topk_overlap_fraction": 0.1023}}
-{"query_id": "greet", "model": "gpt2", "measurements": {"prompt_surprisal_excess_bits": 0.631, "output_entropy_bits": 2.5541, "output_entropy_step_delta_bits": 2.013, "output_step_jsd_bits": 0.903, "output_step_topk_overlap_fraction": 0.0977}}
+{"query_id": "sky", "model": "gpt2", "measurements": {"prompt_surprisal_excess_bits": 0.6556, "output_entropy_bits": 2.526}}
+{"query_id": "greet", "model": "gpt2", "measurements": {"prompt_surprisal_excess_bits": 2.6787, "output_entropy_bits": 2.7612}}
 ```
 
-Note what is *absent*: `--lite` skipped the perturbation, trajectory and
-geometric stages, so those keys are not in the record at all rather than
-present and zero.
+Note what is *absent*: `--lite` skipped the perturbation stage, so the four
+measurements that compare against constructed runs are not in the record at all
+rather than present and zero. What survives is the two that read the prompt and
+the one continuation.
 
 Before a configured run, `hif config show --diff` prints what will actually
 happen — the departures from the defaults are the experimental condition:
@@ -346,24 +215,28 @@ that embeds them, grouped into **Aggregate views** and **Per-step views**:
 
 ```bash
 hif profile gpt2 "Explain why the sky appears blue." \
-  --charts --output-dir out --diagnostics
+  --charts --output-dir out
 ```
 
-Thirteen charts, one per entry in `hif/viz/registry.py` — the same registry the
+One chart per entry in `hif/viz/registry.py` — the same registry the
 measurement table joins to, so a chart and its number are one arithmetic rather
 than two:
 
 | Aggregate views | Per-step views |
 |---|---|
-| `stability`, `sensitivity`, `continuity` | `entropy`, `shift`, `wager` |
-| `io_correlation`, `similarity` | `spread`, `horizon`, `exposure` |
+| `stability`, `sensitivity`, `similarity` | `entropy`, `wager` |
 | `breadth`, `surprise` | |
 
+`breadth` and `surprise` draw component series that are deliberately not in the
+measurement set — effective support size, and the per-position excess-surprisal
+trace that `wager` summarises — so they carry no key. Charts for the
+measurements cut in hif-v4 were cut with them: a chart whose measurement is gone
+is the "visible on the website, unreachable from the CLI" gap that hif-v3.1
+existed to close.
+
 A signal whose backing data is missing renders an explicit *"requires teacher
-forcing / attention capture / …"* placeholder rather than a flat or zero chart —
-the same absence-is-not-zero rule the records follow. `spread` and `horizon`
-need `--diagnostics` (they read the DistilBERT attention capture); without it
-they render as unavailable rather than empty.
+forcing / perturbation variants / …"* placeholder rather than a flat or zero
+chart — the same absence-is-not-zero rule the records follow.
 
 HTML needs only plotly, which is a core dependency. PNG output additionally
 needs `kaleido`, and plotly imports it inside `write_image()` — so without it a
@@ -391,8 +264,9 @@ hf  (local-open)  teacher-forcing: yes  ·  logprobs: full
   setup: none (HF_TOKEN only for gated repos); weights auto-download
   models: gpt2, distilgpt2, gpt2-medium, EleutherAI/pythia-160m, …
   Full fidelity — every measurement. Best for a complete profile.
-  ✓ signals: attention_entropy_input_bits, branch_pairwise_cosine_similarity,
-    counterfactual_exposure_fraction, io_correlation_r, output_entropy_bits, …
+  ✓ signals: input_entropy_shift_bits, input_entropy_std_bits,
+    io_cosine_similarity, output_entropy_bits, perturbation_jsd_bits,
+    prompt_surprisal_excess_bits
 ```
 
 Measurements a backend cannot support are **absent from the record with a

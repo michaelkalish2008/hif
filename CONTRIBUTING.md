@@ -27,8 +27,7 @@ derive, phrase around, or point at the command for.
 
 Put the computation where its inputs live: perturbation-response quantities in
 `hif/metrics/stability.py`, per-step distribution quantities in
-`hif/metrics/distribution.py`, step-to-step output divergence in
-`hif/metrics/shift.py`, semantic/embedding quantities in
+`hif/metrics/distribution.py`, semantic/embedding quantities in
 `hif/metrics/semantic.py` or an analyzer under `hif/analysis/`, prompt-side
 quantities in `hif/hourglass/input_side.py`. The function returns the value —
 or `None`.
@@ -64,7 +63,7 @@ reason of one line:
   key must be omitted, not emitted with a comment. Worked case: on a
   selected-only backend the per-step distributions are point masses, so a JSD
   between them is `0` when the tokens agree and `1` bit when they differ — a
-  token-disagreement rate. `perturbation_jsd_bits` and `output_step_jsd_bits`
+  token-disagreement rate. `perturbation_jsd_bits`
   go absent there. If you think the degraded quantity is worth reporting, it
   needs its own registry row with a key that names what it actually is, and it
   must pass the Significance Gate on its own; overloading the original key is
@@ -128,7 +127,7 @@ produced no number". Only the second is true.
 
 ### 3. Check it passes the Significance Gate
 
-Both conditions, from docs/MEASUREMENTS.md — this is the acceptance bar:
+All six conditions, from docs/MEASUREMENTS.md — this is the acceptance bar, and conditions 3-6 are what removed ten rows in hif-v4:
 
 1. **Derivability** — computable from the distributional observable alone, no
    inference to hidden structure.

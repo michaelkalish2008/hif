@@ -224,7 +224,7 @@ BACKENDS: dict[str, BackendInfo] = {
         notes="No token-level logprobs. Entropy-shaped signals degenerate, and "
               "the distribution divergences are reported absent rather than as "
               "the token-agreement rate two point masses actually produce. "
-              "Best for similarity/exposure and the attention rows.",
+              "Best for io_cosine_similarity, the one measurement it can fully support.",
     ),
     "gemini": BackendInfo(
         name="gemini", kind="hosted-api",

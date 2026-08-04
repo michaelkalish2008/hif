@@ -20,7 +20,7 @@ from hif.viz._theme import (
 from hif.viz.registry import SIGNALS
 from hif.profile.schema import BehavioralRangeProfile
 
-_CARD_HEIGHT = {"continuity": 700, "exposure": 840}  # taller charts; default below
+_CARD_HEIGHT: dict[str, int] = {}  # per-chart overrides; default below
 _DEFAULT_HEIGHT = 500
 
 

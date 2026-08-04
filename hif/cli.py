@@ -348,10 +348,9 @@ def profile(
         False,
         "--diagnostics",
         help="Also run the two optional analysis stages — attention capture "
-        "(the two attention-row entropy measurements) and the semantic field "
-        "(centroid veer). Both cost extra compute, so they are off by default; "
-        "the measurements they produce are simply absent from the record when "
-        "they have not run.",
+        "and the semantic field. Neither produces a measurement in hif-v4; "
+        "their blocks ship in the --trace artifact as evidence. Off by "
+        "default because both cost extra compute.",
     ),
     application: Optional[str] = typer.Option(
         None,
@@ -422,8 +421,9 @@ def profile(
     surrogate: bool = typer.Option(
         False,
         "--surrogate",
-        help="Recover the input-side signals (stability, surprise, io_correlation, "
-        "wager) on backends that cannot teacher-force (ollama, openai, gemini, "
+        help="Recover the input-side measurements (input_entropy_shift_bits, "
+        "input_entropy_std_bits, prompt_surprisal_excess_bits) on backends "
+        "that cannot teacher-force (ollama, openai, gemini, "
         "anthropic) by teacher-forcing a small local proxy model over the "
         "prompt+output — the same technique the study harness uses. Ignored when the "
         "target backend already teacher-forces (hf/tlens/hf-vlm). Implied by "

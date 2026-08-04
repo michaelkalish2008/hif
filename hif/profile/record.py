@@ -86,14 +86,32 @@ def branch_field_scalars(profile) -> Optional[dict]:
     return bf.model_dump() if bf is not None else None
 
 
+def _attr(block, name):
+    """Read one field off a block that may be a model OR a plain dict.
+
+    `semantic_field`, `exposure` and `attention_capture` are typed
+    `Optional[Any]` in the schema, so a profile built in memory carries a
+    model there while the same profile loaded back from its own JSON carries
+    a dict. Attribute access answers on the first and raises on the second,
+    which made `signals_record()` crash on any round-tripped artifact with a
+    populated field — and the earlier getattr-with-default form was worse
+    still: it answered None and fabricated an ABSENCE, which is the one thing
+    the absence rules exist to prevent. Read both shapes explicitly.
+    """
+    if isinstance(block, dict):
+        return block.get(name)
+    return getattr(block, name, None)
+
+
 def semantic_field_scalars(profile) -> Optional[dict]:
     """Per-profile within-generation semantic-field (Veer) summary scalars,
     or None when absent (< 2 generation steps, or the instrument disabled)."""
     sf = getattr(profile, "semantic_field", None)
     if sf is None:
         return None
-    return {"mean_veer": sf.mean_veer, "max_veer": sf.max_veer,
-            "mean_deformation": sf.mean_deformation, "n_steps": sf.n_steps}
+    return {"mean_veer": _attr(sf, "mean_veer"), "max_veer": _attr(sf, "max_veer"),
+            "mean_deformation": _attr(sf, "mean_deformation"),
+            "n_steps": _attr(sf, "n_steps")}
 
 
 # ---------------------------------------------------------------------------

@@ -100,9 +100,11 @@ from typing import Optional
 # metadata: no key, unit, definition, or absence rule changed, so `hif compare`
 # still intersects across the v3 family. A consumer that does not read
 # `acquisition` sees exactly what it saw before.
-# hif-v4 (current): the set contracts from sixteen rows to six. A REMOVAL, so
-# v4 artifacts do not intersect with v3 over the cut keys — `hif compare`
-# intersects over what both carry, which is the surviving core.
+# hif-v4 (current): the set contracts from sixteen rows to six. A REMOVAL, and
+# therefore a MAJOR bump: `hif compare` refuses a v3-vs-v4 pair outright
+# (family mismatch, exit 2) rather than intersecting over the survivors.
+# Intersecting would silently read "we no longer claim this" as "both runs
+# measured this", which is the same conflation the absence rules exist to stop.
 #
 # The cut was made against the project's own 120-profile corpus, and each row
 # fell to evidence, not taste:

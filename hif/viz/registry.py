@@ -66,6 +66,13 @@ class SignalViz:
     # explicit bridge between chart names and measurement keys. None when the
     # chart draws a component quantity that is deliberately not a measurement.
     measurement_key: str | None = None
+    # Does this chart plot the measurement's OWN series, or a related one it
+    # merely resolves for? True (the common case) means the chart's data is
+    # the basis the measurement reduces — so the chart must decline exactly
+    # the runs the measurement declines, enforced in `_gated` below. False
+    # means the key is carried for `resolve_signal` only, and the chart is
+    # gated on its own data like an unkeyed chart. Only `stability` is False.
+    draws_measurement: bool = True
 
 
 # Ordered as the v1 signal set. `module` supplies generate/available, and also
@@ -80,24 +87,91 @@ class SignalViz:
 # spread of per-variant entropy shifts). The aggregate is a single scalar with
 # no informative direct chart; the trace is the series behind it.
 _SPEC = [
-    # id, kind, module, measurement_key
-    ("stability",      "aggregate", stability,      "input_entropy_std_bits"),
+    # id, kind, module, measurement_key, draws_measurement
+    #
+    # stability is the one False: it plots the per-position input entropy of
+    # the ORIGINAL prompt, while `input_entropy_std_bits` is the spread of
+    # per-VARIANT entropy shifts. Real data either way, but not the same
+    # series, so the measurement's absence is not this chart's absence. The
+    # key is carried so `--metric input_entropy_std_bits --charts` resolves.
+    ("stability",      "aggregate", stability,      "input_entropy_std_bits", False),
     # Breadth draws per-step effective support size — deliberately NOT a
     # measurement (ESS is entropy in different units; docs/MEASUREMENTS.md
     # excludes it), so it maps to no key.
-    ("breadth",        "aggregate", breadth,        None),
+    ("breadth",        "aggregate", breadth,        None, False),
     # Surprise draws the same per-position excess-surprisal series as the
     # wager reading; wager is the designated chart for the measurement, so
     # only wager carries the key (one measurement must resolve to one chart).
-    ("surprise",       "aggregate", surprise,       None),
-    ("sensitivity",    "aggregate", sensitivity,    "perturbation_jsd_bits"),
-    ("similarity",     "aggregate", similarity,     "io_cosine_similarity"),
-    ("entropy",        "reading",   entropy,        "output_entropy_bits"),
-    ("wager",          "reading",   wager,          "prompt_surprisal_excess_bits"),
+    ("surprise",       "aggregate", surprise,       None, False),
+    ("sensitivity",    "aggregate", sensitivity,    "perturbation_jsd_bits", True),
+    ("similarity",     "aggregate", similarity,     "io_cosine_similarity", True),
+    ("entropy",        "reading",   entropy,        "output_entropy_bits", True),
+    ("wager",          "reading",   wager,          "prompt_surprisal_excess_bits", True),
 ]
 
-SIGNALS: list[SignalViz] = [
-    SignalViz(
+WITHHELD = (
+    "The run did not publish {key} — the evidence for it does not exist here. "
+    "Drawing this chart would show a trace for a quantity the record declines "
+    "to claim. See `hif models` for what this backend supports."
+)
+
+
+def _gated(mod, mkey: str | None, draws: bool):
+    """Wrap a chart's availability check AND its generator with its measurement's.
+
+    Both, because each `generate()` re-asks its own module-level `available()`
+    to decide whether to draw the not-available placeholder — so gating the
+    predicate alone would leave the index page correctly marking a chart
+    unavailable while the chart file beside it was drawn in full.
+
+    A chart may only be drawn when the record publishes the measurement it
+    draws. Each chart's `available()` reads whichever block it happens to
+    plot and answers from that; the measurement's absence rules live in
+    `hif/profile/measure.py` and are stricter, because a block being merely
+    *present* is not the same as its contents being real. On a selected-only
+    backend `metrics.distribution` is populated with point masses, so the
+    entropy chart's own check passed and it rendered a full trace for
+    `output_entropy_bits` — a number the record deliberately withheld. Same
+    for sensitivity: divergences between point masses are a token-
+    disagreement rate, not the quantity the key names.
+
+    Derived rather than hand-written per chart, for the same reason the
+    `needs_distribution_pair` sweep in `measure.py` is: hand-enforcement is
+    what let those two diverge in the first place, and a chart added later
+    inherits this for free. Pinned by
+    `tests/unit/test_chart_measurement_gate.py`.
+    """
+    own, own_generate = mod.available, mod.generate
+    if mkey is None or not draws:
+        return own, own_generate
+
+    def available(profile) -> str | None:
+        reason = own(profile)
+        if reason is not None:
+            return reason
+        # Imported here: `hif.profile.measure` is the authority on absence,
+        # and a module-level import would make the viz package a dependency
+        # of nothing it needs at import time.
+        from hif.profile.measure import measurements
+
+        if mkey not in measurements(profile):
+            return WITHHELD.format(key=mkey)
+        return None
+
+    def generate(profile, output_path, formats=["html"]):
+        reason = available(profile)
+        if reason is not None:
+            from hif.viz.base import na_figure, save_fig
+
+            return save_fig(na_figure(mod.LABEL, reason), output_path, formats)
+        return own_generate(profile, output_path, formats=formats)
+
+    return available, generate
+
+
+def _build(sid: str, kind: str, mod, mkey: str | None, draws: bool) -> SignalViz:
+    available, generate = _gated(mod, mkey, draws)
+    return SignalViz(
         id=sid, label=mod.LABEL, kind=kind,
         # One vocabulary: the chart's family IS its measurement's functional.
         # Breadth (no measurement) draws support size off the output
@@ -107,10 +181,13 @@ SIGNALS: list[SignalViz] = [
             if mkey is not None
             else "information-theoretic"
         ),
-        generate=mod.generate, available=mod.available,
-        measurement_key=mkey,
+        available=available, generate=generate,
+        measurement_key=mkey, draws_measurement=draws,
     )
-    for (sid, kind, mod, mkey) in _SPEC
+
+
+SIGNALS: list[SignalViz] = [
+    _build(sid, kind, mod, mkey, draws) for (sid, kind, mod, mkey, draws) in _SPEC
 ]
 
 SIGNALS_BY_ID: dict[str, SignalViz] = {s.id: s for s in SIGNALS}

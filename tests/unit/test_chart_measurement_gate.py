@@ -1,0 +1,157 @@
+"""A chart declines exactly the runs its measurement declines.
+
+This is the fidelity contract in `hif/viz/registry.py` stated as an
+executable equivalence rather than a promise:
+
+    chart.available(p) is None  <=>  chart.measurement_key in measurements(p)
+
+The two sides are decided in different modules by different code.
+`hif/profile/measure.py` withholds a measurement when the evidence for it
+does not exist — `output_entropy_bits` behind a real, non-degenerate output
+distribution, `perturbation_jsd_bits` behind a pair of them. Each chart
+answers separately, in its own `available()`, from whatever block it happens
+to read. Nothing but agreement between two hand-written answers keeps a
+dashboard from drawing a full trace for a quantity the record deliberately
+refuses to publish — which is the "existed only as a chart" gap inverted, and
+worse than the original, because a rendered chart of a withheld quantity is
+read as evidence.
+
+There was a test of this class. It lived in `tests/unit/test_shift.py` and
+was deleted in hif-v4 along with the measurement it was written against,
+taking the only guard on the invariant with it. This is that guard,
+generalised over every keyed chart instead of one.
+"""
+
+from __future__ import annotations
+
+import pytest
+
+from hif.profile.builder import build_profile
+from hif.profile.measure import measurements
+from hif.viz.registry import SIGNALS_BY_MEASUREMENT
+
+from mock_backends import (
+    TextHashEmbedder,
+    TIER_SELECTED_ONLY,
+    alpha_model,
+    contract_config,
+    install_attention_analyzer,
+    install_perturbation_generator,
+)
+
+PROMPT = "Explain why the sky appears blue."
+
+
+@pytest.fixture(autouse=True)
+def _offline_stages(monkeypatch):
+    install_perturbation_generator(monkeypatch)
+    install_attention_analyzer(monkeypatch)
+
+
+def _profile(model, backend: str):
+    return build_profile(
+        model=model,
+        prompt=PROMPT,
+        regime="test",
+        config=contract_config(backend),
+        embedder=TextHashEmbedder(),
+        seed=42,
+    )
+
+
+# The two ends of the access range. `hf` has full logprob access and should
+# publish everything; `anthropic` is selected-only, which is the case that
+# exercises every absence rule at once.
+CASES = [
+    ("hf", lambda: alpha_model()),
+    ("anthropic", lambda: alpha_model(tier=TIER_SELECTED_ONLY)),
+]
+
+
+@pytest.mark.parametrize("backend,make_model", CASES, ids=[c[0] for c in CASES])
+def test_every_keyed_chart_declines_the_runs_its_measurement_declines(
+    backend, make_model
+):
+    profile = _profile(make_model(), backend)
+    published = set(measurements(profile))
+
+    disagreements = []
+    for key, signal in SIGNALS_BY_MEASUREMENT.items():
+        # `stability` carries a key for --metric resolution but plots a
+        # different series than its measurement reduces, so its availability
+        # is its own. See the `draws_measurement` note in hif/viz/registry.py.
+        if not signal.draws_measurement:
+            continue
+        drawn = signal.available(profile) is None
+        claimed = key in published
+        if drawn != claimed:
+            disagreements.append(
+                f"  {signal.id}: chart {'draws' if drawn else 'declines'} it, "
+                f"record {'publishes' if claimed else 'withholds'} {key}"
+            )
+
+    assert not disagreements, (
+        f"On backend {backend!r}, chart availability and measurement absence "
+        f"disagree:\n" + "\n".join(disagreements) + "\n"
+        "A chart drawn for a withheld measurement is read as evidence for a "
+        "quantity the record refused to claim."
+    )
+
+
+def test_the_bridge_only_names_live_measurements():
+    """No chart may be keyed on a measurement that no longer exists.
+
+    `test_viz_measurement_bridge.py` walks this relation from the registry
+    side, so a chart keyed on a cut row is invisible to it. hif-v4 removed ten
+    rows and their charts by hand; this makes the next such pass mandatory
+    rather than careful.
+    """
+    from hif.profile.registry import MEASUREMENT_BY_KEY
+
+    stale = sorted(set(SIGNALS_BY_MEASUREMENT) - set(MEASUREMENT_BY_KEY))
+    assert not stale, f"charts keyed on measurements that do not exist: {stale}"
+
+
+# ---------------------------------------------------------------------------
+# The record survives its own artifact
+# ---------------------------------------------------------------------------
+def test_signals_record_survives_a_json_roundtrip_with_populated_blocks():
+    """A record built from a re-loaded artifact equals one built in memory.
+
+    `semantic_field`, `exposure` and `attention_capture` are typed
+    `Optional[Any]`, so they come back from JSON as plain dicts while an
+    in-memory profile carries models. `signals_record()` read them by
+    attribute, which raised on every round-tripped profile that had one
+    populated — directly contradicting the claim in `hif/profile/registry.py`
+    that justified the hif-v4 cut: "the artifact is the evidence." Evidence
+    you cannot read back is not evidence.
+
+    This generalises the deleted `test_rehydrated_dict_blocks_still_yield_
+    their_measurements`, whose specimen (`measure.py::_field`) was retired
+    with the rows it served, to the module where the hazard actually lives.
+    """
+    from hif.profile.record import semantic_field_scalars
+
+    class _Model:
+        mean_veer = 0.25
+        max_veer = 0.31
+        mean_deformation = 0.12
+        n_steps = 4
+
+    class _InMemory:
+        semantic_field = _Model()
+
+    class _Rehydrated:
+        semantic_field = {
+            "mean_veer": 0.25, "max_veer": 0.31,
+            "mean_deformation": 0.12, "n_steps": 4,
+        }
+
+    live = semantic_field_scalars(_InMemory())
+    loaded = semantic_field_scalars(_Rehydrated())
+
+    assert live == loaded, (
+        "the same semantic-field block read two ways gave different scalars"
+    )
+    # And specifically not fabricated absence: every value is really there.
+    assert all(v is not None for v in loaded.values()), loaded

@@ -102,15 +102,14 @@ def _all_measured_values(p) -> dict[str, float]:
     # One enforcement of needs_distribution_pair, derived from the rows rather
     # than hand-written per quantity.
     #
-    # Four rows declare it; the gate was written into some of the branches
-    # above and missed on `io_correlation_r`, which is half a JSD series by
-    # construction. On a gpt-5 run that produced zero output steps that half
-    # was all zeros, pearsonr saw a constant series, and the documented
-    # "computable but degenerate → 0.0" rule fired — publishing a measured
-    # correlation of 0.0 between a real input series and a fabricated one.
+    # One row declares it today, and the explicit gate above already covers
+    # that row — so this sweep is currently redundant. It is kept because it is
+    # the general form: the flag was once hand-enforced branch by branch, which
+    # is how `io_correlation_r` came to publish a measured 0.0 correlation
+    # between a real input series and a fabricated one before hif-v4 cut it.
     #
     # A row that says it needs a pair of real distributions is absent whenever
-    # the run has none, and adding a fifth such row now inherits that for free.
+    # the run has none, and a second such row inherits that for free.
     if selected_only:
         for row in MEASUREMENT_REGISTRY:
             if row.needs_distribution_pair:
