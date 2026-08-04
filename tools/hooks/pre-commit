@@ -1,26 +1,42 @@
 #!/bin/sh
-# Refuse a commit that leaves the website's copy of a document behind.
+# Refuse a commit that leaves the website behind.
 #
 # The site renders copies of README.md and docs/*.md rather than restating
-# them (see tools/sync_docs.py). A copy that is only updated when someone
-# remembers is not a copy for long, so the check runs here.
+# them (tools/sync_docs.py), and generates its measurement vocabulary from
+# `hif schema` (tools/gen_site_measurements.py). A copy that is only updated
+# when someone remembers is not a copy for long, so the checks run here.
 #
-# Only fires when one of those files is actually staged, and passes quietly
-# when the site is not checked out — working on the CLI alone must not need
-# the site present.
+# Each fires only when the files it guards are actually staged, and both pass
+# quietly when the site is not checked out — working on the CLI alone must not
+# need the site present.
 #
 # Install: git config core.hooksPath tools/hooks
 
 staged=$(git diff --cached --name-only --diff-filter=ACM)
+
 case "$staged" in
-  *README.md*|*docs/*.md*) ;;
-  *) exit 0 ;;
+  *README.md*|*docs/*.md*)
+    python3 tools/sync_docs.py --check || {
+      echo
+      echo "pre-commit: documentation the site publishes has drifted from this repo."
+      echo "Run the sync, review the change in the site repo, then commit again."
+      echo "To commit anyway: git commit --no-verify"
+      exit 1
+    }
+    ;;
 esac
 
-python3 tools/sync_docs.py --check || {
-  echo
-  echo "pre-commit: documentation the site publishes has drifted from this repo."
-  echo "Run the sync, review the change in the site repo, then commit again."
-  echo "To commit anyway: git commit --no-verify"
-  exit 1
-}
+# The registry is the site's measurement vocabulary. hif-v4 cut the set from
+# sixteen rows to six and the site went on rendering all sixteen, pinned at
+# hif-v3.1, because its copy was a hand transcription nobody re-read.
+case "$staged" in
+  *profile/registry.py*|*tools/gen_site_measurements.py*)
+    python3 tools/gen_site_measurements.py --check || {
+      echo
+      echo "pre-commit: the site's measurement vocabulary has drifted from 'hif schema'."
+      echo "Run the generator, review the change in the site repo, then commit again."
+      echo "To commit anyway: git commit --no-verify"
+      exit 1
+    }
+    ;;
+esac
