@@ -1259,6 +1259,24 @@ def validate_model(
 
     if output_json:
         payload = {
+            # What each field is, in the record that carries it. A reader
+            # should not need this file open to know whether 44.05 is good, and
+            # `separation` in particular is a bare ratio that says nothing for
+            # itself — the same defect as a "0.98" labelled Stability.
+            "fields": {
+                "answer_cell": "Ground-truth location of the answer in the image, {row, col} on the grid below.",
+                "cell_jsd": "Per cell: Jensen-Shannon divergence in bits between the unmasked output distribution and the distribution with that cell masked. Higher = hiding that region disturbed the model more.",
+                "answer_cell_rank": "Where the ground-truth cell placed when cells are ordered by cell_jsd. 1 = the model was disturbed most by hiding the answer.",
+                "separation": "Largest cell_jsd divided by the second largest — how decisively the ordering was decided. Near 1.0 means the top two cells are nearly tied and the rank would likely differ on a rerun; large values mean the answer region dominates. Dimensionless. Null when the runner-up is exactly zero.",
+                "rank1_count": "Cases where the ground-truth cell ranked first, out of n.",
+                "top2_count": "Cases where it placed first or second, out of n.",
+            },
+            "note": (
+                "Known-answer synthetic tasks: this describes the measurement "
+                "instrument on this model, not your workload. There is no pass "
+                "mark — read rank together with separation and apply whatever "
+                "bar your use demands."
+            ),
             "model": result.model_id,
             "backend": backend,
             "grid": f"{result.grid[0]}x{result.grid[1]}",
