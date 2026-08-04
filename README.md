@@ -207,6 +207,18 @@ hif models     # backends, example models, and which signals each supports
 hif schema     # every measurement, its unit, and its definition
 ```
 
+`hif doctor` is the one to run first — it answers "will this work here?"
+before a pipeline has a chance to fail halfway:
+
+```
+HIF doctor — environment & backend readiness
+
+  core (numpy, plotly): ok
+  embedder (sentence-transformers): ok
+  charts (--charts): ok — HTML (PNG needs kaleido: pip install kaleido)
+  ollama server (http://localhost:11434): not reachable — run `ollama serve`
+```
+
 ## Credentials
 
 Open-weight backends (`hf`, `tlens`, `ollama`) need no credentials at all. The
@@ -226,7 +238,17 @@ mkdir -p ~/.config/hif && printf 'OPENAI_API_KEY=sk-...\n' >> ~/.config/hif/.env
 **A variable already exported always wins** — a dotenv only ever fills a gap, so
 `OPENAI_API_KEY=… hif …` and a CI environment are never silently overridden.
 
-`hif doctor` prints where each credential came from. If it says `unset` for a key
+`hif doctor` prints where each credential came from — the source, never the
+value:
+
+```
+credentials
+  OPENAI_API_KEY: set (.env)
+  ANTHROPIC_API_KEY: set (.env)
+  GEMINI_API_KEY: set (.env)
+```
+
+If it says `unset` for a key
 you believe you loaded, the usual cause is `source .env`: on bare `KEY=value`
 lines that creates *shell* variables, and a child process inherits only the
 *environment*, so hif never sees them. `set -a; source .env; set +a` exports them
@@ -260,6 +282,37 @@ where your own question lives. Fork it:
 hif batch --sample-set all --export-workload suite.jsonl   # 40 rows, no model
 $EDITOR suite.jsonl                                        # add prompts, add `variants`
 hif batch suite.jsonl gpt2
+```
+
+A workload run streams one record per row. Two prompts, `--lite`, trimmed to
+the measurements for width:
+
+```bash
+hif batch workload.jsonl gpt2 --lite --json 2>/dev/null | jq -c
+```
+
+```json
+{"query_id": "sky", "model": "gpt2", "measurements": {"prompt_surprisal_excess_bits": 0.6556, "output_entropy_bits": 2.3932, "output_entropy_step_delta_bits": 1.9093, "output_step_jsd_bits": 0.8475, "output_step_topk_overlap_fraction": 0.1023}}
+{"query_id": "greet", "model": "gpt2", "measurements": {"prompt_surprisal_excess_bits": 0.631, "output_entropy_bits": 2.5541, "output_entropy_step_delta_bits": 2.013, "output_step_jsd_bits": 0.903, "output_step_topk_overlap_fraction": 0.0977}}
+```
+
+Note what is *absent*: `--lite` skipped the perturbation, trajectory and
+geometric stages, so those keys are not in the record at all rather than
+present and zero.
+
+Before a configured run, `hif config show --diff` prints what will actually
+happen — the departures from the defaults are the experimental condition:
+
+```
+# resolved run config — departures from defaults only
+# gpt2 (hf) · mode=fast · --config-file run.toml
+
+[perturbation]
+n_variants = 4
+generators = ["synonym", "substitution"]
+
+[exposure]
+distance_threshold = 0.25
 ```
 
 **stdout carries JSON and nothing else.** `profile --json`, `compare --json`,
@@ -336,9 +389,22 @@ both, up front:
 | `[T-k]` truncated | `openai`, `gemini` (flash), `deepseek` | top-k logprobs only; entropy is a lower bound, no teacher forcing |
 | `[P]` proxy | `anthropic`, `gemini` (pro), text-only APIs | output text only; distributional measurements unavailable |
 
-Run `hif models` for the authoritative per-backend list. Measurements a backend
-cannot support are **absent from the record with a stated reason** — never zero,
-never a default, never silently borrowed from elsewhere.
+Run `hif models` for the authoritative per-backend list — it names, per
+backend, exactly which measurements it can and cannot produce:
+
+```
+hf  (local-open)  teacher-forcing: yes  ·  logprobs: full
+  deps:  torch, transformers (base install)
+  setup: none (HF_TOKEN only for gated repos); weights auto-download
+  models: gpt2, distilgpt2, gpt2-medium, EleutherAI/pythia-160m, …
+  Full fidelity — every measurement. Best for a complete profile.
+  ✓ signals: attention_entropy_input_bits, branch_pairwise_cosine_similarity,
+    counterfactual_exposure_fraction, io_correlation_r, output_entropy_bits, …
+```
+
+Measurements a backend cannot support are **absent from the record with a
+stated reason** — never zero, never a default, never silently borrowed from
+elsewhere.
 
 On closed backends, `--surrogate` recovers some input-side quantities by
 teacher-forcing a small local model over the *prompt* — which means those
@@ -362,6 +428,25 @@ limitation lives in provider opacity, not in the method.
 ## Scope and honesty
 
 This instrument **describes** behaviour.
+
+Ask it for a single number and it hands back the number, its unit, and whose
+behaviour it is about — and stops there:
+
+```bash
+hif profile gpt2 "Explain why the sky appears blue." --metric output_entropy_bits
+```
+
+```
+output_entropy_bits = 2.47248
+bits — mean Shannon entropy of the per-step top-K output distribution. A
+lower bound on full-vocabulary entropy when the distribution is truncated.
+subject: target-distribution
+```
+
+There is no grade attached, because there is no scale to grade against: nothing
+is normalised to `[0,1]`, inverted into a score, or compared against a
+threshold. 2.47 bits is roughly the uncertainty of a uniform choice among five
+or six tokens, which is checkable; `0.31` on some index would not be.
 
 Interpretation is the researcher's, and it belongs in the work that cites this
 tool rather than in the tool. That division is the point: a number you can check
