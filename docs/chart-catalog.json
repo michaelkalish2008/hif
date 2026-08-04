@@ -2,8 +2,8 @@
   "generated_by": "tools/gen_chart_catalog.py",
   "command": "hif profile <model> \"<prompt>\" --charts --output-dir out",
   "sample": {
-    "model": "google/gemma-3-1b-it",
-    "max_new_tokens": 48
+    "model": null,
+    "max_new_tokens": null
   },
   "signals": [
     {
@@ -14,24 +14,6 @@
       "measurement_key": null,
       "needs_diagnostics": false,
       "file": "breadth.html"
-    },
-    {
-      "id": "continuity",
-      "label": "Branch pairwise cosine similarity",
-      "short": "Branch pairwise cosine similarity",
-      "kind": "aggregate",
-      "measurement_key": "branch_pairwise_cosine_similarity",
-      "needs_diagnostics": false,
-      "file": "continuity.html"
-    },
-    {
-      "id": "io_correlation",
-      "label": "Input/output correlation (r)",
-      "short": "Input/output correlation",
-      "kind": "aggregate",
-      "measurement_key": "io_correlation_r",
-      "needs_diagnostics": false,
-      "file": "io_correlation.html"
     },
     {
       "id": "sensitivity",
@@ -77,42 +59,6 @@
       "measurement_key": "output_entropy_bits",
       "needs_diagnostics": false,
       "file": "entropy.html"
-    },
-    {
-      "id": "exposure",
-      "label": "Counterfactual exposure (fraction)",
-      "short": "Counterfactual exposure",
-      "kind": "reading",
-      "measurement_key": "counterfactual_exposure_fraction",
-      "needs_diagnostics": false,
-      "file": "exposure.html"
-    },
-    {
-      "id": "horizon",
-      "label": "Input attention-row entropy (bits)",
-      "short": "Input attention-row entropy",
-      "kind": "reading",
-      "measurement_key": "attention_entropy_input_bits",
-      "needs_diagnostics": true,
-      "file": "horizon.html"
-    },
-    {
-      "id": "shift",
-      "label": "Output step-to-step JSD (bits)",
-      "short": "Output step-to-step JSD",
-      "kind": "reading",
-      "measurement_key": "output_step_jsd_bits",
-      "needs_diagnostics": false,
-      "file": "shift.html"
-    },
-    {
-      "id": "spread",
-      "label": "Output attention-row entropy (bits)",
-      "short": "Output attention-row entropy",
-      "kind": "reading",
-      "measurement_key": "attention_entropy_output_bits",
-      "needs_diagnostics": true,
-      "file": "spread.html"
     },
     {
       "id": "wager",

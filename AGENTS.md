@@ -74,12 +74,12 @@ Tables mirror the run config; full reference in [`docs/CONFIG.md`](docs/CONFIG.m
 hif profile gpt2 "Explain why the sky appears blue." --config-file run.toml --json
 ```
 
-Key knobs: `[perturbation] generators` and `n_variants` (behind
-`perturbation_jsd_bits`), `[trajectory] n_branches` and `rollout_steps` (behind
-`branch_pairwise_cosine_similarity`), `[exposure] min_prob` and
-`distance_threshold` (behind `counterfactual_exposure_fraction`),
+Key knobs: `[perturbation] generators` and `n_variants` (behind three of the
+six measurements — `perturbation_jsd_bits` and the input-side pair),
 `[generation] max_new_tokens` (changes every step-series average), and
-`[embedding] model_name` (changes every geometric measurement).
+`[embedding] model_name` (behind `io_cosine_similarity`). `[trajectory]` and
+`[exposure]` shape diagnostic blocks only; hif-v4 publishes no measurement
+from either stage.
 
 ## Verify with the CLI, not with prose
 

@@ -36,7 +36,11 @@ DEFAULT_OUT = ROOT / "docs" / "chart-catalog.json"
 # "not available for this run" placeholders; they need the analyzers that
 # --diagnostics turns on. Derived from the availability predicates in
 # hif/viz/signals/, which the registry does not expose as data.
-NEEDS_DIAGNOSTICS = {"spread", "horizon"}
+#
+# Empty in hif-v4: the two charts that needed --diagnostics (`spread` and
+# `horizon`, both reading attention rows) were removed with the measurements
+# they drew. Every surviving chart is backed by a default-on stage.
+NEEDS_DIAGNOSTICS: set[str] = set()
 
 
 def _short_labels() -> dict[str, str]:

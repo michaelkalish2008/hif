@@ -1194,10 +1194,13 @@ def validate_model(
 
     Runs the model on synthetic tasks where the task-relevant region of each
     image is known by construction, and checks that region sensitivity locates
-    it. PASS means the instrument is validated against ground-truth synthetic
-    tasks for this model — it is not an accuracy claim about your workload.
+    it. The output reports where the model ranked the known region and how far
+    that region separated from the rest — numbers about the measurement
+    instrument on this model, not an accuracy claim about your workload. There
+    is no pass/fail: no threshold here would generalise across grids, models
+    and tasks, so the separation is reported and the reader judges it.
 
-    Exit codes: 0 pass, 2 fail, 3 usage error.
+    Exit codes: 0 ran, 3 usage error.
     """
     if backend not in ("hf-vlm", "openai-vlm"):
         err_console.print("[red]--backend must be 'hf-vlm' or 'openai-vlm'[/red]")

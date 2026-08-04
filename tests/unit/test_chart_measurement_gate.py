@@ -155,3 +155,24 @@ def test_signals_record_survives_a_json_roundtrip_with_populated_blocks():
     )
     # And specifically not fabricated absence: every value is really there.
     assert all(v is not None for v in loaded.values()), loaded
+
+
+def test_the_gate_places_a_placeholder_rather_than_drawing(tmp_path):
+    """The withheld case must reach the FILE, not just the predicate.
+
+    Each chart module's `generate()` re-asks its own module-level
+    `available()` to decide whether to draw the not-available placeholder, so
+    gating the predicate alone would leave the index page correctly marking a
+    chart unavailable while the chart file beside it was drawn in full.
+    """
+    from hif.viz.registry import SIGNALS_BY_ID
+
+    profile = _profile(alpha_model(tier=TIER_SELECTED_ONLY), "anthropic")
+    entropy = SIGNALS_BY_ID["entropy"]
+
+    reason = entropy.available(profile)
+    assert reason is not None and "did not publish" in reason, reason
+
+    written = entropy.generate(profile, tmp_path / "entropy", formats=["html"])
+    html = list(written.values())[0].read_text()
+    assert "did not publish" in html, "generate() drew the chart anyway"

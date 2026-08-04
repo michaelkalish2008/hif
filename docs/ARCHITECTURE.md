@@ -33,7 +33,7 @@ Example model ids per backend live in `BACKENDS` in `hif/models/capabilities.py`
 
 A sentence-transformer used internally to embed candidate token strings and generated text for semantic clustering. Default and fallback: `sentence-transformers/all-MiniLM-L6-v2` at its native 384 dimensions. `google/embeddinggemma-300m` is available as an opt-in override (pair it with `matryoshka_dim=256`).
 
-The embedding model is measurement infrastructure. It does not analyze the model under analysis — it helps group outputs by meaning. Its quality affects semantic clustering granularity but does not affect distribution metrics, sensitivity metrics, or raw top-K data. Switching encoders changes what `io_cosine_similarity`, `semantic_centroid_veer_cosine`, and `counterfactual_exposure_fraction` mean, so the *effective* embedder — the one that actually loaded — is written back into `config.embedding.model_name` on every profile.
+The embedding model is measurement infrastructure. It does not analyze the model under analysis — it helps group outputs by meaning. Its quality affects semantic clustering granularity but does not affect distribution metrics, sensitivity metrics, or raw top-K data. Switching encoders changes what `io_cosine_similarity` means — and what the semantic-field and exposure diagnostic blocks mean — so the *effective* embedder — the one that actually loaded — is written back into `config.embedding.model_name` on every profile.
 
 **3. Analysis transformer**
 
@@ -50,7 +50,7 @@ An open-weight HF causal LM — default `unsloth/Llama-3.2-1B`, see `SURROGATE_C
 
 The two are independent, are reported separately, and — crucially — do **not** have the same standing. Output-distribution recovery teacher-forces the surrogate over text the target actually generated: a reading instrument on the target's real output, whose value still moves when the target's output moves. Input-side recovery teacher-forces the surrogate over the *prompt*, which the target never touched: nothing the target did enters the result.
 
-That difference is declared per registry row as the measurement's **subject** (`hif/profile/registry.py`), and enforced in the record. Output-recovered quantities stay in `measurements` with subject `target-output-text` and are starred in the CLI table. Input-recovered quantities have subject `prompt-only` on that backend and leave `measurements` entirely for a top-level `prompt_measurements` block naming the reference model — a flag would say "a caveated number about this model", and only "this model produced no number" is true. `io_correlation_r` is the exception in between: it couples the surrogate's prompt reading with the target's own output response, so it stays in `measurements` with subject `mixed`. `signals_record()` still emits both surrogate names under `surrogate`. See docs/MEASUREMENTS.md § Subject.
+That difference is declared per registry row as the measurement's **subject** (`hif/profile/registry.py`), and enforced in the record. Output-recovered quantities stay in `measurements` with subject `target-output-text` and are starred in the CLI table. Input-recovered quantities have subject `prompt-only` on that backend and leave `measurements` entirely for a top-level `prompt_measurements` block naming the reference model — a flag would say "a caveated number about this model", and only "this model produced no number" is true. A `mixed` subject exists in the vocabulary for a quantity that couples the surrogate's prompt reading with the target's own output response; hif-v4 has no such row (`io_correlation_r` was the only one, and it was cut). `signals_record()` still emits both surrogate names under `surrogate`. See docs/MEASUREMENTS.md § Subject.
 
 ---
 
@@ -72,15 +72,15 @@ Nothing is normalised into `[0, 1]`, inverted into a score, or bucketed into a l
 
 | Registry `id` | Chart label | `measurement_key` |
 |---|---|---|
-| `stability` | Input entropy trace | `input_entropy_std_bits` |
-| `sensitivity` | Perturbation JSD (bits) | `perturbation_jsd_bits` |
-| `continuity` | Branch pairwise cosine similarity | `branch_pairwise_cosine_similarity` |
-| `io_correlation` | Input/output correlation (r) | `io_correlation_r` |
-| `similarity` | Input/output cosine similarity | `io_cosine_similarity` |
+| `stability` | Input entropy trace | `input_entropy_std_bits` *(resolves only)* |
 | `breadth` | Effective support size | — (chart only) |
 | `surprise` | Prompt surprisal excess (trace) | — (chart only) |
+| `sensitivity` | Perturbation JSD (bits) | `perturbation_jsd_bits` |
+| `similarity` | Input/output cosine similarity | `io_cosine_similarity` |
 
 Note `stability` → `input_entropy_std_bits`: the id is a leftover shorthand and the measurement is a standard deviation, where a *higher* value means *less* stable. The label and the key say so; the id does not. This is the mismatch that got the shorthand vocabulary retired — see below.
+
+*(resolves only)* marks the one chart that carries a `measurement_key` without drawing that measurement's own series: `stability` plots the per-position entropy of the original prompt, while `input_entropy_std_bits` is the spread of per-*variant* entropy shifts. The key is carried so `--metric input_entropy_std_bits --charts` finds a chart. Every other keyed chart draws its measurement's basis, and is therefore required to decline exactly the runs the measurement declines — enforced in `hif/viz/registry.py` and pinned by `tests/unit/test_chart_measurement_gate.py`.
 
 **Readings** (`kind="reading"`) — the per-token/per-step traces:
 
@@ -91,11 +91,9 @@ in. Read the `measurement_key` column as the join to `hif schema`.
 | Registry `id` | Chart label | `measurement_key` | Source signal |
 |---|---|---|---|
 | `entropy` | Output entropy (bits) | `output_entropy_bits` | Per-output-step Shannon entropy, in bits (nucleus and raw top-K both drawn) |
-| `shift` | Output step-to-step JSD (bits) | `output_step_jsd_bits` | Jensen-Shannon divergence between consecutive output distributions — computed in `hif/metrics/shift.py`, so the chart and the measurement are one arithmetic |
 | `wager` | Prompt surprisal excess (bits) | `prompt_surprisal_excess_bits` | Per-prompt-position surprisal excess over entropy — where the model committed and the actual token overrode that commitment |
-| `spread` | Output attention-row entropy (bits) | `attention_entropy_output_bits` | Attention-row entropy per generated token, in bits — how broadly attention was distributed over prior context |
-| `horizon` | Input attention-row entropy (bits) | `attention_entropy_input_bits` | Attention-row entropy per prompt position, in bits |
-| `exposure` | Counterfactual exposure (fraction) | `counterfactual_exposure_fraction` | Fraction of steps where a probabilistically accessible alternative diverged in meaning |
+
+Five charts were removed in hif-v4 with the measurements they drew (`continuity`, `io_correlation`, `shift`, `spread`, `horizon`, `exposure`). A chart whose measurement is gone recreates the "existed only as a chart" gap hif-v3.1 was created to close, so the charts went with the rows. See `docs/MEASUREMENTS.md` § *Retired in hif-v4* for what each measured and what to read instead.
 
 **There is no glyph column, and no glyph.** Charts were once headed with one —
 ● ◆ ▲ ■ ◇ — and a symbol set does not extend: adding a measurement means either
@@ -113,9 +111,9 @@ that went wrong, with "Stability" landing on `input_entropy_std_bits`, a
 standard deviation where a *higher* number means *less* stable. The shorthands
 survive only as `id`s, which are internal and never displayed.
 
-Both attention readings come from the stored `attention_capture` via `hif/viz/signals/_attention.py::row_entropy_trace`, in raw bits. The historical `log₂(seq_len)` normaliser is gone: the denominator is sequence length, so it leaked position metadata into a number presented as behaviour.
+Attention rows are captured and persisted under `attention_capture`, but hif-v4 publishes no measurement from them and draws no chart: the two rows that read them were cut, and the module that traced them went with the charts. The block ships under `--diagnostics` as evidence. Its historical `log₂(seq_len)` normaliser is gone either way — the denominator is sequence length, so it leaked position metadata into a number presented as behaviour.
 
-`semantic_centroid_veer_cosine` — the per-step semantic-centroid displacement from `hif/analysis/semantic_field.py` — is a measurement and a persisted per-step trace (`profile.semantic_field`), but has no entry in the viz registry, so it has no chart label.
+The per-step semantic-centroid displacement from `hif/analysis/semantic_field.py` was a measurement (`semantic_centroid_veer_cosine`) through hif-v3 and is now a diagnostic block only. It remains a persisted per-step trace (`profile.semantic_field`), but has no entry in the viz registry, so it has no chart label.
 
 ### Hermeneutic Attention (DistilBERT)
 
@@ -208,25 +206,18 @@ hif/
 
   viz/
     __init__.py            # generate_signal_plots() entry point
-    registry.py            # SIGNALS — id/label/kind/family/glyph + generate/available
+    registry.py            # SIGNALS — id/label/kind/family + generate/available, gated on the measurement
     base.py                # na_figure(), save_fig(), signal_title(), NEEDS_* reasons
     index.py               # build_index() — combined signal dashboard page
     _theme.py              # shared dark-theme colors and layout helpers
-    signals/
-      _attention.py        # get_attention_map(), row_entropy_trace() (bits, un-normalised)
+    signals/               # one module per chart; hif-v4 removed six with their rows
       stability.py         # input entropy trace
       breadth.py           # per-step effective support size
       surprise.py          # per-position excess surprisal
-      io_correlation.py    # input vs. output entropy trace overlay
       sensitivity.py       # per-generator JSD bars
-      continuity.py        # trajectory branch convergence
       similarity.py        # input/output/io cosine bars
       entropy.py           # per-step output entropy
-      shift.py             # step-to-step output JSD
       wager.py             # surprisal vs. entropy, two-panel
-      spread.py            # output attention-row entropy
-      horizon.py           # input attention-row entropy
-      exposure.py          # counterfactual semantic exposure
 
   analysis/
     __init__.py            # module docstring explaining the text-instrument role
@@ -402,13 +393,16 @@ authority for them.
   members; with a single sample the within-class radius variance is
   undefined, and the sub-field is omitted rather than estimated.
 - **Trajectory branch field.** The geometric twin of the perturbation field
-  over sampling (branch) variation: where Continuity collapses the branch
-  cloud to one mean-pairwise-cosine scalar, `BranchField` restores its shape
+  over sampling (branch) variation: where the retired
+  `branch_pairwise_cosine_similarity` collapsed the branch cloud to one
+  mean-pairwise-cosine scalar, `BranchField` restores its shape
   — centroid radii plus `cluster_count`, which detects multi-modality a mean
   cannot see (`hif/hourglass/trajectory.py`).
-- **Within-generation semantic field (`semantic_centroid_veer_cosine`).** The admitted instruments
-  read one generation event; the semantic field reads the trajectory of the
-  output's possibility field *within* a generation — per-step displacement of
-  the probability-weighted candidate-cloud centroid (translation) and the
-  step-to-step change in its spread (deformation). It is the geometric twin
-  of `output_step_jsd_bits` (`hif/analysis/semantic_field.py`).
+- **Within-generation semantic field.** The admitted measurements read one
+  generation event; the semantic field reads the trajectory of the output's
+  possibility field *within* a generation — per-step displacement of the
+  probability-weighted candidate-cloud centroid (translation) and the
+  step-to-step change in its spread (deformation)
+  (`hif/analysis/semantic_field.py`). It published
+  `semantic_centroid_veer_cosine` through hif-v3; that row was retired and
+  the block remains as evidence.

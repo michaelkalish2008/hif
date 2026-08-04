@@ -112,9 +112,9 @@ class PerturbationConfig(BaseModel):
     # teacher-forced entropies and read no variant continuation at all.
     #
     # Set False to author and teacher-force the variants without generating
-    # from them. The two input-side measurements survive; the four that read a
-    # variant continuation (perturbation_jsd_bits, io_correlation_r,
-    # io_cosine_similarity, and the perturbation field) become absent. This is
+    # from them. The two input-side measurements survive; the two that read a
+    # variant continuation (perturbation_jsd_bits and io_cosine_similarity),
+    # along with the perturbation field, become absent. This is
     # the `acquisition = synthesized-input` ceiling; see the `acquisition` axis
     # in hif/profile/registry.py.
     elicit_variant_outputs: bool = True
@@ -151,10 +151,11 @@ class SemanticConfig(BaseModel):
     """Per-step semantic metrics — embedding and clustering each step's
     candidate cloud.
 
-    On by default; this is the switch `--lite` throws. Disabling it costs the
-    measurements derived from candidate geometry (`candidate_cluster_entropy_bits`
-    and, transitively, counterfactual exposure) and leaves the entropy-side
-    readings untouched. It is the single most expensive per-step stage on a run
+    On by default; this is the switch `--lite` throws. hif-v4 publishes no
+    measurement derived from candidate geometry — `candidate_cluster_entropy_bits`
+    was cut — so disabling it now costs only the diagnostic blocks that read the
+    cloud (cluster, exposure, semantic field) and leaves every published
+    measurement on the entropy side untouched. It is the single most expensive per-step stage on a run
     with no perturbation variants, which is why it is separable at all."""
     enabled: bool = True
 

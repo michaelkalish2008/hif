@@ -1,4 +1,8 @@
-"""Within-generation semantic field — semantic_centroid_veer_cosine.
+"""Within-generation semantic field (Veer) — a diagnostic block.
+
+Published `semantic_centroid_veer_cosine` through hif-v3; hif-v4 retired that
+row (the stage is off by default, so it was absent from most of the corpus)
+and kept the block, which ships under `--diagnostics` as evidence.
 
 The Veer rule (docs/ARCHITECTURE.md § Field-model notes): the admitted
 instruments read one generation event; this one reads the *trajectory* of the
@@ -13,7 +17,7 @@ proceeds that centroid traces a path:
   weighted mean distance of candidates from the centroid): the field widening or
   narrowing / fragmenting.
 
-It is the GEOMETRIC twin of output_step_jsd_bits: that one reads step-to-step change in the
+It is the GEOMETRIC twin of the retired output_step_jsd_bits: that one read step-to-step change in the
 distribution's *spread* in vocabulary space (information-theoretic); Veer reads
 step-to-step change in the distribution's *semantic location* in embedding space
 (geometric). `center.semantic_drift` gives only the prompt→output endpoint; Veer

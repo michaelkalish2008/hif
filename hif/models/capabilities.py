@@ -4,28 +4,20 @@ Different backends expose different amounts of the model's internals, which
 directly determines which measurements can be computed:
 
 - **Teacher forcing** (running the model forward over the prompt to get per-
-  position logits) is required for the input-side measurements and for the
-  trajectory rollouts behind branch_pairwise_cosine_similarity. Only local
+  position logits) is required for the input-side measurements. Only local
   open-weight backends (hf, tlens, hf-vlm) can do it. Hosted APIs and Ollama
-  cannot. A `--surrogate` recovers the input-side rows (by reading the prompt,
-  which makes their subject prompt-only) but never the trajectory rows.
-- **The attention-analysis stage** is required for attention_entropy_input_bits
-  and attention_entropy_output_bits. It is NOT a backend capability: neither
-  measurement reads the target model's attention, and no backend has ever been
-  asked to expose any. `hif/analysis/attention.py` loads its own bidirectional
-  encoder (`distilbert-base-uncased`, `AttentionConfig.model_name`) and reads
-  *text* — the prompt for the input-side row, the target's generated
-  continuation for the output-side row. Both are therefore computable on every
-  backend that returns text, which is all of them; the only requirement is that
-  the stage runs (`--diagnostics`, or `[attention] enabled` in a config file).
-  The gate below enforces that requirement and no other.
+  cannot. A `--surrogate` recovers the input-side rows by reading the prompt,
+  which makes their subject prompt-only.
 - **Top-K logprobs** are required for the output-side measurements
-  (output_entropy_bits, output_entropy_step_delta_bits, perturbation_jsd_bits,
-  output_step_jsd_bits, output_step_topk_overlap_fraction,
-  candidate_cluster_entropy_bits, io_cosine_similarity,
-  counterfactual_exposure_fraction, semantic_centroid_veer_cosine). Most
+  (output_entropy_bits, perturbation_jsd_bits, io_cosine_similarity). Most
   backends provide them; Anthropic returns only the selected token, so its
   distributions degenerate.
+
+hif-v4 cut ten rows, including both attention rows and every row read off the
+trajectory, cluster and exposure stages. Those stages still run and still
+record their blocks under `--diagnostics` — they are evidence, not claims — so
+nothing below gates on them. ATTENTION_METRICS and TRAJECTORY_METRICS are
+consequently empty; see the note on the derived groups below.
 
 This module powers three things: the early metric/backend guard in `profile`,
 the `doctor` preflight command, and the `models` discovery command — so a user
@@ -42,24 +34,20 @@ them by reading the PROMPT — the target contributes nothing, so on that backen
 their subject is `prompt-only` and they are reported in `prompt_measurements`
 rather than in `measurements`. `hif models` prints both facts per backend.
 
-One row is prompt-only on every backend, including `[F]`:
-`attention_entropy_input_bits`. Attention here is not the target's — it comes
-from a bidirectional analysis encoder (hif/analysis/attention.py) reading text
-as an object, and the input-side row reads the prompt. Its availability gate
-below is therefore about whether the *stage runs*, not about whether the target
-exposes anything. Note that this is a statement about SUBJECT, not
-availability: the value is computable everywhere and is reported everywhere the
-stage runs — in `prompt_measurements`, because it is a fact about the prompt.
+No row is statically prompt-only in hif-v4: every surviving row is about the
+target on a backend that can support it, and `prompt-only` is now reached only
+dynamically, under `--surrogate`. `hif models` prints both facts per backend.
 
-History: this module used to claim, two paragraphs apart, both that "only open
-HuggingFace models expose attention" and that the attention is "not the
-target's". The first was false — verifiable in one command, since profiling
-gpt2 and gpt2-medium on the same prompt returns a bit-identical
-attention_entropy_input_bits (1.6677721955190443), which is what a number that
-cannot see the target looks like. A previous pass left the gate closed anyway,
-reasoning that refusing was safer than over-claiming. It was not: refusing told
-users their backend could not produce a measurement it produces perfectly well,
-which is a false statement about their backend rather than a cautious one.
+History, kept because it is the argument that eventually cut the row: this
+module once claimed, two paragraphs apart, both that "only open HuggingFace
+models expose attention" and that the attention was "not the target's". The
+first was false, verifiable in one command — profiling gpt2 and gpt2-medium on
+the same prompt returned a bit-identical attention_entropy_input_bits
+(1.6677721955190443), which is what a number that cannot see the target looks
+like. That fix opened the gate. hif-v4 asked the sharper question the same
+evidence supports — a quantity identical across two different targets is not a
+measurement OF either — and removed the row instead. Condition 3 of the
+Significance Gate (docs/MEASUREMENTS.md) is that argument generalised.
 """
 
 from __future__ import annotations
@@ -101,6 +89,16 @@ from hif.profile.registry import MEASUREMENT_REGISTRY
 INPUT_SIDE_METRICS = frozenset(
     m.key for m in MEASUREMENT_REGISTRY if m.surrogate_group == "input"
 )
+# BOTH OF THESE ARE EMPTY IN hif-v4, and that is not a bug: the cut removed
+# every row observing an attention row or a trajectory branch. They are kept
+# derived rather than deleted because deleting them would delete the guards
+# that read them, and a future row with either observable would then arrive
+# ungated — the exact failure the "never hand-listed" note above describes.
+# While empty they make their consumers dormant, not wrong: the two absence
+# contracts in provenance.py that intersect them can never fire, the
+# `attention_enabled` gate is inert, and the corresponding halves of
+# tests/unit/test_capability_sets.py pass vacuously. Add a row with either
+# observable and all of it re-arms with no further edit.
 ATTENTION_METRICS = frozenset(
     m.key for m in MEASUREMENT_REGISTRY if m.observable == "attention row"
 )
@@ -141,8 +139,7 @@ OUTPUT_SIDE_METRICS = frozenset(
 #                         first group, no --surrogate rescues these: the
 #                         surrogate recovery in builder.py step 6b rebuilds
 #                         `semantic_steps`, which these never read. See the
-#                         per-row comments (io_correlation_r in particular)
-#                         for why each row carries the flag.
+#                         per-row comments for why each row carries the flag.
 NEEDS_DISTRIBUTION = frozenset(
     m.key for m in MEASUREMENT_REGISTRY if m.surrogate_group == "output"
 )
@@ -310,7 +307,8 @@ def metric_support(
         and not info.teacher_forcing
         # …unless the metric ALSO reads a divergence between two output
         # distributions, which no surrogate recovers. Checked before the
-        # shortcut so a selected-only backend still refuses io_correlation_r.
+        # shortcut so a selected-only backend still refuses those rows —
+        # today that is perturbation_jsd_bits.
         and not (
             info.logprobs == "selected-only" and metric in NEEDS_TWO_DISTRIBUTIONS
         )

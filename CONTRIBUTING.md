@@ -73,9 +73,12 @@ reason of one line:
   *reported* with the bound named in its `definition` — `output_entropy_bits`
   is a lower bound and says so. Where the bound is large enough to need
   quantifying, ship the bound as its own measurement rather than as a caveat
-  flag: `output_step_topk_overlap_fraction` is the resolution limit on
-  `output_step_jsd_bits`, and each definition names the other. A flag is an
-  adornment a consumer must know to look for; a registry row is a second fact.
+  flag — a flag is an adornment a consumer must know to look for; a registry
+  row is a second fact. But weigh it against condition 2 first: hif-v4 cut
+  `output_step_topk_overlap_fraction`, which existed to bound
+  `output_step_jsd_bits`, because it moved with the row it bounded and so
+  disclosed nothing on its own. A bound earns a row only if it varies
+  independently of the quantity it bounds.
 
 ### 2. Declare its triple — and its subject
 
@@ -205,8 +208,8 @@ Then run the whole suite: `.venv/bin/python -m pytest`.
 
 ## Worked example: `input_entropy_std_bits`
 
-The most recently added measurement (hif-v2.1, with
-`branch_pairwise_cosine_similarity`), and a model of the diff shape: it
+Added in hif-v2.1 and one of the six rows that survived the hif-v4 cut — a
+model of the diff shape: it
 touched **two files** — the module that computes it and the registry that
 declares it.
 

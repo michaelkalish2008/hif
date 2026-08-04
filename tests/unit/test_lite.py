@@ -95,16 +95,31 @@ def _measurements(config: RunConfig) -> dict:
 
 
 # Fed by the stages lite disables. Each must be absent from a lite record.
+#
+# LIVE KEYS ONLY. This list carried five keys that hif-v4 had already cut, so
+# five of its eight absence assertions passed for the wrong reason — a
+# measurement that cannot be emitted at all is trivially absent from a lite
+# record, and the assertion said nothing about lite. The guard below keeps
+# that from recurring.
 STAGE_DEPENDENT = [
     "perturbation_jsd_bits",
     "input_entropy_shift_bits",
     "input_entropy_std_bits",
-    "io_correlation_r",
     "io_cosine_similarity",
-    "branch_pairwise_cosine_similarity",
-    "candidate_cluster_entropy_bits",
-    "counterfactual_exposure_fraction",
 ]
+
+
+def test_stage_dependent_names_only_live_measurements():
+    """Every key above must still be in the registry.
+
+    Otherwise the absence assertions that read this list go vacuous silently:
+    they would pass on a key no run can produce, which is not evidence that
+    --lite skipped a stage.
+    """
+    from hif.profile.registry import MEASUREMENT_BY_KEY
+
+    dead = [k for k in STAGE_DEPENDENT if k not in MEASUREMENT_BY_KEY]
+    assert not dead, f"STAGE_DEPENDENT names retired measurements: {dead}"
 
 
 class TestLiteSkipsStages:

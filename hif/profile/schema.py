@@ -239,7 +239,7 @@ class BehavioralRangeProfile(BaseModel):
     #   unchanged; newly written artifacts emit only the new names. The
     #   analysis was renamed because it measures the semantic distance of
     #   accessible alternatives — not hallucination (docs/MEASUREMENTS.md
-    #   § counterfactual_exposure_fraction: "This is not a factuality
+    #   § Retired in hif-v4: "This is not a factuality
     #   judgment").
     #   The same release removed fields nothing ever populated or read:
     #   metrics.stability.temperature_robustness / prompt_order_robustness

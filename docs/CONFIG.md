@@ -3,12 +3,13 @@
 `hif/config.py` is the authoritative schema. This document explains what each
 key does to the numbers, which is the part the source cannot tell you.
 
-Three of the measurements are not readings of one forward pass — they are
+Four of the six measurements are not readings of one forward pass — they are
 comparisons against runs the tool constructs. `perturbation_jsd_bits` compares
-the baseline against paraphrases. `branch_pairwise_cosine_similarity` compares
-resampled continuations against each other. `counterfactual_exposure_fraction`
-counts steps that clear two thresholds. **For all three the configuration is part
-of the measurement.** Two runs that differ only in `[perturbation] generators`
+the baseline distribution against paraphrases; `input_entropy_shift_bits` and
+`input_entropy_std_bits` read the mean and spread of the same paraphrase
+sweep; `io_cosine_similarity` compares the prompt's embedding against the
+generated output's. **For all four the configuration is part of the
+measurement.** Two runs that differ only in `[perturbation] generators`
 produce records that are identical in shape and different in value, with nothing
 in the record to say why.
 
@@ -100,7 +101,8 @@ carrying the credential.
 ## `[perturbation]` — what `perturbation_jsd_bits` compares against
 
 Feeds `perturbation_jsd_bits`, `input_entropy_shift_bits`,
-`input_entropy_std_bits`, `io_correlation_r`, `io_cosine_similarity`.
+`input_entropy_std_bits` — three of the six measurements, which is why this
+section is the one most worth reading before comparing two records.
 
 | key | default | effect |
 | --- | --- | --- |
@@ -195,7 +197,11 @@ n_variants = 4                             # 8 variants, 8 extra generation pass
 
 ---
 
-## `[trajectory]` — what `branch_pairwise_cosine_similarity` compares
+## `[trajectory]` — the branch stage
+
+hif-v4 publishes no measurement from this stage: `branch_pairwise_cosine_similarity`
+was cut. The stage still runs and still records `trajectory.branch_field` as
+evidence under `--diagnostics`, and these keys still shape it.
 
 | key | default | effect |
 | --- | --- | --- |
@@ -220,7 +226,12 @@ rollout_steps = 16
 
 ---
 
-## `[exposure]` — the two thresholds behind `counterfactual_exposure_fraction`
+## `[exposure]` — the counterfactual-exposure stage
+
+hif-v4 publishes no measurement from this stage: `counterfactual_exposure_fraction`
+was cut, in part because the two thresholds below were embedded in the number
+it reported — a configured quantity presented as a measured one. The stage
+still runs and records `profile.exposure` as evidence under `--diagnostics`.
 
 | key | default | effect |
 | --- | --- | --- |
@@ -250,9 +261,9 @@ The old table name `[hallucination]` still loads, for archived configs.
 | --- | --- | --- |
 | `enabled` | `true` | Embed and cluster each step's candidate cloud |
 
-Feeds `candidate_cluster_entropy_bits`, and exposure reads it. The most
-expensive per-step stage on a run with no perturbation variants — this is the
-switch `--lite` throws.
+Fed `candidate_cluster_entropy_bits`, which hif-v4 cut; exposure and the
+semantic field still read it, and it remains the most expensive per-step stage
+on a run with no perturbation variants — this is the switch `--lite` throws.
 
 ## `[cluster]` — how those candidates are grouped
 
@@ -262,9 +273,10 @@ switch `--lite` throws.
 | `min_cluster_size` | `2` | Minimum members for a cluster |
 | `min_samples` | `1` | HDBSCAN density parameter |
 
-`candidate_cluster_entropy_bits` is entropy over the cluster assignment, so
-these keys change the measurement directly: coarser clustering means fewer
-clusters means lower entropy.
+These keys change the cluster assignment directly — coarser clustering means
+fewer clusters — and so change every diagnostic block read off it. The
+measurement that reported cluster entropy, `candidate_cluster_entropy_bits`,
+was cut in hif-v4: it moved with these settings as much as with the model.
 
 ---
 
@@ -333,9 +345,9 @@ extra_body = { thinking = { type = "disabled" } }
 | `matryoshka_dim` | `null` | Truncation dim (e.g. `256` for EmbeddingGemma) |
 | `cache_dir` | `~/.cache/hif/embeddings` | Embedding cache |
 
-Changing the encoder changes `io_cosine_similarity`,
-`branch_pairwise_cosine_similarity`, `candidate_cluster_entropy_bits`, and
-exposure. Cosine values are comparable only within a single encoder. The
+Changing the encoder changes `io_cosine_similarity` — the one measurement
+that reads it — along with the trajectory, cluster and exposure diagnostic
+blocks. Cosine values are comparable only within a single encoder. The
 effective encoder is recorded in each profile's `config.embedding.model_name`
 and printed by `--verbose`.
 
@@ -387,9 +399,9 @@ what the run is *permitted to produce*, not how much work it does.
 
 | tier | permits | adds |
 | --- | --- | --- |
-| `observational` | The prompt as given and the one continuation the run produces. Nothing else is sent to the model; no new model output exists afterwards. | `output_entropy_bits`, `output_entropy_step_delta_bits`, `output_step_jsd_bits`, `output_step_topk_overlap_fraction`, `prompt_surprisal_excess_bits`, `candidate_cluster_entropy_bits`, `counterfactual_exposure_fraction` |
+| `observational` | The prompt as given and the one continuation the run produces. Nothing else is sent to the model; no new model output exists afterwards. | `output_entropy_bits`, `prompt_surprisal_excess_bits` |
 | `synthesized-input` | Additionally authors paraphrased prompts and teacher-forces the model over them. The model does not generate. | `input_entropy_shift_bits`, `input_entropy_std_bits` |
-| `elicited-output` *(default)* | Additionally lets the model generate variant continuations and trajectory branches. | `perturbation_jsd_bits`, `io_correlation_r`, `io_cosine_similarity`, `branch_pairwise_cosine_similarity` |
+| `elicited-output` *(default)* | Additionally lets the model generate variant continuations and trajectory branches. | `perturbation_jsd_bits`, `io_cosine_similarity` |
 
 ```bash
 hif profile gpt2 "Explain why the sky appears blue." --acquisition observational --json

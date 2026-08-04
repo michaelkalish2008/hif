@@ -17,7 +17,7 @@ simultaneously:
 A step is counted as *exposed* when its most divergent accessible alternative
 is semantically distant (distance ≥ threshold) inside a *diffuse* candidate
 cloud. The scalar reading (`exposure`, surfaced as
-`counterfactual_exposure_fraction`) is the fraction of analysed steps so
+the retired `counterfactual_exposure_fraction`) is the fraction of analysed steps so
 counted: how often the response's meaning was exposed to sampling chance.
 
 This is a description of the run's own distributional possibility space —
@@ -26,7 +26,7 @@ was. It is not an inference about what the model was doing, and it is
 explicitly NOT a factuality or correctness judgment: only diffusion-zone
 steps are counted, so the convergence case (a model that is confident and
 narrow but aimed wrong) is excluded by construction, and a confident response
-can still be wrong. See docs/MEASUREMENTS.md § counterfactual_exposure_fraction.
+can still be wrong. See docs/MEASUREMENTS.md § Retired in hif-v4.
 
 This analysis reuses the already-computed semantic embeddings from the
 per-step output trace — no new model inference is required.  The embedding

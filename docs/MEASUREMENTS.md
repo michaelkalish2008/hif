@@ -106,11 +106,9 @@ Access is a property of what the backend exposes, not of the model. `hif/models/
 |--------|----------|------------------|
 | `[F]` full | `hf`, `tlens`, `hf-vlm` | Full-vocabulary distributions and teacher forcing — every measurement |
 | `[T-k]` truncated | `openai`, `openai-vlm`, `gemini`, `ollama` | Top-k logprobs only; output entropy is a lower bound; no teacher forcing |
-| `[P]` proxy | `anthropic` | Selected token only. The entropy-shaped measurements degenerate unless a `--surrogate` reads the output text under teacher forcing; the distribution **divergences** (`perturbation_jsd_bits`, `output_step_jsd_bits`, `output_step_topk_overlap_fraction`) are absent outright, and no surrogate recovers them |
+| `[P]` proxy | `anthropic` | Selected token only. The entropy-shaped measurements degenerate unless a `--surrogate` reads the output text under teacher forcing; the distribution **divergence** `perturbation_jsd_bits` is absent outright, and no surrogate recovers it |
 
-The attention-row measurements are **not** in this table, and that is the point: they read an analysis encoder's attention over text (the prompt, or the target's generated continuation), never the target's own attention, so no backend has ever been asked to expose anything for them. They are available on every backend and gated only on the optional stage that produces them (`--diagnostics`). `hif/models/capabilities.py` once claimed the opposite and enforced the claim, which told users their backend could not produce a measurement it produces perfectly well.
-
-The input-side measurements (`input_entropy_shift_bits`, `input_entropy_std_bits`, `prompt_surprisal_excess_bits`) require teacher forcing. On a backend that cannot teacher-force they are either **absent from the record entirely**, or — with `--surrogate` — computed by a small local open-weight model reading the same prompt. In the second case they describe the prompt under that reference model, not the target: their subject is `prompt-only`, so they leave `measurements` for the `prompt_measurements` block (see [Subject](#subject--whose-behaviour-the-number-describes)). `io_correlation_r` needs the same teacher forcing but keeps the target's output response as half its computation, so it stays in `measurements` with subject `mixed`. `hif models` prints, per backend, which measurements degrade this way.
+The input-side measurements (`input_entropy_shift_bits`, `input_entropy_std_bits`, `prompt_surprisal_excess_bits`) require teacher forcing. On a backend that cannot teacher-force they are either **absent from the record entirely**, or — with `--surrogate` — computed by a small local open-weight model reading the same prompt. In the second case they describe the prompt under that reference model, not the target: their subject is `prompt-only`, so they leave `measurements` for the `prompt_measurements` block (see [Subject](#subject--whose-behaviour-the-number-describes)). `hif models` prints, per backend, which measurements degrade this way.
 
 Absent is never zero. A measurement the run produced no evidence for is omitted from `measurements`, because "no evidence" and "measured zero" are different statements. Absent also covers *measured something else*: a quantity whose subject on this backend is the prompt is omitted rather than emitted with a caveat.
 
@@ -154,6 +152,34 @@ still ship in the artifact as evidence; the set is the claims.
 Each row has exactly one name, and it names the quantity in the terms the quantity is computed in. Rows carried a second, coined name until `hif-v3.3` — "Stability", "Sensitivity", "Wager ▲", "Entropy ●", "Shift ◆", "Veer ◈", "Spread ■", "Horizon", "Exposure ◇", "Continuity" — and the coined one is the one that went wrong: "Stability" sat on `input_entropy_std_bits`, a standard deviation, where a *higher* number means *less* stable. A name that inverts the reading direction of its own number is worse than no name. The quantities here have accepted names already — Shannon entropy, Jensen-Shannon divergence, Pearson r, cosine similarity, surprisal — so the key and the name now say the same thing at two registers, and no glossary sits between a reader and a number. Chart glyphs are a display concern and live in `hif/viz/registry.py`.
 
 The Subject column reads `declared` → `under surrogate`: the first value holds when the target's own machinery produced the quantity, the second when the surrogate named by the row's `surrogate_group` stood in. A single value means the subject does not change. See [Subject](#subject--whose-behaviour-the-number-describes).
+
+### Retired in hif-v4
+
+If you have a record, a script, or a chart that names a key not in the table
+above, it is one of these. The key is the only string you have to go on, so
+they are listed by key.
+
+| Retired key | What it measured | Why it went | Read instead |
+|---|---|---|---|
+| `io_correlation_r` | Pearson r between the per-position input entropy series and the per-step output entropy series | Condition 3: half its computation came from a surrogate reading the prompt, the other half from the target, so it was never cleanly about either. On a run with no output steps it published a measured 0.0 correlation against a fabricated series. | `input_entropy_std_bits` and `output_entropy_bits` separately |
+| `output_step_jsd_bits` | Jensen-Shannon divergence between consecutive output distributions | Condition 4: at the default `max_new_tokens` its typical values were inside its own sampling noise | `perturbation_jsd_bits` (a divergence with a controlled comparison) |
+| `output_step_topk_overlap_fraction` | Fraction of top-k tokens shared between consecutive output steps | Condition 2: it moved with `output_step_jsd_bits` and disclosed nothing that row did not | `perturbation_jsd_bits` |
+| `output_entropy_step_delta_bits` | Mean absolute step-to-step change in output entropy | Condition 2: a first difference of `output_entropy_bits`, not an independent quantity | `output_entropy_bits`, plus its per-step trace |
+| `candidate_cluster_entropy_bits` | Entropy over the cluster assignment of each step's candidate cloud | Condition 5: `[cluster] min_cluster_size` and `method` moved it as much as the model did — a configured number reported as a measured one | the `cluster` block under `--diagnostics`, quoted with its settings |
+| `counterfactual_exposure_fraction` | Fraction of steps where a probabilistically accessible alternative diverged in meaning | Condition 5: two thresholds (`min_prob`, `distance_threshold`) were embedded in the fraction | the `exposure` block under `--diagnostics`, quoted with both thresholds |
+| `semantic_centroid_veer_cosine` | Per-step displacement of the probability-weighted candidate-cloud centroid | Condition 6: absent from most of the corpus, because the stage that produces it is off by default | the `semantic_field` block under `--diagnostics` |
+| `branch_pairwise_cosine_similarity` | Mean pairwise cosine similarity across resampled continuations | Condition 5: it read the sampling temperature at least as much as the model | the `trajectory.branch_field` block under `--diagnostics` |
+| `attention_entropy_input_bits` | Entropy of an analysis encoder's attention rows over the prompt | Condition 3: bit-identical across all fifteen corpus models — a fixed encoder reading the prompt is not a measurement of any target | the `attention_capture` block under `--diagnostics` |
+| `attention_entropy_output_bits` | Entropy of an analysis encoder's attention rows over the generated text | Condition 3: same encoder, and what target-dependence it had came from text length | the `attention_capture` block under `--diagnostics` |
+
+Every stage named in the last column still runs and still records its block —
+the cut removed claims, not evidence. What changed is that a configured or
+target-independent quantity no longer appears in `measurements` as though it
+were a reading of the model.
+
+`hif compare` refuses a v3-vs-v4 pair outright rather than intersecting over
+the survivors: a removal is a major version break, and intersecting would
+silently read "we no longer claim this" as "both runs measured this".
 
 ---
 
@@ -592,7 +618,7 @@ Four fields, each computed independently from whatever evidence exists and set t
 
 `n_perturbations` records how many variants contributed. (Two documented-dead optional fields, `temperature_robustness` and `prompt_order_robustness`, were removed in profile schema 0.10.0 — nothing in the pipeline ever populated them.)
 
-These are the quantities that surface as `input_entropy_shift_bits`, `input_entropy_std_bits`, `perturbation_jsd_bits`, and `io_correlation_r` in Part 1 — see there for ranges and absent-vs-zero semantics.
+These are the quantities that surface as `input_entropy_shift_bits`, `input_entropy_std_bits`, and `perturbation_jsd_bits` in Part 1 — see there for ranges and absent-vs-zero semantics.
 
 **History (kept deliberately visible).** This module used to report `input_stability = 1 − mean|Δ volatility|` and `output_stability = 1 − mean JSD`. Both were wrong in the same three ways: they saturated (pinning at exactly 1.0 and destroying resolution in the regime that mattered), the input one divided by `log₂(vocab_size)` so tokenizer metadata leaked into a number presented as behaviour, and `1 − x` hid the measurement behind a score. They are replaced by the measured quantities themselves.
 

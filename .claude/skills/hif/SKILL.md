@@ -139,14 +139,15 @@ Then they edit it — add prompts, add per-row `variants` — and run `hif batch
 - `[perturbation] generators` / `variants_file` → `perturbation_jsd_bits` and
   the input-side pair. A default-set 0.6 and a `reorder`-only 0.6 are
   different findings.
-- `[trajectory] n_branches`, `rollout_steps` → `branch_pairwise_cosine_similarity`.
-  Longer rollouts diverge more; not comparable across different `rollout_steps`.
-- `[exposure] min_prob`, `distance_threshold` → `counterfactual_exposure_fraction`.
-  Lowering either raises the fraction; the pair must be quoted with the number.
 - `[generation] max_new_tokens` → every step-series average. The quietest
   comparability trap.
-- `[embedding] model_name` → every geometric measurement. Cosine values
-  compare only within one encoder.
+- `[embedding] model_name` → `io_cosine_similarity`. Cosine values compare
+  only within one encoder.
+- `[trajectory]` and `[exposure]` → no measurement. Both stages still run and
+  still record their blocks under `--diagnostics`; the rows that reported them
+  (`branch_pairwise_cosine_similarity`, `counterfactual_exposure_fraction`)
+  were cut in hif-v4, the latter because its two thresholds were embedded in
+  the number it reported.
 
 Full reference: `docs/CONFIG.md`. Do not restate it — point to it.
 
