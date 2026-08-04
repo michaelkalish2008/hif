@@ -136,13 +136,28 @@ All six conditions, from docs/MEASUREMENTS.md — this is the acceptance bar, an
    inference to hidden structure.
 2. **Distinct disclosure** — it must disclose a facet no admitted measurement
    already captures, and move independently of them somewhere across contexts.
+3. **About the target** — the number must move when the target model changes.
+   A quantity produced by a fixed reference instrument reading the prompt is
+   bit-identical across targets and fails this by construction.
+4. **Powered at the run's own n** — a statistic whose default sample size
+   cannot distinguish its typical values from zero publishes noise.
+5. **No embedded thresholds** — a fraction of threshold-crossings is a verdict
+   wearing a unit. Report the underlying quantity in its natural unit instead.
+6. **Present where it claims to be** — a row absent from most of the corpus it
+   was designed for is not carrying its weight; either the requirement is
+   declared honestly or the row does not enter.
 
-The second condition rejects most candidates. Precedents: `continuity` was
+Condition 2 rejects most candidates. Precedents: `continuity` was
 `1 − sensitivity` from the same JS divergences; the `wager` aggregate was
 byte-for-byte the `surprise` aggregate; ESS is entropy in different units.
 Each of those was removed, and a new measurement that fails the same test will
 not be admitted. If your quantity is an existing one re-scaled, re-signed, or
 re-averaged, it is not a new measurement.
+
+Conditions 3–6 reject quantities that compute cleanly and disclose something
+new, and are still not readings of the model — the failure mode that removed
+ten rows in hif-v4. Check them against a corpus, not against one run: three of
+the four are only visible across models.
 
 ### 4. Register it — one row
 

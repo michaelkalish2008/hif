@@ -93,7 +93,7 @@ in. Read the `measurement_key` column as the join to `hif schema`.
 | `entropy` | Output entropy (bits) | `output_entropy_bits` | Per-output-step Shannon entropy, in bits (nucleus and raw top-K both drawn) |
 | `wager` | Prompt surprisal excess (bits) | `prompt_surprisal_excess_bits` | Per-prompt-position surprisal excess over entropy — where the model committed and the actual token overrode that commitment |
 
-Five charts were removed in hif-v4 with the measurements they drew (`continuity`, `io_correlation`, `shift`, `spread`, `horizon`, `exposure`). A chart whose measurement is gone recreates the "existed only as a chart" gap hif-v3.1 was created to close, so the charts went with the rows. See `docs/MEASUREMENTS.md` § *Retired in hif-v4* for what each measured and what to read instead.
+Six charts were removed in hif-v4 with the measurements they drew (`continuity`, `io_correlation`, `shift`, `spread`, `horizon`, `exposure`). A chart whose measurement is gone recreates the "existed only as a chart" gap hif-v3.1 was created to close, so the charts went with the rows. See `docs/MEASUREMENTS.md` § *Retired in hif-v4* for what each measured and what to read instead.
 
 **There is no glyph column, and no glyph.** Charts were once headed with one —
 ● ◆ ▲ ■ ◇ — and a symbol set does not extend: adding a measurement means either
@@ -288,6 +288,17 @@ The full pipeline, as orchestrated by `build_profile()` in `hif/profile/builder.
 ---
 
 ## Multimodal notes (M1)
+
+> **Experimental.** The image path — the `hf-vlm`/`openai-vlm` backends,
+> `hif profile --input`, image rows in a batch workload, the `image_grid`
+> perturbation family, `hif validate-model`, and the `input_part_map` /
+> `region_sensitivity` blocks — is not covered by the guarantees the text path
+> carries. The Significance Gate in [MEASUREMENTS.md](MEASUREMENTS.md) was
+> applied to the text measurements; no equivalent pass has been made over the
+> image-side quantities, and `SIGNAL_SET_VERSION` does not version them. Treat
+> image records as provisional and do not compare them across hif versions.
+> The code below is accurate and the tests hold; what is deferred is the
+> decision about which image-side quantities earn a place in the set.
 
 The multimodal path was built against a design/risk spec (`MULTIMODAL.md`)
 that lives in a private monorepo and is not part of this repository — part of

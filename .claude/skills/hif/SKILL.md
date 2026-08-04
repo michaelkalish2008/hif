@@ -144,7 +144,10 @@ Then they edit it — add prompts, add per-row `variants` — and run `hif batch
 - `[embedding] model_name` → `io_cosine_similarity`. Cosine values compare
   only within one encoder.
 - `[trajectory]` and `[exposure]` → no measurement. Both stages still run and
-  still record their blocks under `--diagnostics`; the rows that reported them
+  still record their blocks — trajectory on any backend that can teacher-force,
+  exposure by default and off only under `--lite`. Neither is behind
+  `--diagnostics`, which sets exactly `[attention] enabled` and
+  `[semantic_field] enabled`. The rows that reported them
   (`branch_pairwise_cosine_similarity`, `counterfactual_exposure_fraction`)
   were cut in hif-v4, the latter because its two thresholds were embedded in
   the number it reported.

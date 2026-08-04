@@ -165,10 +165,10 @@ they are listed by key.
 | `output_step_jsd_bits` | Jensen-Shannon divergence between consecutive output distributions | Condition 4: at the default `max_new_tokens` its typical values were inside its own sampling noise | `perturbation_jsd_bits` (a divergence with a controlled comparison) |
 | `output_step_topk_overlap_fraction` | Fraction of top-k tokens shared between consecutive output steps | Condition 2: it moved with `output_step_jsd_bits` and disclosed nothing that row did not | `perturbation_jsd_bits` |
 | `output_entropy_step_delta_bits` | Mean absolute step-to-step change in output entropy | Condition 2: a first difference of `output_entropy_bits`, not an independent quantity | `output_entropy_bits`, plus its per-step trace |
-| `candidate_cluster_entropy_bits` | Entropy over the cluster assignment of each step's candidate cloud | Condition 5: `[cluster] min_cluster_size` and `method` moved it as much as the model did — a configured number reported as a measured one | the `cluster` block under `--diagnostics`, quoted with its settings |
-| `counterfactual_exposure_fraction` | Fraction of steps where a probabilistically accessible alternative diverged in meaning | Condition 5: two thresholds (`min_prob`, `distance_threshold`) were embedded in the fraction | the `exposure` block under `--diagnostics`, quoted with both thresholds |
+| `candidate_cluster_entropy_bits` | Entropy over the cluster assignment of each step's candidate cloud | Condition 5: `[cluster] min_cluster_size` and `method` moved it as much as the model did — a configured number reported as a measured one | the per-step `metrics.semantic[].cluster_count` and `.cluster_entropy` fields, recorded by default (off under `--lite`), quoted with the `[cluster]` settings |
+| `counterfactual_exposure_fraction` | Fraction of steps where a probabilistically accessible alternative diverged in meaning | Condition 5: two thresholds (`min_prob`, `distance_threshold`) were embedded in the fraction | the `exposure` block, recorded by default (off under `--lite`), quoted with both thresholds |
 | `semantic_centroid_veer_cosine` | Per-step displacement of the probability-weighted candidate-cloud centroid | Condition 6: absent from most of the corpus, because the stage that produces it is off by default | the `semantic_field` block under `--diagnostics` |
-| `branch_pairwise_cosine_similarity` | Mean pairwise cosine similarity across resampled continuations | Condition 5: it read the sampling temperature at least as much as the model | the `trajectory.branch_field` block under `--diagnostics` |
+| `branch_pairwise_cosine_similarity` | Mean pairwise cosine similarity across resampled continuations | Condition 5: it read the sampling temperature at least as much as the model | the `trajectory.branch_field` block, recorded on any backend that can teacher-force, quoted with `[generation] temperature` |
 | `attention_entropy_input_bits` | Entropy of an analysis encoder's attention rows over the prompt | Condition 3: bit-identical across all fifteen corpus models — a fixed encoder reading the prompt is not a measurement of any target | the `attention_capture` block under `--diagnostics` |
 | `attention_entropy_output_bits` | Entropy of an analysis encoder's attention rows over the generated text | Condition 3: same encoder, and what target-dependence it had came from text length | the `attention_capture` block under `--diagnostics` |
 
@@ -176,6 +176,12 @@ Every stage named in the last column still runs and still records its block —
 the cut removed claims, not evidence. What changed is that a configured or
 target-independent quantity no longer appears in `measurements` as though it
 were a reading of the model.
+
+Note what each block costs. Only `semantic_field` and `attention_capture` are
+behind `--diagnostics`; `exposure` and the per-step semantic metrics are on by
+default and leave under `--lite`, and `trajectory` runs on any backend that can
+teacher-force. So three of the four surviving blocks need no flag at all —
+passing `--diagnostics` to reach them buys the two stages you did not ask for.
 
 `hif compare` refuses a v3-vs-v4 pair outright rather than intersecting over
 the survivors: a removal is a major version break, and intersecting would

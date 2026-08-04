@@ -101,8 +101,11 @@ carrying the credential.
 ## `[perturbation]` — what `perturbation_jsd_bits` compares against
 
 Feeds `perturbation_jsd_bits`, `input_entropy_shift_bits`,
-`input_entropy_std_bits` — three of the six measurements, which is why this
-section is the one most worth reading before comparing two records.
+`input_entropy_std_bits`, and `io_cosine_similarity` — four of the six
+measurements, which is why this section is the one most worth reading before
+comparing two records. The fourth is easy to miss: `io_cosine_similarity`
+needs at least one variant continuation to compare against, so a run with
+`n_variants = 0` drops it from the record along with the other three.
 
 | key | default | effect |
 | --- | --- | --- |
@@ -201,7 +204,8 @@ n_variants = 4                             # 8 variants, 8 extra generation pass
 
 hif-v4 publishes no measurement from this stage: `branch_pairwise_cosine_similarity`
 was cut. The stage still runs and still records `trajectory.branch_field` as
-evidence under `--diagnostics`, and these keys still shape it.
+evidence — on any backend that can teacher-force, with no flag; `--diagnostics`
+has no bearing on it — and these keys still shape it.
 
 | key | default | effect |
 | --- | --- | --- |
@@ -231,7 +235,8 @@ rollout_steps = 16
 hif-v4 publishes no measurement from this stage: `counterfactual_exposure_fraction`
 was cut, in part because the two thresholds below were embedded in the number
 it reported — a configured quantity presented as a measured one. The stage
-still runs and records `profile.exposure` as evidence under `--diagnostics`.
+still runs and records `profile.exposure` as evidence, on by default and off
+only under `--lite`; `--diagnostics` has no bearing on it.
 
 | key | default | effect |
 | --- | --- | --- |
