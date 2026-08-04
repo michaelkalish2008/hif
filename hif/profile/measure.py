@@ -34,6 +34,23 @@ from hif.profile.registry import (
 )
 
 
+def _field(obj, name):
+    """Attribute or key — whichever this profile carries.
+
+    `exposure` and `semantic_field` are typed `Optional[Any]` in the schema, so
+    a profile fresh from the builder holds analysis OBJECTS while one
+    rehydrated from JSON holds plain DICTS. Every read here used getattr, which
+    silently answers None on a dict — so exposure and veer vanished from every
+    profile that had been round-tripped through a file, while the same profile
+    emitted them when measured in-process. Seven models' published records
+    were missing both, and the absence looked exactly like an honest
+    "not measurable".
+    """
+    if isinstance(obj, dict):
+        return obj.get(name)
+    return getattr(obj, name, None)
+
+
 def _all_measured_values(p) -> dict[str, float]:
     """Every value this profile produced, before the subject split.
 
@@ -132,17 +149,17 @@ def _all_measured_values(p) -> dict[str, float]:
     sf = getattr(p, "semantic_field", None)
     if (
         sf is not None
-        and getattr(sf, "mean_veer", None) is not None
+        and _field(sf, "mean_veer") is not None
         and not point_mass_cloud
     ):
-        out["semantic_centroid_veer_cosine"] = sf.mean_veer
+        out["semantic_centroid_veer_cosine"] = _field(sf, "mean_veer")
 
     # --- counterfactual exposure: present only when the divergence analysis
     # ran and found accessible alternatives. A point mass has none by
     # construction, which is absence of evidence, not a measured zero.
     exp = getattr(p, "exposure", None)
-    if exp is not None and getattr(exp, "candidates", None) and not point_mass_cloud:
-        out["counterfactual_exposure_fraction"] = exp.exposure
+    if exp is not None and _field(exp, "candidates") and not point_mass_cloud:
+        out["counterfactual_exposure_fraction"] = _field(exp, "exposure")
 
     # --- trajectory continuity, in its natural unit (mean pairwise cosine
     # between branch embeddings). Computed by the trajectory analysis; was

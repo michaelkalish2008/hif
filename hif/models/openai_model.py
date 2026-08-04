@@ -209,9 +209,19 @@ class OpenAIModel(Model):
 
         logger.info("OpenAI generate: model=%s tokens=%d top_logprobs=%d", self.name, max_new_tokens, effective_k)
 
-        # Use per-model temperature override if set; otherwise default to 0 for determinism.
-        # DeepSeek returns -9999 sentinel logprobs at temperature=0 — set temperature=1 in its ModelConfig.
-        temperature = self._config.temperature if self._config.temperature is not None else 0.0
+        # Per-model override wins; otherwise the default depends on the provider.
+        # OpenAI gets 0 for determinism. DeepSeek gets 1: at temperature=0 it
+        # returns -9999 sentinel logprobs for every non-selected candidate, so
+        # the "distribution" is a point mass wearing twenty entries. The old
+        # comment here told the caller to set temperature=1 in ModelConfig —
+        # advice at the exact place with the power to just do it. The regen
+        # pipeline never read the comment, profiled two DeepSeek models at
+        # temperature=0, and published output_entropy_bits = 0.0 for all
+        # sixteen profiles.
+        temperature = self._config.temperature
+        if temperature is None:
+            is_deepseek = bool(self._config.base_url and "deepseek" in self._config.base_url)
+            temperature = 1.0 if is_deepseek else 0.0
 
         extra = self._config.extra_body or None
         try:
@@ -262,6 +272,15 @@ class OpenAIModel(Model):
 
             # Normalise to probabilities (top_logprobs may not sum to 1.0)
             raw = [(e.token, e.logprob) for e in top_entries]
+            # Sentinel filter. Some providers fill the non-selected entries
+            # with logprob ≈ -9999 instead of refusing the request. Softmaxed,
+            # that is a point mass with a straight face: entropy 0.0, JSD 0.0,
+            # all "measured" — and it walks straight past the selected-only
+            # guard because the topk LIST has twenty entries. Dropping the
+            # sentinels leaves the entries the provider actually scored; if
+            # only the selected token survives, the step is selected-only and
+            # the existing degeneracy machinery reports everything absent.
+            raw = [(t, lp) for t, lp in raw if lp > -9000.0]
             # Ensure selected token is present
             if not any(t == selected_str for t, _ in raw):
                 raw.insert(0, (selected_str, selected_lp))

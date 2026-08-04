@@ -135,7 +135,15 @@ def generate(profile, output_path: Path, formats: list[str] = ["html"]) -> dict[
                     title=dict(text="Generation step (token chosen)")),
         yaxis=dict(title="Semantic distance", rangemode="tozero"),
         yaxis2=dict(title="Probability gap", rangemode="tozero"),
-        legend=dict(orientation="h", x=0.5, xanchor="center", y=-0.14, yanchor="top"),
-        height=800, margin=dict(t=120, b=120, l=80, r=20),
+        # The legend sits ABOVE the plots, not below them. Below, it was pinned
+        # at a fixed paper y while the x-axis title's position is dynamic:
+        # `automargin` pushes that title down by however tall the -60° rotated
+        # token labels happen to be, so on a run with long tokens the title
+        # landed on top of the legend text. Anchoring both to the same edge is
+        # the only way a fixed offset can be safe, and the top edge has a known
+        # height (the title block) where the bottom does not.
+        legend=dict(orientation="h", x=0.5, xanchor="center",
+                    y=1.045, yanchor="bottom"),
+        height=820, margin=dict(t=150, b=120, l=80, r=20),
     ))
     return save_fig(fig, output_path, formats, png_size=(1000, 680))

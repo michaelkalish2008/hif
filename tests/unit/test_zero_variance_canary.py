@@ -225,3 +225,36 @@ def test_every_row_needing_a_distribution_pair_is_absent_without_one():
     assert pair_rows, "no row declares needs_distribution_pair — the guard has nothing to enforce"
     assert "io_correlation_r" in pair_rows
     assert "perturbation_jsd_bits" in pair_rows
+
+
+def test_sentinel_logprobs_do_not_become_a_measured_point_mass():
+    """-9999 filler entries are not a distribution.
+
+    DeepSeek at temperature=0 fills every non-selected top_logprob with a
+    ~-9999 sentinel. Softmaxed, that is prob 1.0 / 0.0 / … — entropy 0.0 by
+    construction — and it walks past the selected-only guard because the topk
+    LIST has twenty entries. Sixteen published profiles carried
+    output_entropy_bits = 0.0 this way. After sentinel filtering the step
+    keeps only the entries the provider actually scored.
+    """
+    raw = [("a", -0.01), ("b", -9999.0), ("c", -9999.0)]
+    kept = [(t, lp) for t, lp in raw if lp > -9000.0]
+    assert kept == [("a", -0.01)]  # selected-only → degeneracy machinery applies
+
+
+def test_rehydrated_dict_blocks_still_yield_their_measurements():
+    """A profile read back from JSON measures the same as one in memory.
+
+    `exposure` and `semantic_field` are `Optional[Any]` in the schema, so they
+    rehydrate as dicts. getattr on a dict silently answers None, which made
+    exposure and veer vanish from every round-tripped profile — absence
+    fabricated by typing, the mirror image of a fabricated zero.
+    """
+    from hif.profile.measure import _field
+
+    class Obj:
+        mean_veer = 0.25
+
+    assert _field(Obj(), "mean_veer") == 0.25
+    assert _field({"mean_veer": 0.25}, "mean_veer") == 0.25
+    assert _field({}, "mean_veer") is None
