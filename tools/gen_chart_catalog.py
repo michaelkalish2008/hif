@@ -8,13 +8,22 @@ on the site would be a second source of truth for the chart set, which is the
 same failure the measurement reference already had once.
 
 Emits, per signal: the registry id (which is also the filename `--charts`
-writes), the chart label, the kind, and the measurement key it joins to, if
-any. Nothing here is display copy; the site supplies its own framing.
+writes), the chart label, a SHORT display label, the kind, and the measurement
+key it joins to, if any.
+
+The short label exists because the id is not safe to display. Ids are the
+retired shorthand — `stability`, `wager`, `veer` — kept as stable internal
+identifiers and artifact filenames, exactly as hif/viz/registry.py keeps them;
+showing one to a reader reintroduces the vocabulary that was dropped for
+naming a standard deviation "Stability". It is derived from the label, never
+coined: the unit parenthetical is trimmed only when the result stays unique
+across the set, so `Prompt surprisal excess (bits)` and `(trace)` keep theirs.
 """
 
 from __future__ import annotations
 
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -30,7 +39,21 @@ DEFAULT_OUT = ROOT / "docs" / "chart-catalog.json"
 NEEDS_DIAGNOSTICS = {"spread", "horizon"}
 
 
+def _short_labels() -> dict[str, str]:
+    """Label with the unit parenthetical trimmed — but only where it stays
+    unambiguous. Two signals differ *only* by that suffix (`Prompt surprisal
+    excess (bits)` vs `(trace)`), and collapsing them would put two identical
+    chips side by side."""
+    full = {s.id: s.label for s in SIGNALS}
+    trimmed = {i: re.sub(r"\s*\([^)]*\)$", "", l) for i, l in full.items()}
+    counts: dict[str, int] = {}
+    for t in trimmed.values():
+        counts[t] = counts.get(t, 0) + 1
+    return {i: (t if counts[t] == 1 else full[i]) for i, t in trimmed.items()}
+
+
 def build(sample_model: str | None = None, sample_tokens: int | None = None) -> dict:
+    short = _short_labels()
     return {
         "generated_by": "tools/gen_chart_catalog.py",
         "command": 'hif profile <model> "<prompt>" --charts --output-dir out',
@@ -42,6 +65,7 @@ def build(sample_model: str | None = None, sample_tokens: int | None = None) -> 
             {
                 "id": s.id,
                 "label": s.label,
+                "short": short[s.id],
                 "kind": s.kind,
                 "measurement_key": getattr(s, "measurement_key", None),
                 "needs_diagnostics": s.id in NEEDS_DIAGNOSTICS,

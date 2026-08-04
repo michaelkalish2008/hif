@@ -130,20 +130,23 @@ def generate(profile, output_path: Path, formats: list[str] = ["html"]) -> dict[
             "measures sensitivity to sampling chance, NOT factuality"),
         xaxis=dict(categoryorder="array", categoryarray=x_labels, tickangle=-60,
                    tickfont=dict(size=9, color=TEXT_SEC), automargin=True),
+        # No x-axis title. It read "Generation step (token chosen)", which the
+        # tick labels already say literally — they are formatted `12: ' token'`.
+        # Two things wanted that space (the title and the legend), their heights
+        # both depend on the run's tokens, and a fixed offset for either one
+        # cannot clear the other. Dropping the redundant one removes the
+        # conflict instead of tuning around it, and `automargin` can stay on so
+        # long labels never clip.
         xaxis2=dict(categoryorder="array", categoryarray=x_labels, tickangle=-60,
-                    tickfont=dict(size=9, color=TEXT_SEC), automargin=True,
-                    title=dict(text="Generation step (token chosen)")),
+                    tickfont=dict(size=9, color=TEXT_SEC), automargin=True),
         yaxis=dict(title="Semantic distance", rangemode="tozero"),
         yaxis2=dict(title="Probability gap", rangemode="tozero"),
-        # The legend sits ABOVE the plots, not below them. Below, it was pinned
-        # at a fixed paper y while the x-axis title's position is dynamic:
-        # `automargin` pushes that title down by however tall the -60° rotated
-        # token labels happen to be, so on a run with long tokens the title
-        # landed on top of the legend text. Anchoring both to the same edge is
-        # the only way a fixed offset can be safe, and the top edge has a known
-        # height (the title block) where the bottom does not.
+        # The only thing in the bottom margin now, so automargin's variable
+        # label height is free to push it down without hitting anything.
         legend=dict(orientation="h", x=0.5, xanchor="center",
-                    y=1.045, yanchor="bottom"),
-        height=820, margin=dict(t=150, b=120, l=80, r=20),
+                    y=-0.16, yanchor="top"),
+        # t=170: the subtitle wraps to three lines and the upper subplot's own
+        # title sits directly beneath it.
+        height=840, margin=dict(t=170, b=140, l=80, r=20),
     ))
     return save_fig(fig, output_path, formats, png_size=(1000, 680))

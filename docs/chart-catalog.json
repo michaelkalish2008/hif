@@ -9,6 +9,7 @@
     {
       "id": "breadth",
       "label": "Effective support size",
+      "short": "Effective support size",
       "kind": "aggregate",
       "measurement_key": null,
       "needs_diagnostics": false,
@@ -17,6 +18,7 @@
     {
       "id": "continuity",
       "label": "Branch pairwise cosine similarity",
+      "short": "Branch pairwise cosine similarity",
       "kind": "aggregate",
       "measurement_key": "branch_pairwise_cosine_similarity",
       "needs_diagnostics": false,
@@ -25,6 +27,7 @@
     {
       "id": "io_correlation",
       "label": "Input/output correlation (r)",
+      "short": "Input/output correlation",
       "kind": "aggregate",
       "measurement_key": "io_correlation_r",
       "needs_diagnostics": false,
@@ -33,6 +36,7 @@
     {
       "id": "sensitivity",
       "label": "Perturbation JSD (bits)",
+      "short": "Perturbation JSD",
       "kind": "aggregate",
       "measurement_key": "perturbation_jsd_bits",
       "needs_diagnostics": false,
@@ -41,6 +45,7 @@
     {
       "id": "similarity",
       "label": "Input/output cosine similarity",
+      "short": "Input/output cosine similarity",
       "kind": "aggregate",
       "measurement_key": "io_cosine_similarity",
       "needs_diagnostics": false,
@@ -49,6 +54,7 @@
     {
       "id": "stability",
       "label": "Input entropy trace",
+      "short": "Input entropy trace",
       "kind": "aggregate",
       "measurement_key": "input_entropy_std_bits",
       "needs_diagnostics": false,
@@ -57,6 +63,7 @@
     {
       "id": "surprise",
       "label": "Prompt surprisal excess (trace)",
+      "short": "Prompt surprisal excess (trace)",
       "kind": "aggregate",
       "measurement_key": null,
       "needs_diagnostics": false,
@@ -65,6 +72,7 @@
     {
       "id": "entropy",
       "label": "Output entropy (bits)",
+      "short": "Output entropy",
       "kind": "reading",
       "measurement_key": "output_entropy_bits",
       "needs_diagnostics": false,
@@ -73,6 +81,7 @@
     {
       "id": "exposure",
       "label": "Counterfactual exposure (fraction)",
+      "short": "Counterfactual exposure",
       "kind": "reading",
       "measurement_key": "counterfactual_exposure_fraction",
       "needs_diagnostics": false,
@@ -81,6 +90,7 @@
     {
       "id": "horizon",
       "label": "Input attention-row entropy (bits)",
+      "short": "Input attention-row entropy",
       "kind": "reading",
       "measurement_key": "attention_entropy_input_bits",
       "needs_diagnostics": true,
@@ -89,6 +99,7 @@
     {
       "id": "shift",
       "label": "Output step-to-step JSD (bits)",
+      "short": "Output step-to-step JSD",
       "kind": "reading",
       "measurement_key": "output_step_jsd_bits",
       "needs_diagnostics": false,
@@ -97,6 +108,7 @@
     {
       "id": "spread",
       "label": "Output attention-row entropy (bits)",
+      "short": "Output attention-row entropy",
       "kind": "reading",
       "measurement_key": "attention_entropy_output_bits",
       "needs_diagnostics": true,
@@ -105,6 +117,7 @@
     {
       "id": "wager",
       "label": "Prompt surprisal excess (bits)",
+      "short": "Prompt surprisal excess (bits)",
       "kind": "reading",
       "measurement_key": "prompt_surprisal_excess_bits",
       "needs_diagnostics": false,
