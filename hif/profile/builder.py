@@ -44,6 +44,22 @@ from hif.utils.seeding import seed_everything
 
 logger = get_logger(__name__)
 
+# Warnings that state a fact about the RUN, not about a case. `validate-model`
+# and `batch` call the builder once per case, so a per-call logger.warning
+# prints the same sentence eleven or a hundred times and buries anything that
+# is actually about one case. Keyed by what makes the fact distinct, so two
+# models in one process each get their own line.
+#
+# Same pattern as _warned_top_k_combos in hif/hourglass/output_side.py.
+_warned_once: set[tuple] = set()
+
+
+def _warn_once(key: tuple, message: str, *args) -> None:
+    if key in _warned_once:
+        return
+    _warned_once.add(key)
+    logger.warning(message, *args)
+
 
 # ---------------------------------------------------------------------------
 # Findings generator
@@ -109,10 +125,14 @@ def _zeroed_input_analysis(
     """
     import math
 
-    logger.warning(
-        "No teacher-forcing and no surrogate — input-side metrics zeroed for %s. "
-        "Pass surrogate_model= to compute hermeneutic input-side analysis.",
-        model.name,
+    _warn_once(
+        ("no-input-side", model.name),
+        "%s cannot teacher-force and no surrogate was given, so nothing read "
+        "the prompt: the input-side measurements are ABSENT from this run's "
+        "records, not zero. Pass surrogate_model= to have a small local model "
+        "read the prompt instead — those numbers describe the prompt rather "
+        "than %s (docs/MEASUREMENTS.md § Subject).",
+        model.name, model.name,
     )
     max_entropy = math.log2(model.vocab_size) if model.vocab_size > 0 else 16.0
     return InputSideAnalysis(
@@ -893,7 +913,8 @@ def _build_profile_mm(
                 "in M1 (docs/ARCHITECTURE.md § Multimodal notes). Set "
                 "perturbation.generators=[] for multimodal profiles."
             )
-        logger.warning(
+        _warn_once(
+            ("mm-generators", tuple(config.perturbation.generators)),
             "Ignoring default text perturbation generators %s on multimodal "
             "input — media perturbation families %s will run instead.",
             config.perturbation.generators,

@@ -105,7 +105,13 @@ def validate_region_sensitivity(
 
     top2_rate = (sum(1 for r in per_image if r.in_top2) / len(per_image)) if per_image else 0.0
     return ValidationResult(
-        model_id=getattr(model, "model_id", str(model)),
+        # `.name` is what every Model exposes and what the rest of hif prints.
+        # This asked for `model_id`, which no backend defines, so the getattr
+        # always fell through to str(model) and the report was headed
+        # "<hif.models.openai_vlm.OpenAIVLMModel object at 0x10ba93500>" — a
+        # memory address where the model name belongs, in the one artifact
+        # whose whole purpose is to say which model was validated.
+        model_id=getattr(model, "name", None) or getattr(model, "model_id", None) or str(model),
         grid=grid,
         threshold=threshold,
         top2_rate=top2_rate,
