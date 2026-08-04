@@ -125,7 +125,7 @@ Four readings:
 3. **Resonance comparison** — which continuation tokens echo the load-bearing structure of the input
 4. **Joint trajectory trace** — DistilBERT run on `[prompt + continuation[:k]]` at `trajectory_interval` checkpoints, tracking which prompt tokens hold or release cross-attention as the continuation grows
 
-No concatenation in readings 1–3, no joint forward pass, and the generation process is never observed. The stored result (`BehavioralRangeProfile.attention_capture`, a `TextAttentionAnalysis`) is also the substrate the `spread` and `horizon` readings derive from — so those two readings describe an independent reader's attention over the texts, not the generating model's own attention.
+No concatenation in readings 1–3, no joint forward pass, and the generation process is never observed. The stored result (`BehavioralRangeProfile.attention_capture`, a `TextAttentionAnalysis`) once backed the `spread` and `horizon` readings; hif-v4 cut both, precisely because they described an independent reader's attention over the texts rather than the generating model's own. The block itself still ships under `--diagnostics`.
 
 ---
 

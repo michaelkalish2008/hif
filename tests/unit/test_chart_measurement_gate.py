@@ -176,3 +176,41 @@ def test_the_gate_places_a_placeholder_rather_than_drawing(tmp_path):
     written = entropy.generate(profile, tmp_path / "entropy", formats=["html"])
     html = list(written.values())[0].read_text()
     assert "did not publish" in html, "generate() drew the chart anyway"
+
+
+def test_the_diagnostic_blocks_the_cut_relies_on_still_reach_the_artifact():
+    """The compensating claim behind hif-v4, asserted rather than promised.
+
+    `hif/profile/registry.py` justifies removing ten rows by saying the
+    stages behind them still record their blocks as raw material — "the SET
+    is the claims; the artifact is the evidence." Nothing tested it. A later
+    cleanup that removed the analysis stages outright would have passed the
+    whole suite while quietly falsifying the argument the cut rests on.
+    """
+    import json
+
+    # contract_config already runs the exposure stage (ExposureConfig
+    # enabled=True), which is the point: these blocks are produced by the
+    # ordinary configured run, not by a special path.
+    profile = _profile(alpha_model(), "hf")
+
+    # Whatever the run populated in memory must survive into its own JSON.
+    dumped = json.loads(profile.model_dump_json())
+    populated = [
+        b for b in ("exposure", "attention_capture", "semantic_field")
+        if getattr(profile, b, None) is not None
+    ]
+    # Guard against the assertion below going vacuous: if a future change
+    # stops the stages populating anything, this test must fail loudly rather
+    # than silently checking nothing.
+    assert populated, (
+        "no diagnostic block was populated, so the artifact carries no "
+        "evidence for the ten rows hif-v4 cut — the justification for the "
+        "cut no longer holds"
+    )
+    for block in populated:
+        assert dumped.get(block) is not None, (
+            f"{block} was populated on the profile but is absent from the "
+            f"artifact — the cut's claim that the evidence still ships "
+            f"does not hold for this block"
+        )
