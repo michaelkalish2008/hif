@@ -221,9 +221,6 @@ def test_surrogate_run_moves_prompt_only_quantities_out_of_measurements():
     assert "input_entropy_shift_bits" in prompt
     # The target's own output response is unaffected by an input surrogate.
     assert "perturbation_jsd_bits" in target
-    # Mixed, not prompt-only: the target's response is half the computation.
-    assert "io_correlation_r" in target
-    assert run_subjects(p)["io_correlation_r"] == "mixed"
 
 
 def test_full_access_run_keeps_input_side_quantities_as_measurements():
@@ -238,31 +235,26 @@ def test_full_access_run_keeps_input_side_quantities_as_measurements():
     assert prompt_measurement_block(p) is None
 
 
-def test_attention_input_entropy_is_prompt_only_even_on_a_full_access_backend():
-    """The one row no access tier can make target-side.
+def test_the_attention_block_never_leaks_into_measurements():
+    """attention_capture is artifact evidence, not a measurement.
 
-    hif/analysis/attention.py runs a bidirectional encoder over text as an
-    object — "This is NOT the model under analysis". The output-side row reads
-    the target's actual generated continuation, so it moves when the target
-    does; the input-side row reads the PROMPT, so it is a function of prompt
-    text and encoder weights alone and cannot see the target at all.
+    The two attention-row measurements were cut in hif-v4: the numbers come
+    from a fixed bidirectional encoder reading text, the input-side one was
+    bit-identical across all fifteen corpus models by construction, and a
+    measurement set for models should not carry a quantity that is never
+    about one. The capture stage still runs under --diagnostics and its block
+    still ships in the artifact — as evidence, with no key in either
+    measurement dict. This pins that: a profile with a populated attention
+    block emits nothing attention-derived.
     """
     from tests.unit.test_attention import _make_attention_data
 
-    p = _make_profile()  # no surrogate: a full-access run
+    p = _make_profile()
     p.attention_capture = _make_attention_data()
 
-    target = measurements(p)
-    prompt = prompt_measurements(p)
-    assert "attention_entropy_input_bits" in prompt
-    assert "attention_entropy_input_bits" not in target
-    assert "attention_entropy_output_bits" in target
-
-    block = prompt_measurement_block(p)
-    assert (
-        block["reference_models"]["attention_entropy_input_bits"]
-        == "distilbert-base-uncased"
-    )
+    for out in (measurements(p), prompt_measurements(p)):
+        leaked = [k for k in out if "attention" in k]
+        assert not leaked, f"attention-derived keys leaked into the set: {leaked}"
 
 
 def _record(p):
@@ -334,14 +326,20 @@ def test_schema_text_mode_shows_the_subject_and_its_legend():
         assert value in flat
 
 
-def test_models_names_the_measurements_that_are_never_about_the_target():
-    """`hif models` must say which quantities no backend can make target-side,
-    and which degrade to prompt-only when a surrogate stands in."""
+def test_models_names_the_surrogate_degradation_and_nothing_is_never_about_the_target():
+    """`hif models` must say which quantities degrade to prompt-only under a
+    surrogate — and, since hif-v4, NO row may be prompt-only on every backend.
+
+    The one row that was (`attention_entropy_input_bits`, a fixed encoder
+    reading the prompt, bit-identical across all fifteen corpus models) was
+    cut precisely because a measurement set for models should not carry a
+    quantity that is never about one. The line announcing that class should
+    therefore never print; if it does, such a row has been reintroduced.
+    """
     result = runner.invoke(app, ["models", "--backend", "anthropic"])
     assert result.exit_code == 0
     flat = " ".join(result.output.split())
-    assert "never about the target" in flat
-    assert "attention_entropy_input_bits" in flat
+    assert "never about the target" not in flat
     assert "prompt-only under --surrogate" in flat
     assert "prompt_measurements" in flat
 
@@ -351,5 +349,6 @@ def test_models_does_not_promise_surrogate_degradation_on_a_teacher_forcing_back
     assert result.exit_code == 0
     flat = " ".join(result.output.split())
     assert "prompt-only under --surrogate" not in flat
-    # The unconditional case still applies on [F].
-    assert "never about the target" in flat
+    # And no row may be prompt-only unconditionally (see hif-v4 history), so
+    # the line announcing that class must not print here either.
+    assert "never about the target" not in flat

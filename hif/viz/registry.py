@@ -4,11 +4,13 @@ Single source of truth for the viz engine: which signals exist, their identity
 (id/label/kind/family), the generator that draws them, and the
 availability predicate that decides whether *this* profile has the backing data.
 
-Insertion order is the v1 ordered set, so the engine renders signals in a
-stable, taxonomy-faithful order:
-  aggregates: stability, breadth, surprise, io_correlation, sensitivity,
-              continuity, similarity
-  readings:   entropy, shift, wager, spread, horizon, exposure
+Insertion order is stable and taxonomy-faithful:
+  aggregates: stability, breadth, surprise, sensitivity, similarity
+  readings:   entropy, wager
+
+Charts for the measurements cut in hif-v4 were cut with them: a chart whose
+measurement is gone recreates the "existed only as a chart" gap that hif-v3.1
+was created to close.
 
 FIDELITY CONTRACT: one visualization per signal, gated on data availability.
 No signal is ever rendered from another signal's data, and no absent signal is
@@ -48,8 +50,7 @@ from typing import Callable
 
 from hif.profile.registry import MEASUREMENT_BY_KEY
 from hif.viz.signals import (
-    breadth, continuity, entropy, exposure, horizon, io_correlation,
-    sensitivity, shift, similarity, spread, stability, surprise, wager,
+    breadth, entropy, sensitivity, similarity, stability, surprise, wager,
 )
 
 
@@ -89,16 +90,10 @@ _SPEC = [
     # wager reading; wager is the designated chart for the measurement, so
     # only wager carries the key (one measurement must resolve to one chart).
     ("surprise",       "aggregate", surprise,       None),
-    ("io_correlation", "aggregate", io_correlation, "io_correlation_r"),
     ("sensitivity",    "aggregate", sensitivity,    "perturbation_jsd_bits"),
-    ("continuity",     "aggregate", continuity,     "branch_pairwise_cosine_similarity"),
     ("similarity",     "aggregate", similarity,     "io_cosine_similarity"),
     ("entropy",        "reading",   entropy,        "output_entropy_bits"),
-    ("shift",          "reading",   shift,          "output_step_jsd_bits"),
     ("wager",          "reading",   wager,          "prompt_surprisal_excess_bits"),
-    ("spread",         "reading",   spread,         "attention_entropy_output_bits"),
-    ("horizon",        "reading",   horizon,        "attention_entropy_input_bits"),
-    ("exposure",       "reading",   exposure,       "counterfactual_exposure_fraction"),
 ]
 
 SIGNALS: list[SignalViz] = [
@@ -135,17 +130,6 @@ NEAREST_CHART: dict[str, str] = {
     # Mean of the same per-variant entropy-shift series whose spread the
     # stability chart's measurement summarises.
     "input_entropy_shift_bits": "stability",
-    # The per-step entropy trace the deltas are differences of.
-    "output_entropy_step_delta_bits": "entropy",
-    # Companion measurement: the same consecutive-step transitions, and the
-    # resolution limit the Shift chart must be read with.
-    "output_step_topk_overlap_fraction": "shift",
-    # The candidate cloud's width per step; the cluster-mass entropy has no
-    # chart of its own.
-    "candidate_cluster_entropy_bits": "breadth",
-    # Veer is the geometric twin of Shift (same transitions, embedding space
-    # instead of vocabulary space); no chart draws Veer itself.
-    "semantic_centroid_veer_cosine": "shift",
 }
 
 

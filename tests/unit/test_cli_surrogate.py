@@ -102,9 +102,6 @@ def test_measurement_table_separates_prompt_only_quantities(monkeypatch, tmp_pat
     assert "Prompt measurements — not about this model" in flat
     assert "Prompt surprisal excess (bits)" in flat
     assert "unsloth/Llama-3.2-1B" in flat
-    # io_correlation_r is mixed, not prompt-only: the target's output response
-    # is half of it, so it stays in the model's table, marked.
-    assert "Input/output correlation (r) * †" in flat
     # Output-side measurements are the target model's own — never starred here.
     assert "Output entropy (bits) *" not in flat
 

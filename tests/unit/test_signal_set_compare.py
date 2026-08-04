@@ -40,17 +40,16 @@ def test_signal_set_family_extracts_major():
 
 
 def test_current_version_has_a_wellformed_family():
-    # The current set is hif-v3: moving the prompt-only quantities out of
-    # `measurements` REMOVES keys from the set, so it is deliberately not in
-    # the hif-v2 family — intersecting a hif-v2 artifact with a hif-v3 one
-    # would silently compare a fact about the target against a fact about a
-    # reference model. (hif-v2 itself broke from hif-v1 over normalized/levels.)
+    # The current set is hif-v4: the cut-to-core REMOVED ten keys, and a
+    # removal is always a family break — intersecting across it would silently
+    # treat "we no longer claim this" as "both runs measured this". (v3 broke
+    # from v2 over the prompt-only split; v2 from v1 over normalized/levels.)
     # Pin the FAMILY, not the exact version — this test's own closing
     # assertion is that a minor bump must not orphan artifacts, so pinning
     # the exact string would forbid the very thing it exists to allow.
-    assert _signal_set_family(SIGNAL_SET_VERSION) == "hif-v3"
+    assert _signal_set_family(SIGNAL_SET_VERSION) == "hif-v4"
+    assert _signal_set_family(SIGNAL_SET_VERSION) != _signal_set_family("hif-v3.4")
     assert _signal_set_family(SIGNAL_SET_VERSION) != _signal_set_family("hif-v2")
-    assert _signal_set_family(SIGNAL_SET_VERSION) != _signal_set_family("hif-v1")
     # The whole point of the family rule: a future minor bump must not orphan
     # artifacts stamped with the current version.
     assert _signal_set_family(SIGNAL_SET_VERSION + ".1") == _signal_set_family(
@@ -62,32 +61,27 @@ def test_current_version_has_a_wellformed_family():
     assert _signal_set_family("hif-v3.1") == _signal_set_family("hif-v3")
 
 
-def test_the_shift_bump_was_additive_within_the_family():
-    """A key added ⇒ minor bump; a key removed would have forced a major one.
+def test_the_v4_cut_is_exactly_the_declared_core():
+    """A removal is a major bump, and the surviving set is pinned by name.
 
-    Asserted as a property of the registry rather than a count: the keys the
-    Shift admission introduced must be present, and the keys a hif-v3 artifact
-    already carried must all still be registered, or the bump was mislabelled.
+    The predecessor of this test asserted the v3 keys were all still present,
+    with a failure message that read "that is a MAJOR bump" — and it fired for
+    exactly that reason when hif-v4 cut ten rows. The set is now pinned
+    exactly: a row silently vanishing OR silently returning both fail, because
+    each cut row fell to evidence recorded in the SIGNAL_SET_VERSION history
+    and readmission must argue with that evidence, not drift past it.
     """
     from hif.profile.signals import MEASUREMENT_KEYS
 
-    hif_v3_keys = {
+    core = {
         "input_entropy_shift_bits", "input_entropy_std_bits",
-        "perturbation_jsd_bits", "io_correlation_r", "io_cosine_similarity",
-        "prompt_surprisal_excess_bits", "candidate_cluster_entropy_bits",
-        "output_entropy_bits", "output_entropy_step_delta_bits",
-        "semantic_centroid_veer_cosine", "attention_entropy_output_bits",
-        "attention_entropy_input_bits", "counterfactual_exposure_fraction",
-        "branch_pairwise_cosine_similarity",
+        "perturbation_jsd_bits", "io_cosine_similarity",
+        "prompt_surprisal_excess_bits", "output_entropy_bits",
     }
-    assert hif_v3_keys <= set(MEASUREMENT_KEYS), (
-        "a key present in hif-v3 was dropped — that is a MAJOR bump, not "
-        f"{SIGNAL_SET_VERSION}"
+    assert set(MEASUREMENT_KEYS) == core, (
+        "the measurement set no longer matches the declared hif-v4 core — "
+        f"unexpected: {set(MEASUREMENT_KEYS) ^ core}"
     )
-    assert {"output_step_jsd_bits", "output_step_topk_overlap_fraction"} <= set(
-        MEASUREMENT_KEYS
-    )
-    assert _signal_set_family(SIGNAL_SET_VERSION) == "hif-v3"
 
 
 def test_artifact_version_reads_both_fields_and_defaults():

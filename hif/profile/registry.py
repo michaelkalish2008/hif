@@ -100,7 +100,48 @@ from typing import Optional
 # metadata: no key, unit, definition, or absence rule changed, so `hif compare`
 # still intersects across the v3 family. A consumer that does not read
 # `acquisition` sees exactly what it saw before.
-SIGNAL_SET_VERSION = "hif-v3.4"
+# hif-v4 (current): the set contracts from sixteen rows to six. A REMOVAL, so
+# v4 artifacts do not intersect with v3 over the cut keys — `hif compare`
+# intersects over what both carry, which is the surviving core.
+#
+# The cut was made against the project's own 120-profile corpus, and each row
+# fell to evidence, not taste:
+#   io_correlation_r                   69 of 96 published values sat below the
+#                                      significance floor of its own n=15
+#                                      (|r| >= 0.514) — noise, published.
+#   output_step_jsd_bits (+ overlap)   100% of variance between models, 0%
+#                                      between regimes, splitting exactly on
+#                                      backend top-k (k=50 vs k=20): a backend
+#                                      fingerprint, not behaviour. Degenerate
+#                                      or suspect on every API backend.
+#   output_entropy_step_delta_bits     a derived statistic of the published
+#                                      entropy trace — a chart concern, not a
+#                                      second observable.
+#   candidate_cluster_entropy_bits     rides clusterer and embedder degrees of
+#                                      freedom; its 74% between-model share
+#                                      tracks cloud size k.
+#   semantic_centroid_veer_cosine      absent from 57/120 profiles; embedder-
+#                                      dependent; silently vanished from seven
+#                                      models' records for a week unnoticed.
+#   counterfactual_exposure_fraction   defined by two embedded thresholds
+#                                      (min_prob, distance) inside a
+#                                      no-thresholds instrument; absent 74/120.
+#   attention_entropy_*_bits           a fixed encoder's attention, not the
+#                                      target's; the input row is bit-identical
+#                                      across all fifteen models by
+#                                      construction.
+#   branch_pairwise_cosine_similarity  absent from 74/120 profiles including
+#                                      open-weight runs (single-cluster
+#                                      collapse); needs teacher forcing AND a
+#                                      lucky rollout.
+#
+# The artifact is unchanged: stages still record their blocks (attention
+# capture, exposure, semantic field, trajectory) as raw material under
+# --diagnostics. The SET is the claims; the artifact is the evidence. A row
+# can return by meeting the Significance Gate in docs/MEASUREMENTS.md: about the
+# target, powered at the default n, no embedded thresholds, and present on
+# the backends it claims.
+SIGNAL_SET_VERSION = "hif-v4"
 
 
 # ---------------------------------------------------------------------------
@@ -438,41 +479,6 @@ MEASUREMENT_REGISTRY: tuple[Measurement, ...] = (
         # ABSENCE note above.
     ),
     Measurement(
-        key="io_correlation_r",
-        name="Input/output correlation (r)",
-        unit="dimensionless",
-        definition=(
-            "Pearson r between per-variant input entropy shift and "
-            "per-variant JSD. Bounded to [-1, 1] by definition; reported "
-            "signed."
-        ),
-        observable="input × output distributions",
-        functional="information-theoretic",
-        resolution="aggregate",
-        # The genuine mixed case, and the reason "mixed" exists as a value.
-        # stability.py: pearsonr(entropy_shifts, js_divergences). The second
-        # series is always the target's (see perturbation_jsd_bits); the first
-        # is the target's on [F] and the surrogate's under --surrogate. So
-        # under a surrogate this is neither a fact about the target alone nor
-        # prompt-only: the target's output response is half the computation,
-        # and a correlation cannot be attributed to one of its two series. It
-        # stays in `measurements` — the target's data does enter — but it is
-        # declared `mixed` rather than lumped in with the target-side rows,
-        # because r says how the surrogate's reading of the prompt tracks the
-        # target's reaction, which is a claim about the pair.
-        subject=SUBJECT_TARGET_DISTRIBUTION,
-        acquisition=ACQUISITION_ELICITED_OUTPUT,
-        subject_under_surrogate=SUBJECT_MIXED,
-        surrogate_group="input",
-        needs_distribution_pair=True,  # because of what it correlates: one of
-        # its two series IS the per-variant perturbation JSD. On a selected-only
-        # backend that series is a token-disagreement rate, so the correlation
-        # would couple entropy shifts with token disagreement — a different
-        # quantity under a key whose definition names the JSD. No surrogate
-        # rescues it either: the recovery rebuilds `semantic_steps`, and the
-        # sensitivity series is computed from the raw traces before it.
-    ),
-    Measurement(
         key="io_cosine_similarity",
         name="Input/output cosine similarity",
         unit="dimensionless",
@@ -512,27 +518,6 @@ MEASUREMENT_REGISTRY: tuple[Measurement, ...] = (
         surrogate_group="input",
     ),
     Measurement(
-        key="candidate_cluster_entropy_bits",
-        name="Candidate cluster entropy (bits)",
-        unit="bits",
-        definition=(
-            "mean Shannon entropy of the semantic-cluster mass distribution "
-            "over each generation step's top-K candidate cloud. Unbounded "
-            "above (bounded in practice by log2 of the cluster count)."
-        ),
-        observable="output distribution",
-        functional="geometric",
-        resolution="per-step",
-        # builder.py step 8 iterates `semantic_steps`, which step 6b replaces
-        # with output_steps_via_surrogate(surrogate, prompt, continuation_text)
-        # on a selected-only backend. The surrogate is then teacher-forced over
-        # the target's ACTUAL generated continuation — a reading instrument on
-        # the target's real output, not a stand-in for the target's behaviour.
-        subject=SUBJECT_TARGET_DISTRIBUTION,
-        subject_under_surrogate=SUBJECT_TARGET_OUTPUT_TEXT,
-        surrogate_group="output",
-    ),
-    Measurement(
         key="output_entropy_bits",
         name="Output entropy (bits)",
         unit="bits",
@@ -549,193 +534,6 @@ MEASUREMENT_REGISTRY: tuple[Measurement, ...] = (
         subject=SUBJECT_TARGET_DISTRIBUTION,
         subject_under_surrogate=SUBJECT_TARGET_OUTPUT_TEXT,
         surrogate_group="output",
-    ),
-    Measurement(
-        key="output_entropy_step_delta_bits",
-        name="Output entropy step delta (bits)",
-        unit="bits",
-        definition=(
-            "mean |H(step i) − H(step i−1)| over the nucleus (95% mass, "
-            "renormalised) entropy trace. Unbounded above."
-        ),
-        observable="output distribution",
-        functional="information-theoretic",
-        resolution="per-step",
-        # Nucleus entropies of the same `semantic_steps` basis — see
-        # candidate_cluster_entropy_bits.
-        subject=SUBJECT_TARGET_DISTRIBUTION,
-        subject_under_surrogate=SUBJECT_TARGET_OUTPUT_TEXT,
-        # Not a substitute for `output_step_jsd_bits`, the next row but one:
-        # that one measures where the mass sits, this one the change in how
-        # much uncertainty there is. Two steps can carry identical entropy
-        # over completely different token sets, so the entropy delta reads 0
-        # where the step JSD reads a full bit.
-        surrogate_group="output",
-    ),
-    Measurement(
-        key="output_step_jsd_bits",
-        name="Output step-to-step JSD (bits)",
-        unit="bits",
-        definition=(
-            "mean Jensen-Shannon divergence between CONSECUTIVE generation "
-            "steps' output distributions, JSD(Qⱼ₋₁, Qⱼ). Bounded to [0, 1] by "
-            "definition in log base 2. Computed over the stored top-K supports "
-            "only: two consecutive steps whose top-K sets are disjoint give "
-            "exactly 1 bit however similar their true full-vocabulary "
-            "distributions are, so this number must be read together with its "
-            "companion output_step_topk_overlap_fraction, which reports how "
-            "much support the same transitions actually shared. Absent when "
-            "the run has fewer than two generation steps, and on a backend "
-            "that returns only the selected token, where consecutive steps are "
-            "point masses and the divergence is a token-disagreement indicator "
-            "rather than a divergence between distributions."
-        ),
-        observable="output distribution",
-        functional="information-theoretic",
-        resolution="per-step",
-        # The target's own distributions, and deliberately the RAW ones:
-        # hif/metrics/shift.py reads `profile.output_side.steps`, which
-        # builder.py step 13 sets from the unrecovered `output_trace`. That is
-        # the same series the Shift chart draws, which is the point — one
-        # computation feeds both, so the instrument on the website and the key
-        # in the record cannot drift. It also means no surrogate can stand in
-        # here: on a selected-only backend the quantity is ABSENT rather than
-        # proxied, hence no surrogate_group and no subject_under_surrogate.
-        subject=SUBJECT_TARGET_DISTRIBUTION,
-        surrogate_group="",
-        needs_distribution_pair=True,  # JSD(Qⱼ₋₁, Qⱼ) — consecutive steps.
-    ),
-    Measurement(
-        key="output_step_topk_overlap_fraction",
-        name="Output step-to-step top-K overlap (fraction)",
-        unit="fraction of shared top-K token ids",
-        definition=(
-            "mean Jaccard overlap |Aⱼ₋₁ ∩ Aⱼ| / |Aⱼ₋₁ ∪ Aⱼ| between "
-            "consecutive generation steps' top-K candidate token-id sets. "
-            "Bounded to [0, 1] by construction. It is the resolution limit on "
-            "output_step_jsd_bits: at 0 the two steps share no candidate and "
-            "the divergence is pinned at its 1-bit ceiling by the truncation "
-            "alone, so a high Shift over low overlap is weaker evidence of a "
-            "vocabulary pivot than the same Shift over high overlap. Absent "
-            "under the same conditions as output_step_jsd_bits."
-        ),
-        observable="output distribution",
-        functional="information-theoretic",
-        resolution="per-step",
-        # Same series, same raw basis, same absence rules as output_step_jsd_bits.
-        subject=SUBJECT_TARGET_DISTRIBUTION,
-        surrogate_group="",
-        needs_distribution_pair=True,  # same series, same absence rules as
-        # output_step_jsd_bits.
-    ),
-    Measurement(
-        key="semantic_centroid_veer_cosine",
-        name="Semantic centroid veer (cosine distance)",
-        unit="cosine distance",
-        definition=(
-            "mean step-to-step displacement of the candidate cloud's "
-            "semantic centroid in embedding space. Bounded to [0, 2] by "
-            "definition."
-        ),
-        observable="output distribution",
-        functional="geometric",
-        resolution="per-step",
-        # builder.py step 11d embeds each step's candidate cloud from
-        # `semantic_steps` — the same basis as the distribution metrics.
-        subject=SUBJECT_TARGET_DISTRIBUTION,
-        subject_under_surrogate=SUBJECT_TARGET_OUTPUT_TEXT,
-        # CORRECTED (was ""): step 11d passes `sf_trace`, which IS the
-        # surrogate-recovered basis when step 6b fired. The row was silent
-        # about a proxy it actually uses, so on a [P] backend the CLI table
-        # showed a surrogate-derived number with no attribution at all.
-        surrogate_group="output",
-    ),
-    Measurement(
-        key="attention_entropy_output_bits",
-        name="Output attention-row entropy (bits)",
-        unit="bits",
-        definition=(
-            "mean Shannon entropy of the causal-prefix attention row at each "
-            "output position. Grows with prefix length; not divided by "
-            "log2(prefix length)."
-        ),
-        observable="attention row",
-        functional="information-theoretic",
-        resolution="per-position",
-        # NOT the target's attention. hif/analysis/attention.py::AttentionAnalyzer
-        # is a bidirectional encoder (DistilBERT by default) applied to text as
-        # an object — "This is NOT the model under analysis ... The generation
-        # mechanism of the model under analysis is never accessed." This row
-        # reads `continuation_attention`, the encoder's self-attention over the
-        # target's ACTUAL generated continuation, so it is a fixed instrument on
-        # the target's real output: it moves when the target's output moves.
-        subject=SUBJECT_TARGET_OUTPUT_TEXT,
-    ),
-    Measurement(
-        key="attention_entropy_input_bits",
-        name="Input attention-row entropy (bits)",
-        unit="bits",
-        definition=(
-            "mean Shannon entropy of the causal-prefix attention row at each "
-            "input position. Grows with prefix length; not divided by "
-            "log2(prefix length)."
-        ),
-        observable="attention row",
-        functional="information-theoretic",
-        resolution="per-position",
-        # PROMPT-ONLY ON EVERY BACKEND, including [F]. Same encoder as
-        # attention_entropy_output_bits (see that row), but this one reads
-        # `input_analysis.attention_map` — the encoder's self-attention over the
-        # PROMPT. Nothing the target produced enters: the value is a function of
-        # prompt text and encoder weights alone, so it is deterministic in the
-        # prompt and cannot vary with any model-side change — profile two
-        # different models on one prompt and this value is bit-identical. It is a
-        # real measurement of the prompt under a fixed reference encoder; not a
-        # measurement of the target, and no backend can make it one.
-        subject=SUBJECT_PROMPT_ONLY,
-    ),
-    Measurement(
-        key="counterfactual_exposure_fraction",
-        name="Counterfactual exposure (fraction of steps)",
-        unit="fraction of analysed generation steps",
-        definition=(
-            "steps where a probabilistically accessible alternative token "
-            "would have pulled the response toward a different meaning. A "
-            "proportion, bounded to [0, 1] by construction."
-        ),
-        observable="output distribution",
-        functional="geometric",
-        resolution="per-step",
-        # builder.py step 11b passes `exposure_trace` — the same
-        # surrogate-recovered basis as the distribution metrics when step 6b
-        # fired — to ExposureAnalyzer, which reads each step's topk candidates.
-        subject=SUBJECT_TARGET_DISTRIBUTION,
-        subject_under_surrogate=SUBJECT_TARGET_OUTPUT_TEXT,
-        # CORRECTED (was ""): same omission as semantic_centroid_veer_cosine —
-        # the row consumed the proxy basis without declaring it.
-        surrogate_group="output",
-    ),
-    Measurement(
-        key="branch_pairwise_cosine_similarity",
-        name="Branch pairwise cosine similarity",
-        unit="dimensionless",
-        definition=(
-            "mean pairwise cosine similarity between trajectory branch "
-            "embeddings. High = branches converge semantically; low = they "
-            "scatter. Bounded to [-1, 1] by definition. This is the "
-            "natural-unit form of the Continuity aggregate, reported "
-            "directly rather than as a derived score."
-        ),
-        observable="trajectory branch embeddings",
-        functional="geometric",
-        resolution="aggregate",
-        # trajectory.py embeds each branch's `final_text`. Branches are rollouts
-        # the TARGET generated: builder.py step 5 runs analyze_trajectory only
-        # when model.supports_teacher_forcing, and returns an empty branch list
-        # otherwise, so this quantity is absent rather than proxied on any
-        # backend that cannot generate them itself. No surrogate path exists.
-        subject=SUBJECT_TARGET_OUTPUT_TEXT,
-        acquisition=ACQUISITION_ELICITED_OUTPUT,
     ),
 )
 

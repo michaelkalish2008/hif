@@ -124,41 +124,30 @@ class TestExposureCli:
         values = cli._measurements(p)
         assert EXPOSURE_KEY not in values
 
-    def test_measurement_present_when_computed(self):
+    def test_populated_exposure_block_emits_no_measurement(self):
+        """The block is artifact evidence; the measurement was cut in hif-v4.
+
+        The fraction was defined by two embedded thresholds (min_prob,
+        distance) inside a no-thresholds instrument. The analysis still runs
+        and its block still ships — but nothing about it is claimed as a
+        measurement, and this pins that a populated block does not leak one.
+        """
         p = _make_profile()
         p.exposure = _synthetic_profile(4, [0, 2])
         values = cli._measurements(p)
-        assert values[EXPOSURE_KEY] == pytest.approx(0.5)
+        assert EXPOSURE_KEY not in values
 
-    def test_metric_exposure_prints_value_with_unit(self, monkeypatch, tmp_path):
-        p = _make_profile()
-        p.exposure = _synthetic_profile(4, [0, 2])
-        _patch_pipeline(monkeypatch, p)
-        result = runner.invoke(
-            app, ["profile", "m", "p", "--output-dir", str(tmp_path),
-                  "--metric", EXPOSURE_KEY],
-        )
-        assert result.exit_code == 0, result.output
-        flat = " ".join(result.output.split())
-        assert f"{EXPOSURE_KEY} = 0.5" in flat
-        # The unit line always follows the value — never a bare number.
-        assert "fraction" in flat
 
-    def test_metric_exposure_json(self, monkeypatch, tmp_path):
-        p = _make_profile()
-        p.exposure = _synthetic_profile(4, [1])
-        _patch_pipeline(monkeypatch, p)
-        result = runner.invoke(
-            app, ["profile", "m", "p", "--output-dir", str(tmp_path),
-                  "--metric", EXPOSURE_KEY, "--json"],
-        )
-        assert result.exit_code == 0, result.output
-        data = json.loads(result.output.strip())
-        assert data["metric"] == EXPOSURE_KEY
-        assert data["value"] == 0.25
-        assert data["unit"]  # the unit travels with the value
 
-    def test_metric_exposure_absent_exits_1_without_forbidden_word(self, monkeypatch, tmp_path):
+    def test_metric_exposure_is_a_retired_key_and_says_so(self, monkeypatch, tmp_path):
+        """--metric with the hif-v4-retired key is an unknown-metric error.
+
+        Before the cut this asserted exit 1 (measurement absent for the run).
+        The key is no longer in the set at all, so the correct answer is the
+        unknown-metric exit (3) with the schema pointer — and still never the
+        forbidden word: the analysis was renamed from "hallucination" because
+        it never established one.
+        """
         p = _make_profile()
         p.exposure = None
         _patch_pipeline(monkeypatch, p)
@@ -166,7 +155,7 @@ class TestExposureCli:
             app, ["profile", "m", "p", "--output-dir", str(tmp_path),
                   "--metric", EXPOSURE_KEY],
         )
-        assert result.exit_code == 1
+        assert result.exit_code == 3
         assert "hallucin" not in result.output.lower()
 
     def test_verbose_stats_show_high_divergence_line_when_computed(self, monkeypatch, tmp_path):

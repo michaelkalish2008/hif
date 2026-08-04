@@ -216,8 +216,8 @@ def minimal_profile() -> BehavioralRangeProfile:
     - NO exposure or attention metrics
 
     Available signals: stability, breadth, surprise, io_correlation, sensitivity,
-    continuity, entropy, shift, wager
-    Unavailable: similarity, spread, horizon, exposure
+    entropy, wager
+    Unavailable: similarity
     """
     input_analysis = _make_input_analysis()
     output_trace = _make_output_trace()
@@ -314,11 +314,11 @@ class TestSignalEngine:
             assert html_path.stat().st_size > 0, f"HTML file for '{sig_id}' is empty: {html_path}"
 
     def test_unavailable_signals_still_render(self, minimal_profile, tmp_path):
-        """Unavailable signals (similarity, spread, horizon, exposure) still generate valid HTML."""
+        """Unavailable signals still generate valid placeholder HTML."""
         results = generate_signal_plots(minimal_profile, tmp_path)
 
         # These signals should be unavailable in minimal_profile (no similarity data, etc.)
-        unavailable_ids = ["similarity", "spread", "horizon", "exposure"]
+        unavailable_ids = ["similarity"]
 
         for sig_id in unavailable_ids:
             # Signal should still be in results with a valid HTML file
@@ -335,8 +335,8 @@ class TestSignalEngine:
             assert reason is not None, f"Signal '{sig_id}' should be unavailable for minimal_profile"
 
     def test_available_signals_report_none(self, minimal_profile):
-        """Available signals (breadth, entropy, shift, stability, sensitivity) report None from available()."""
-        available_ids = ["breadth", "entropy", "shift", "stability", "sensitivity"]
+        """Available signals report None from available()."""
+        available_ids = ["breadth", "entropy", "stability", "sensitivity"]
 
         for sig_id in available_ids:
             sig_obj = next((s for s in SIGNALS if s.id == sig_id), None)

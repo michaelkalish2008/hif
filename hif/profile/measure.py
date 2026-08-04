@@ -34,23 +34,6 @@ from hif.profile.registry import (
 )
 
 
-def _field(obj, name):
-    """Attribute or key — whichever this profile carries.
-
-    `exposure` and `semantic_field` are typed `Optional[Any]` in the schema, so
-    a profile fresh from the builder holds analysis OBJECTS while one
-    rehydrated from JSON holds plain DICTS. Every read here used getattr, which
-    silently answers None on a dict — so exposure and veer vanished from every
-    profile that had been round-tripped through a file, while the same profile
-    emitted them when measured in-process. Seven models' published records
-    were missing both, and the absence looked exactly like an honest
-    "not measurable".
-    """
-    if isinstance(obj, dict):
-        return obj.get(name)
-    return getattr(obj, name, None)
-
-
 def _all_measured_values(p) -> dict[str, float]:
     """Every value this profile produced, before the subject split.
 
@@ -100,8 +83,6 @@ def _all_measured_values(p) -> dict[str, float]:
             # absent — same quantity, same unit.
             js = [s.mean_js_divergence for s in m.sensitivity]
             out["perturbation_jsd_bits"] = sum(js) / len(js)
-    if st.input_output_correlation is not None:
-        out["io_correlation_r"] = st.input_output_correlation
 
     # --- input/output anchoring
     if m.similarity is not None:
@@ -112,79 +93,11 @@ def _all_measured_values(p) -> dict[str, float]:
     if mean_excess is not None:
         out["prompt_surprisal_excess_bits"] = mean_excess
 
-    # --- candidate-cloud semantics
-    if m.semantic and not point_mass_cloud:
-        ces = [s.cluster_entropy for s in m.semantic]
-        out["candidate_cluster_entropy_bits"] = sum(ces) / len(ces)
 
     # --- output distribution
     if m.distribution and not point_mass_cloud:
         ents = [d.entropy_bits for d in m.distribution]
         out["output_entropy_bits"] = sum(ents) / len(ents)
-    if m.distribution and len(m.distribution) >= 2 and not point_mass_cloud:
-        # Nucleus entropy (95% mass, renormalised) so the trace is comparable
-        # across backends regardless of how many logprobs each exposes.
-        nents = [d.nucleus_entropy_bits for d in m.distribution]
-        deltas = [abs(nents[i] - nents[i - 1]) for i in range(1, len(nents))]
-        out["output_entropy_step_delta_bits"] = sum(deltas) / len(deltas)
-
-    # --- the step JSD: step-to-step divergence of the output distribution, plus the
-    # top-K overlap that bounds how much of it the truncation could have
-    # manufactured. Both come from hif/metrics/shift.py, the same function the
-    # Shift chart draws — one computation, so instrument and record agree.
-    # shift_summary() returns None (never 0.0) on < 2 steps or a selected-only
-    # backend, so both keys are simply omitted there.
-    from hif.metrics.shift import shift_summary
-
-    _shift = shift_summary(getattr(p.output_side, "steps", None) or [])
-    if _shift is not None:
-        out["output_step_jsd_bits"] = _shift.mean_jsd_bits
-        out["output_step_topk_overlap_fraction"] = _shift.mean_overlap_fraction
-
-    # --- semantic field (Veer): present only when semantic_field analysis ran.
-    # Absent on a point-mass cloud: the "candidate cloud's centroid" would be
-    # the selected token's own embedding, so the number would be the selected
-    # token's path through embedding space — a different quantity under this
-    # key's definition.
-    sf = getattr(p, "semantic_field", None)
-    if (
-        sf is not None
-        and _field(sf, "mean_veer") is not None
-        and not point_mass_cloud
-    ):
-        out["semantic_centroid_veer_cosine"] = _field(sf, "mean_veer")
-
-    # --- counterfactual exposure: present only when the divergence analysis
-    # ran and found accessible alternatives. A point mass has none by
-    # construction, which is absence of evidence, not a measured zero.
-    exp = getattr(p, "exposure", None)
-    if exp is not None and _field(exp, "candidates") and not point_mass_cloud:
-        out["counterfactual_exposure_fraction"] = _field(exp, "exposure")
-
-    # --- trajectory continuity, in its natural unit (mean pairwise cosine
-    # between branch embeddings). Computed by the trajectory analysis; was
-    # previously reduced to a score and never surfaced directly.
-    traj = getattr(p, "trajectory", None)
-    tc = getattr(traj, "trajectory_continuity", None) if traj is not None else None
-    if tc is not None:
-        out["branch_pairwise_cosine_similarity"] = float(tc)
-
-    # --- attention-row entropy: present only when attention analysis ran.
-    # Both sides in raw bits. The historical "Horizon" reading divided the
-    # input-side row entropy by log2(prefix_len); that normaliser leaks
-    # sequence-length metadata into a behavioural number, so it is gone.
-    from hif.viz.signals._attention import get_attention_map, row_entropy_trace
-
-    _, w_out = get_attention_map(p, "output")
-    if w_out:
-        tr = row_entropy_trace(w_out)
-        if tr:
-            out["attention_entropy_output_bits"] = sum(tr) / len(tr)
-    _, w_in = get_attention_map(p, "input")
-    if w_in:
-        tr = row_entropy_trace(w_in)
-        if tr:
-            out["attention_entropy_input_bits"] = sum(tr) / len(tr)
 
     # One enforcement of needs_distribution_pair, derived from the rows rather
     # than hand-written per quantity.

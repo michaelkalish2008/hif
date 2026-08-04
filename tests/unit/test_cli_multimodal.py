@@ -115,7 +115,6 @@ def test_input_rejects_truncate(png):
 ABSENT_KEYS = [
     "input_entropy_shift_bits",
     "perturbation_jsd_bits",
-    "io_correlation_r",
 ]
 
 

@@ -22,16 +22,9 @@ hif profile gpt2 "Explain why the sky appears blue." --json
     "input_entropy_shift_bits": 0.5453,
     "input_entropy_std_bits": 0.4759,
     "perturbation_jsd_bits": 0.5999,
-    "io_correlation_r": 0.6318,
     "io_cosine_similarity": 0.2054,
     "prompt_surprisal_excess_bits": 0.6556,
-    "candidate_cluster_entropy_bits": 0.4605,
-    "output_entropy_bits": 2.526,
-    "output_entropy_step_delta_bits": 1.403,
-    "output_step_jsd_bits": 0.78,
-    "output_step_topk_overlap_fraction": 0.1343,
-    "counterfactual_exposure_fraction": 0.0833,
-    "branch_pairwise_cosine_similarity": 0.099
+    "output_entropy_bits": 2.526
   }
 }
 ```

@@ -916,11 +916,6 @@ def models(
         console.print(f"  [green]✓ signals:[/green] {', '.join(ok)}")
         if no:
             console.print(f"  [yellow]✗ unavailable:[/yellow] {', '.join(no)}")
-        console.print(
-            "  [dim]attention rows need --diagnostics, not a backend: they are "
-            "an analysis encoder's attention over text, so they are available "
-            "here as on every backend.[/dim]"
-        )
         _print_subject_degradation(info)
     console.print()
 

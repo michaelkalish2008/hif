@@ -432,65 +432,6 @@ def _make_minimal_profile_for_exposure(exposure_data):
     )
 
 
-class TestExposurePlot:
-    """The Exposure ◇ chart (hif.viz), which replaced the old hallucination plot.
-
-    Unlike the old plot (which returned {} when there was no data), the new
-    engine ALWAYS renders a file — a labeled 'not available' placeholder when the
-    exposure data is absent — so the dashboard stays complete and honest.
-    """
-
-    def test_renders_placeholder_when_no_exposure(self, tmp_path):
-        from hif.viz.signals import exposure
-
-        profile = _make_minimal_profile_for_exposure(None)
-        assert exposure.available(profile) is not None  # unavailable → reason given
-        result = exposure.generate(profile, tmp_path / "exposure")
-        assert result["html"].exists() and result["html"].stat().st_size > 0
-
-    def test_renders_placeholder_when_no_candidates(self, tmp_path):
-        from hif.analysis.exposure import ExposureProfile
-        from hif.viz.signals import exposure
-
-        hp = ExposureProfile(
-            candidates=[], exposed_steps=[], mean_semantic_distance=0.0, diffusion_zone_ratio=0.0
-        )
-        profile = _make_minimal_profile_for_exposure(hp)
-        assert exposure.available(profile) is not None
-        result = exposure.generate(profile, tmp_path / "exposure")
-        assert result["html"].exists() and result["html"].stat().st_size > 0
-
-    def test_renders_chart_when_candidates_present(self, tmp_path):
-        from hif.analysis.exposure import ExposureCandidate, ExposureProfile
-        from hif.viz.signals import exposure
-
-        candidates = [
-            ExposureCandidate(
-                step=i, selected_token=f"t{i}", selected_prob=0.5,
-                divergent_token=f"h{i}", divergent_prob=0.1,
-                prob_rank=1, semantic_distance=0.4,
-                cloud_phenomenon="diffusion", cloud_position_2d=[0.1, 0.2],
-            )
-            for i in range(3)
-        ]
-        hp = ExposureProfile(
-            candidates=candidates, exposed_steps=[1],
-            mean_semantic_distance=0.4, diffusion_zone_ratio=1.0,
-        )
-        profile = _make_minimal_profile_for_exposure(hp)
-        assert exposure.available(profile) is None  # data present → available
-        result = exposure.generate(profile, tmp_path / "exposure")
-        assert result["html"].exists()
-        assert result["html"].suffix == ".html"
-        # The Exposure surface must never use factuality/danger language.
-        assert "hallucin" not in result["html"].read_text().lower()
-
-
-# ---------------------------------------------------------------------------
-# Back-compat: the retired hallucination vocabulary must stay READABLE
-# ---------------------------------------------------------------------------
-
-
 class TestOldVocabularyAliases:
     """Archived profile JSON (pre-0.10.0) carries the retired names
     (hallucinated_token/-_prob, high_risk_steps, config.hallucination).
@@ -588,11 +529,8 @@ class TestOldVocabularyAliases:
         data["config"]["hallucination"] = data["config"].pop("exposure")
         loaded = BehavioralRangeProfile.model_validate(data)
         assert loaded.config.exposure.enabled is True
-        # profile.exposure is lazy-typed Any: JSON loads leave it a dict, and
-        # the typed coercion (with aliases) happens at the consumer.
-        from hif.viz.signals.exposure import _coerce
-
-        coerced = _coerce(loaded)
-        assert coerced is not None
-        assert coerced.exposed_steps == [0]
-        assert coerced.candidates[0].divergent_token == "b"
+        # profile.exposure is lazy-typed Any, so the old-vocabulary block
+        # survives as a dict under its aliased keys. Since hif-v4 nothing in
+        # hif consumes it — the chart and the measurement were cut — so the
+        # contract this pins is validation alone: the archived corpus loads.
+        assert loaded.exposure["candidates"][0]["hallucinated_token"] == "b"

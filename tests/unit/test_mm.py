@@ -572,8 +572,9 @@ class TestMMSurrogateInputSide:
             assert key not in vals, f"{key} reported as a measurement of the target"
         # The target's data is in these, so they stay in the measurement set:
         # perturbation_jsd_bits is the target's own output response, and
-        # io_correlation_r couples that response with the surrogate's reading.
-        for key in ("io_correlation_r", "perturbation_jsd_bits"):
+        # io_correlation_r was cut in hif-v4 (underpowered at its own n);
+        # the perturbation response itself remains the recovered quantity.
+        for key in ("perturbation_jsd_bits",):
             assert key in vals, f"{key} missing from measurements()"
         # Provenance: the record must say input-side came from the proxy.
         assert profile.findings.surrogate_model_name == surrogate.name

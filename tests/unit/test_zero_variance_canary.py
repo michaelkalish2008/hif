@@ -106,24 +106,27 @@ def test_two_different_models_move_every_target_derived_measurement():
     )
 
 
-def test_prompt_only_measurements_are_identical_across_models():
-    """A prompt-only quantity that moves with the target is mislabelled too."""
-    a, b = _run(alpha_model()), _run(beta_model())
-    va, vb = _values(a), _values(b)
-    subjects = run_subjects(a)
+def test_no_prompt_only_measurements_on_a_teacher_forcing_backend():
+    """On an [F] backend, every measurement is about the target.
 
+    Before hif-v4 this test asserted that prompt-only quantities are identical
+    across models, and its specimen was `attention_entropy_input_bits` — a row
+    that was prompt-only on EVERY backend because the number came from a fixed
+    encoder reading the prompt. That row is cut: bit-identical across all
+    fifteen corpus models, it measured the prompt, and the set is for
+    measurements of the model. What remains prompt-only arises only under
+    --surrogate, where the input-side rows describe the prompt by construction.
+    So the invariant on a teacher-forcing run is now stronger and simpler:
+    nothing in the record is about anything except the target.
+    """
+    a = _run(alpha_model())
+    subjects = run_subjects(a)
     prompt_only = {k for k, s in subjects.items() if s == SUBJECT_PROMPT_ONLY}
-    assert prompt_only & set(va), (
-        "no prompt-only quantity was produced, so this assertion checked "
-        "nothing — the attention stage must run for the input-side row to exist"
+    assert not (prompt_only & set(_values(a))), (
+        f"prompt-only quantities {prompt_only & set(_values(a))} produced on a "
+        "teacher-forcing backend — either a subject is mislabelled or a "
+        "prompt-only row has been reintroduced without a surrogate gate"
     )
-    for key in sorted(prompt_only & set(va)):
-        assert va[key] == vb[key], (
-            f"{key} is declared prompt-only, but it changed when the target "
-            f"model changed ({va[key]!r} vs {vb[key]!r}). A value that moves "
-            "with the target is not comparable across targets, which is the "
-            "only reason prompt-only values are reported at all."
-        )
 
 
 def test_the_canary_exercises_every_registered_measurement():
@@ -223,7 +226,7 @@ def test_every_row_needing_a_distribution_pair_is_absent_without_one():
 
     pair_rows = [m.key for m in MEASUREMENT_REGISTRY if m.needs_distribution_pair]
     assert pair_rows, "no row declares needs_distribution_pair — the guard has nothing to enforce"
-    assert "io_correlation_r" in pair_rows
+    # io_correlation_r carried the flag until hif-v4 cut the row itself.
     assert "perturbation_jsd_bits" in pair_rows
 
 
@@ -241,20 +244,3 @@ def test_sentinel_logprobs_do_not_become_a_measured_point_mass():
     kept = [(t, lp) for t, lp in raw if lp > -9000.0]
     assert kept == [("a", -0.01)]  # selected-only → degeneracy machinery applies
 
-
-def test_rehydrated_dict_blocks_still_yield_their_measurements():
-    """A profile read back from JSON measures the same as one in memory.
-
-    `exposure` and `semantic_field` are `Optional[Any]` in the schema, so they
-    rehydrate as dicts. getattr on a dict silently answers None, which made
-    exposure and veer vanish from every round-tripped profile — absence
-    fabricated by typing, the mirror image of a fabricated zero.
-    """
-    from hif.profile.measure import _field
-
-    class Obj:
-        mean_veer = 0.25
-
-    assert _field(Obj(), "mean_veer") == 0.25
-    assert _field({"mean_veer": 0.25}, "mean_veer") == 0.25
-    assert _field({}, "mean_veer") is None

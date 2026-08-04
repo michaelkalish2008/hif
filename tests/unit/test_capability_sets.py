@@ -103,8 +103,8 @@ def test_the_historical_drifts_stay_fixed():
     # Ollama cannot teacher-force; the std of the input-entropy series must be
     # refused there, not waved through as "supported".
     assert metric_support("input_entropy_std_bits", "ollama") is not None
-    # And the trajectory row must appear in every backend's capability matrix
-    # (refused where teacher forcing is absent, supported where it is).
-    assert "branch_pairwise_cosine_similarity" in signals_available("anthropic")
-    assert signals_available("anthropic")["branch_pairwise_cosine_similarity"] is False
-    assert signals_available("hf")["branch_pairwise_cosine_similarity"] is True
+    # The trajectory row that anchored the second historical drift was cut in
+    # hif-v4 (absent from 74/120 corpus profiles, including open-weight runs).
+    # The regression it pinned — a derived set silently losing a key — is now
+    # covered by the set-equality test above.
+    assert "branch_pairwise_cosine_similarity" not in signals_available("anthropic")
