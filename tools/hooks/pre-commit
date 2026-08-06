@@ -21,7 +21,8 @@ case "$staged" in
     python3 tools/sync_docs.py --check || {
       echo
       echo "pre-commit: documentation the site publishes has drifted from this repo."
-      echo "Run the sync, review the change in the site repo, then commit again."
+      echo "Run: python3 tools/regen_docs.py   (regenerates and syncs in one pass)"
+      echo "Then review the change in the site repo and commit again."
       echo "To commit anyway: git commit --no-verify"
       exit 1
     }
@@ -38,7 +39,8 @@ case "$staged" in
     python3 tools/gen_flags_doc.py --check || {
       echo
       echo "pre-commit: docs/FLAGS.md has drifted from the command surface."
-      echo "Run the generator, review the diff, then commit again."
+      echo "Run: python3 tools/regen_docs.py   (regenerates and syncs in one pass)"
+      echo "Then review the diff and commit again."
       echo "To commit anyway: git commit --no-verify"
       exit 1
     }
@@ -53,7 +55,8 @@ case "$staged" in
     python3 tools/gen_site_measurements.py --check || {
       echo
       echo "pre-commit: the site's measurement vocabulary has drifted from 'hif schema'."
-      echo "Run the generator, review the change in the site repo, then commit again."
+      echo "Run: python3 tools/regen_docs.py   (regenerates and syncs in one pass)"
+      echo "Then review the change in the site repo and commit again."
       echo "To commit anyway: git commit --no-verify"
       exit 1
     }
