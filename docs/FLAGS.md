@@ -17,7 +17,7 @@ Profile many prompts against one loaded model.
 
 | flag | meaning |
 | --- | --- |
-| `--backend` | Model backend: hf \| tlens \| ollama \| openai \| anthropic \| gemini *(default: `hf`)* |
+| `--backend` | Model backend: `hf`, `tlens`, `ollama`, `openai`, `anthropic`, `gemini` — see [Backends](#backends) *(default: `hf`)* |
 | `--regime` | Default prompt regime (a per-row "regime" key overrides it). *(default: `batch`)* |
 | `--seed` | Random seed *(default: `42`)* |
 | `--max-new-tokens` | Maximum new tokens to generate *(default: `64`)* |
@@ -70,7 +70,7 @@ Print the fully resolved run config — without loading a model or running.
 
 | flag | meaning |
 | --- | --- |
-| `--backend` | Model backend *(default: `hf`)* |
+| `--backend` | Model backend — see [Backends](#backends) *(default: `hf`)* |
 | `--config-file` | TOML run config to resolve (same file `hif profile` takes). |
 | `--mode` | fast \| audit (perturbation budget) *(default: `fast`)* |
 | `--lite` | Apply the --lite stage budget |
@@ -94,7 +94,7 @@ List the backends you can profile, example models, and which signals each suppor
 
 | flag | meaning |
 | --- | --- |
-| `--backend` | Show only this backend (hf, tlens, ollama, openai, anthropic, gemini). |
+| `--backend` | Show only this backend (hf, tlens, ollama, openai, anthropic, gemini). See [Backends](#backends). |
 | `--list` | Query each backend's actual model catalog right now (needs the provider's API key, or a running Ollama server) instead of showing static examples — use this when an example model from the docs turns out to be retired/unavailable. |
 | `--surrogates` | List recommended --surrogate-model choices (small open-weight models for recovering input-side signals on closed/Ollama backends via --surrogate) and check each is currently reachable and ungated on the Hugging Face Hub. |
 | `--json` | Emit the catalogue as a single JSON document on stdout instead of the human table, so the model list can be piped, scripted, or fed to a picker. Composes with --backend, --list and --surrogates. |
@@ -111,7 +111,7 @@ Run the full hif pipeline on a single (model, prompt) pair.
 | flag | meaning |
 | --- | --- |
 | `--regime` | Prompt regime *(default: `ordinary_conversation`)* |
-| `--backend` | Model backend: hf \| tlens \| ollama \| openai \| anthropic \| gemini *(default: `hf`)* |
+| `--backend` | Model backend: `hf`, `tlens`, `ollama`, `openai`, `anthropic`, `gemini` — see [Backends](#backends) *(default: `hf`)* |
 | `--seed` | Random seed *(default: `42`)* |
 | `--output-dir` | Write derived reports (technical + public markdown, --charts plots) here. Default: nothing is written to disk — results print to the terminal only (privacy-first compute-and-discard). |
 | `--max-new-tokens` | Maximum new tokens to generate *(default: `64`)* |
@@ -167,3 +167,16 @@ Print the measurement registry: every key with its full row.
 | charts (--charts) | HTML always; PNG only with kaleido installed |
 | ollama server | reachability and which models are pulled |
 | per-backend readiness | optional deps and credentials, one row per backend |
+
+## Backends
+
+What every `--backend` accepts, and what each one lets you measure. Generated from `hif/models/capabilities.py`, the same registry `hif models` and `hif doctor` read.
+
+| backend | access | input-side signals | output logprobs | notes |
+| --- | --- | --- | --- | --- |
+| `hf` (default) | local, open weights | yes | full | Full fidelity — every measurement. Best for a complete profile. |
+| `tlens` | local, open weights | yes | full | Full fidelity via TransformerLens. |
+| `gemini` | hosted API | no | top-k | Top-20 logprobs on Vertex AI only; the developer API degenerates. |
+| `ollama` | local service | no | top-k | Output-side signals only (top-20). No input-side or attention signals. The model MUST be pulled locally before profiling. |
+| `openai` | hosted API | no | top-k | Output-side signals only (top-20 logprobs). |
+| `anthropic` | hosted API | no | selected-only | No token-level logprobs. Entropy-shaped signals degenerate, and the distribution divergences are reported absent rather than as the token-agreement rate two point masses actually produce. Best for io_cosine_similarity, the one measurement it can fully support. |
