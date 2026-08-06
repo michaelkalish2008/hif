@@ -1,4 +1,4 @@
-"""Text-analysis instruments for HI.
+"""Text-analysis instruments for hif.
 
 This sub-package contains tools that analyze texts (prompts and generated
 continuations) as objects — independent of the model under analysis.

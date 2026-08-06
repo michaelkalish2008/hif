@@ -1,4 +1,4 @@
-"""HI command-line interface — the command surface.
+"""hif command-line interface — the command surface.
 
 Every `hif` subcommand is defined here: its flags, its help text, the checks it
 runs before touching a model, and the order it does things in. The concerns the
@@ -439,7 +439,7 @@ def profile(
         "ungated mirror). Passing this flag implies --surrogate — you don't need both.",
     ),
 ) -> None:
-    """Run the full HI pipeline on a single (model, prompt) pair."""
+    """Run the full hif pipeline on a single (model, prompt) pair."""
     # --surrogate-model implies --surrogate: passing a model id but forgetting
     # the boolean flag used to silently do nothing (input-side signals still
     # zeroed with a warning).
@@ -613,7 +613,7 @@ def profile(
             raise typer.Exit(3)
 
     if not output_json:
-        console.print(f"[bold]HI Profile[/bold]")
+        console.print(f"[bold]hif Profile[/bold]")
         if application:
             console.print(f"  Application: {application}")
         console.print(f"  Model:   {model_name} ({backend})")

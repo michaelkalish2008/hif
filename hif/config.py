@@ -1,4 +1,4 @@
-"""Pydantic v2 configuration models for HI runs."""
+"""Pydantic v2 configuration models for hif runs."""
 
 from pathlib import Path
 from typing import Optional

@@ -1,4 +1,4 @@
-"""Hermeneutic Attention — bidirectional text analysis for HI.
+"""Hermeneutic Attention — bidirectional text analysis for hif.
 
 Methodological position
 -----------------------

@@ -1,4 +1,4 @@
-"""Pydantic v2 schema for a HI behavioral range profile artifact."""
+"""Pydantic v2 schema for a hif behavioral range profile artifact."""
 
 from __future__ import annotations
 
