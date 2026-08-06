@@ -44,7 +44,7 @@ from pathlib import Path
 import click
 import typer
 
-from hif.cli_base import app
+from hif.cli import app
 import hif.cli  # noqa: F401 — importing registers every command on `app`
 from hif.models.capabilities import BACKENDS
 

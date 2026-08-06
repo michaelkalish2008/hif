@@ -17,6 +17,8 @@ import pytest
 from typer.testing import CliRunner
 
 import hif.cli as cli
+import hif.cli._load  # noqa: F401
+import hif.cli._run  # noqa: F401
 from hif.cli import app
 from hif.utils import logging as hif_logging
 from hif.utils.logging import configure_logging
@@ -50,9 +52,9 @@ def _patch_pipeline(monkeypatch, profile):
         _emit_chatter()
         return profile, None
 
-    monkeypatch.setattr(cli, "_load_model", lambda *a, **k: object())
-    monkeypatch.setattr(cli, "_load_embedder", lambda *a, **k: object())
-    monkeypatch.setattr(cli, "_run_single_profile", fake_run)
+    monkeypatch.setattr(cli._load, "_load_model", lambda *a, **k: object())
+    monkeypatch.setattr(cli._load, "_load_embedder", lambda *a, **k: object())
+    monkeypatch.setattr(cli._run, "_run_single_profile", fake_run)
 
 
 @pytest.fixture(autouse=True)
@@ -110,9 +112,9 @@ def test_genuine_warnings_still_show_by_default(monkeypatch, tmp_path):
         )
         return profile, None
 
-    monkeypatch.setattr(cli, "_load_model", lambda *a, **k: object())
-    monkeypatch.setattr(cli, "_load_embedder", lambda *a, **k: object())
-    monkeypatch.setattr(cli, "_run_single_profile", fake_run)
+    monkeypatch.setattr(cli._load, "_load_model", lambda *a, **k: object())
+    monkeypatch.setattr(cli._load, "_load_embedder", lambda *a, **k: object())
+    monkeypatch.setattr(cli._run, "_run_single_profile", fake_run)
     result = _invoke(["--output-dir", str(tmp_path)])
     assert result.exit_code == 0
     # Rich wraps the message around its columns — assert on tokens, not the

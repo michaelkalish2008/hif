@@ -33,8 +33,9 @@ import time
 import traceback
 from pathlib import Path
 
-from hif.cli import _run_single_profile, _load_model, _load_embedder
-from hif.cli_base import discover_env_files, load_env_file
+from hif.cli._run import _run_single_profile
+from hif.cli._load import _load_model, _load_embedder
+from hif.cli._app import discover_env_files, load_env_file
 from hif.config import RunConfig
 from hif.profile.measure import measurements, prompt_measurements
 from hif.prompts.suite import REGIMES

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import pytest
 
-from hif.cli import _load_config_file, _make_run_config
+from hif.cli._config import _load_config_file, _make_run_config
 
 
 def _config_from_toml(tmp_path, toml_text: str, model="gpt2", backend="hf"):

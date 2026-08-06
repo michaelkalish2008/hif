@@ -1,10 +1,13 @@
 """When two profile artifacts may be compared at all.
 
 `hif compare` reports differences, never a verdict — but two artifacts can be
-incomparable in a way no delta could express: a different modality is a
-different experimental condition, and a different major signal-set family
-means the two runs did not measure the same set. Both are hard errors here
-rather than caveats on the table.
+incomparable in a way no delta could express: a different signal-set family
+means the two runs did not claim the same measurement set, and intersecting
+across that would silently read "we no longer claim this" as "both runs
+measured this". A hard error here rather than a caveat on the table.
+
+(A second gate, cross-modality comparison, was removed with the image path in
+hif-v4 — with one modality there is nothing to mismatch.)
 """
 
 from __future__ import annotations
@@ -13,11 +16,7 @@ import re
 
 import typer
 
-from hif.cli_base import err_console
-
-
-def _profile_modality(p) -> str:
-    return getattr(p.prompt, "modality", "text") or "text"
+from hif.cli._app import err_console
 
 
 def _signal_set_family(version: str) -> str:
@@ -50,13 +49,3 @@ def _signal_set_mismatch_exit(baseline_version: str, candidate_version: str) -> 
     )
     raise typer.Exit(2)
 
-
-def _modality_mismatch_exit(baseline_modality: str, candidate_modality: str) -> None:
-    """Cross-modality comparison is a different experimental condition, not a
-    difference in the model — hard error, exit 2."""
-    err_console.print(
-        f"[red]A {baseline_modality} profile is a different experimental "
-        f"condition than a {candidate_modality} profile. Re-profile both "
-        "under the same modality to compare.[/red]"
-    )
-    raise typer.Exit(2)
