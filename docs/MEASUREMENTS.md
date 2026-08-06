@@ -617,8 +617,8 @@ Four fields, each computed independently from whatever evidence exists and set t
 
 | Field | Unit | Definition |
 |-------|------|-----------|
-| `input_entropy_shift_bits` | bits | `mean(|perturbed.mean_entropy − baseline.mean_entropy|)` |
-| `input_entropy_std_bits` | bits | `std(|perturbed.mean_entropy − baseline.mean_entropy|, ddof=1)`; needs ≥ 2 variants |
+| `input_entropy_shift_bits` | bits | `mean(\|perturbed.mean_entropy − baseline.mean_entropy\|)` |
+| `input_entropy_std_bits` | bits | `std(\|perturbed.mean_entropy − baseline.mean_entropy\|, ddof=1)`; needs ≥ 2 variants |
 | `perturbation_jsd_bits` | bits | `mean(mean_js_divergence)` over variants |
 | `input_output_correlation` | dimensionless | Pearson `r` between the shift and JSD per-variant series |
 

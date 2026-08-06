@@ -17,6 +17,17 @@ from hif.profile.registry import (
 from hif.profile.schema import BehavioralRangeProfile
 
 
+def _cell(text: str) -> str:
+    """Escape the table delimiter in text destined for a Markdown table cell.
+
+    Registry prose is written in maths, not Markdown: `input_entropy_shift_bits`
+    defines itself as `mean |...|`, and a bare `|` in a cell is a column break,
+    so that one row rendered as five columns against a four-column header. Same
+    escape tools/gen_flags_doc.py applies to help text, for the same reason.
+    """
+    return (text or "").replace("|", "\\|")
+
+
 # ---------------------------------------------------------------------------
 # Technical report (full)
 # ---------------------------------------------------------------------------
@@ -81,8 +92,8 @@ def render_technical(profile: BehavioralRangeProfile, output_path: Path) -> None
         mark = star if m.surrogate_group else ""
         shown = "absent (not measurable on this run)" if v is None else f"{v:.6g}"
         a(
-            f"| {m.name}{mark} | {shown} | {subjects.get(m.key, '')} | "
-            f"{m.unit} — {m.definition} |"
+            f"| {_cell(m.name)}{mark} | {shown} | {subjects.get(m.key, '')} | "
+            f"{_cell(m.unit)} — {_cell(m.definition)} |"
         )
     a("")
     a(f"Similarity trend slope: {profile.findings.similarity_trend_slope:+.6g} "
@@ -112,7 +123,7 @@ def render_technical(profile: BehavioralRangeProfile, output_path: Path) -> None
             if m.key not in prompt_vals:
                 continue
             ref = _prompt_reference_model(m.key, profile) or "unknown"
-            a(f"| {m.name} | {prompt_vals[m.key]:.6g} | `{ref}` | {m.unit} |")
+            a(f"| {_cell(m.name)} | {prompt_vals[m.key]:.6g} | `{ref}` | {_cell(m.unit)} |")
         a("")
 
     # Center diagnostics
@@ -133,7 +144,7 @@ def render_technical(profile: BehavioralRangeProfile, output_path: Path) -> None
     a("|---|---|")
     a(f"| Mean surprisal (bits) | {profile.input_side.mean_surprisal:.4f} |")
     a(f"| Mean entropy (bits) | {profile.input_side.mean_entropy:.4f} |")
-    a(f"| Max entropy log2|V| (bits) | {profile.input_side.max_entropy:.4f} |")
+    a(f"| Max entropy log2\\|V\\| (bits) | {profile.input_side.max_entropy:.4f} |")
     a("")
 
     # Output-side summary
@@ -277,7 +288,7 @@ def render_public(profile: BehavioralRangeProfile, output_path: Path) -> None:
     for m in MEASUREMENT_REGISTRY:
         v = vals.get(m.key)
         shown = "absent" if v is None else f"{v:.6g}"
-        a(f"| {m.name} | {shown} | {m.unit} |")
+        a(f"| {_cell(m.name)} | {shown} | {_cell(m.unit)} |")
     a("")
     a("Absent means this run produced no evidence for that quantity — the")
     a("backend could not teacher-force, or an optional analysis stage did not")

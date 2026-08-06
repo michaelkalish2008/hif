@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 
 from hif.profile.render_json import render_json
 from hif.profile.render_markdown import render_markdown, render_public, render_technical
@@ -65,6 +66,36 @@ class TestRenderJsonRoundtrip:
         assert isinstance(data, dict)
 
 
+def _table_rows_are_rectangular(content: str) -> list[str]:
+    """Rows whose unescaped-pipe count disagrees with their header's.
+
+    A cell cannot contain a bare `|`. Registry prose is written in maths —
+    `input_entropy_shift_bits` defines itself as `mean |...|` — so an
+    unescaped interpolation turns one row into five columns under a
+    four-column header, and every renderer of that Markdown mis-parses it.
+    """
+    bad: list[str] = []
+    in_code = False
+    header: int | None = None
+    for line in content.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("```"):
+            in_code = not in_code
+            header = None
+            continue
+        if in_code or not stripped.startswith("|"):
+            header = None
+            continue
+        if re.fullmatch(r"\|[\s:|-]+\|", stripped) and "-" in stripped:
+            continue
+        n = len(re.split(r"(?<!\\)\|", stripped)) - 2  # drop leading/trailing
+        if header is None:
+            header = n
+        elif n != header:
+            bad.append(stripped)
+    return bad
+
+
 class TestRenderMarkdownCreatesFiles:
     def test_technical_creates_nonempty_file(self, tmp_path):
         profile = _make_profile()
@@ -96,6 +127,18 @@ class TestRenderMarkdownCreatesFiles:
         # Every measurement row carries its unit — no bare numbers.
         assert "| Measurement | Value | Unit |" in content
         assert "bits" in content
+
+    def test_technical_tables_are_rectangular(self, tmp_path):
+        profile = _make_profile()
+        out = tmp_path / "report.md"
+        render_technical(profile, out)
+        assert _table_rows_are_rectangular(out.read_text()) == []
+
+    def test_public_tables_are_rectangular(self, tmp_path):
+        profile = _make_profile()
+        out = tmp_path / "summary.md"
+        render_public(profile, out)
+        assert _table_rows_are_rectangular(out.read_text()) == []
 
     def test_public_renders_no_levels_or_verdict(self, tmp_path):
         """The public summary used to map each metric to a low/medium/high
