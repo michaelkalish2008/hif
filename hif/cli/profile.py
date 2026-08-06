@@ -3,14 +3,12 @@
 from __future__ import annotations
 
 import json
-import sys
 import time
 from pathlib import Path
 from typing import Optional
 
 import typer
 from rich.progress import Progress, SpinnerColumn, TextColumn
-from rich.table import Table
 
 from hif.cli._app import (
     CHARTS_HELP,
@@ -52,7 +50,6 @@ from hif.profile.measure import (
     prompt_measurements as _prompt_measurements,
 )
 from hif.profile.record import (
-    RECORD_SCHEMA_VERSION as SIGNAL_RECORD_VERSION,
     profile_hash as _profile_hash,
     signals_record as _signals_record,
 )

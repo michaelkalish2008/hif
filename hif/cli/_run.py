@@ -6,15 +6,9 @@ call is written, so the two commands cannot drift into two behaviours.
 
 from __future__ import annotations
 
-import json
-import sys
-import time
 from pathlib import Path
 from typing import Optional
 
-import typer
-from rich.progress import Progress, SpinnerColumn, TextColumn
-from rich.table import Table
 
 from hif.cli._app import (
     console,
@@ -34,18 +28,7 @@ from hif.cli import _load
 # tables and the SessionEngine record path report identical numbers; the
 # registry rows they are keyed on live in hif/profile/registry.py and the wire
 # record in hif/profile/record.py.
-from hif.profile.measure import (
-    measurements as _measurements,
-    prompt_measurements as _prompt_measurements,
-)
-from hif.profile.record import (
-    RECORD_SCHEMA_VERSION as SIGNAL_RECORD_VERSION,
-    profile_hash as _profile_hash,
-    signals_record as _signals_record,
-)
-from hif.profile.registry import (
-    run_subjects as _run_subjects,
-)
+from hif.profile.record import profile_hash as _profile_hash
 
 
 

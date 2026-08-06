@@ -3,13 +3,10 @@
 from __future__ import annotations
 
 import json
-import sys
-import time
 from pathlib import Path
 from typing import Optional
 
 import typer
-from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 
 from hif.cli._app import (
@@ -19,8 +16,6 @@ from hif.cli._app import (
 )
 from hif.cli._compat import (
     _artifact_signal_set_version,
-    _modality_mismatch_exit,
-    _profile_modality,
     _signal_set_family,
     _signal_set_mismatch_exit,
 )
@@ -29,20 +24,8 @@ from hif.cli._compat import (
 # tables and the SessionEngine record path report identical numbers; the
 # registry rows they are keyed on live in hif/profile/registry.py and the wire
 # record in hif/profile/record.py.
-from hif.profile.measure import (
-    measurements as _measurements,
-    prompt_measurements as _prompt_measurements,
-)
-from hif.profile.record import (
-    RECORD_SCHEMA_VERSION as SIGNAL_RECORD_VERSION,
-    profile_hash as _profile_hash,
-    signals_record as _signals_record,
-)
-from hif.profile.registry import (
-    MEASUREMENT_KEYS,
-    MEASUREMENT_UNITS,
-    run_subjects as _run_subjects,
-)
+from hif.profile.measure import measurements as _measurements
+from hif.profile.registry import MEASUREMENT_KEYS, MEASUREMENT_UNITS
 
 
 
@@ -75,12 +58,6 @@ def compare(
     pa = BehavioralRangeProfile.model_validate(raw_a)
     pb = BehavioralRangeProfile.model_validate(raw_b)
 
-    # Cross-modality comparison is a different experimental condition — hard
-    # error, never a warning. Missing modality on an older profile reads "text".
-    modality_a = _profile_modality(pa)
-    modality_b = _profile_modality(pb)
-    if modality_a != modality_b:
-        _modality_mismatch_exit(modality_a, modality_b)
 
     version_a = _artifact_signal_set_version(raw_a)
     version_b = _artifact_signal_set_version(raw_b)

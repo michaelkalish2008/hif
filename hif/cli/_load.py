@@ -1,7 +1,6 @@
 """Everything the CLI loads or probes before (and about) a run.
 
-Backend resolution, the model / embedder / surrogate loads, assembling a
-the live
+Backend resolution, the model / embedder / surrogate loads, and the live
 catalogue probes `hif models` uses. Grouped because each one answers the same
 question — what does this run actually get to work with — and because the
 backend a name resolves to has to be answered identically everywhere it is
@@ -183,18 +182,3 @@ def _check_surrogate_candidates() -> list[tuple[str, str]]:
             results.append((model_id, f"error ({exc})"))
     return results
 
-
-def _resolve_validation_corpus(corpus: Optional[Path], seed: int, quiet: bool) -> Path:
-    """Return a corpus directory, generating the built-in known-answer corpus
-    into ~/.hif/validation-corpus/<seed>/ on first use (deterministic from
-    the seed; images are not shipped in the package)."""
-    if corpus is not None:
-        return corpus
-    from hif.validation.corpus import generate_corpus
-
-    cache_dir = Path.home() / ".hif" / "validation-corpus" / str(seed)
-    if not (cache_dir / "corpus.jsonl").exists():
-        if not quiet:
-            console.print(f"[dim]Generating validation corpus into {cache_dir}...[/dim]")
-        generate_corpus(seed=seed, out_dir=cache_dir)
-    return cache_dir
