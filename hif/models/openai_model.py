@@ -194,7 +194,7 @@ class OpenAIModel(Model):
         """Chat-completions call with logprobs, mapped to GenerationResult steps.
 
         Shared by the text path (generate) and the vision adapter
-        (OpenAIVLMModel.generate_prepared) — the messages payload is the only
+        — the messages payload is the only
         difference between the two.
         """
         effective_k = min(top_k, self.max_top_k)

@@ -31,10 +31,9 @@ from hif.profile.registry import (
 # StabilityMetrics components are Optional: None means the signal is ABSENT —
 # not measurable for this run (e.g. partial-access API backends have no
 # input-side series), which is deliberately distinct from a pinned/degenerate
-# value (the multimodal_v1 H1 defect, since fixed by the absent-not-pinned
+# value (an early defect, since fixed by the absent-not-pinned
 # rule in hif/metrics/stability.py). The CLI renders absent signals as
 # "n/a", never as numbers; non-None values print normally on text and
-# multimodal runs alike.
 # Absent means "this run produced no evidence for that quantity" — a backend
 # that cannot teacher-force, an analysis stage that did not run. It is
 # deliberately distinct from a measured value and is never rendered as a

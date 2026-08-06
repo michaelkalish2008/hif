@@ -119,14 +119,6 @@ class PerturbationConfig(BaseModel):
     # in hif/profile/registry.py.
     elicit_variant_outputs: bool = True
 
-    # Media-side perturbation families (multimodal profiles only; ignored on
-    # the text path). Separate namespace from `generators` — resolved via
-    # hif.perturbation.get_family(). Default makes multimodal input Just
-    # Work with grid masking. n_variants <= 0 means exhaustive cell sweep
-    # (audit mode).
-    media_families: list[str] = ["image_grid_mask"]
-    image_grid_rows: int = 4
-    image_grid_cols: int = 4
 
 
 class OutputConfig(BaseModel):

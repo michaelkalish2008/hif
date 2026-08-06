@@ -12,12 +12,12 @@ Profile many prompts against one loaded model.
 
 | argument | meaning |
 | --- | --- |
-| `workload` | Workload JSONL file: one {"query_id", "text"[, "image", "regime", "variants"]} row per line. Omit it when using --sample-set. |
+| `workload` | Workload JSONL file: one {"query_id", "text"[, "regime", "variants"]} row per line. Omit it when using --sample-set. |
 | `model_name` | Model name (e.g. gpt2) |
 
 | flag | meaning |
 | --- | --- |
-| `--backend` | Model backend: hf \| tlens \| ollama \| openai \| anthropic \| gemini \| hf-vlm \| openai-vlm. Workloads containing image rows require hf-vlm or openai-vlm; image rows are EXPERIMENTAL — see `hif profile --input`. *(default: `hf`)* |
+| `--backend` | Model backend: hf \| tlens \| ollama \| openai \| anthropic \| gemini *(default: `hf`)* |
 | `--regime` | Default prompt regime (a per-row "regime" key overrides it). *(default: `batch`)* |
 | `--seed` | Random seed *(default: `42`)* |
 | `--max-new-tokens` | Maximum new tokens to generate *(default: `64`)* |
@@ -94,14 +94,14 @@ List the backends you can profile, example models, and which signals each suppor
 
 | flag | meaning |
 | --- | --- |
-| `--backend` | Show only this backend (hf, tlens, ollama, openai, anthropic, gemini, hf-vlm, openai-vlm). |
+| `--backend` | Show only this backend (hf, tlens, ollama, openai, anthropic, gemini). |
 | `--list` | Query each backend's actual model catalog right now (needs the provider's API key, or a running Ollama server) instead of showing static examples — use this when an example model from the docs turns out to be retired/unavailable. |
 | `--surrogates` | List recommended --surrogate-model choices (small open-weight models for recovering input-side signals on closed/Ollama backends via --surrogate) and check each is currently reachable and ungated on the Hugging Face Hub. |
 | `--json` | Emit the catalogue as a single JSON document on stdout instead of the human table, so the model list can be piped, scripted, or fed to a picker. Composes with --backend, --list and --surrogates. |
 
 ## `hif profile`
 
-Run the full HI pipeline on a single (model, prompt) pair.
+Run the full hif pipeline on a single (model, prompt) pair.
 
 | argument | meaning |
 | --- | --- |
@@ -111,8 +111,7 @@ Run the full HI pipeline on a single (model, prompt) pair.
 | flag | meaning |
 | --- | --- |
 | `--regime` | Prompt regime *(default: `ordinary_conversation`)* |
-| `--backend` | Model backend: hf \| tlens \| ollama \| openai \| anthropic \| gemini \| hf-vlm \| openai-vlm. For image inputs (--input) use an explicit VLM backend: hf-vlm (local AutoModelForImageTextToText checkpoints, e.g. SmolVLM/Gemma 3 multimodal) or openai-vlm (hosted vision API, e.g. gpt-4o). Both VLM backends are EXPERIMENTAL — see --input. *(default: `hf`)* |
-| `--input` | EXPERIMENTAL. Image file (PNG/JPEG) to include as model input; repeatable. Images are presented before the prompt text. Requires --backend hf-vlm or openai-vlm. The image path is not yet covered by the measurement-set guarantees the text path carries: treat its records as provisional and do not compare them across hif versions. *(default: `[]`)* |
+| `--backend` | Model backend: hf \| tlens \| ollama \| openai \| anthropic \| gemini *(default: `hf`)* |
 | `--seed` | Random seed *(default: `42`)* |
 | `--output-dir` | Write derived reports (technical + public markdown, --charts plots) here. Default: nothing is written to disk — results print to the terminal only (privacy-first compute-and-discard). |
 | `--max-new-tokens` | Maximum new tokens to generate *(default: `64`)* |
@@ -122,8 +121,8 @@ Run the full HI pipeline on a single (model, prompt) pair.
 | `--trace-dir` | Where --trace artifacts are written (default: <output-dir>/traces, or ./traces when no --output-dir). Passing this implies --trace. |
 | `--charts` | Generate plots + the combined dashboard locally (off by default). |
 | `--diagnostics` | Also run the two optional analysis stages — attention capture and the semantic field. Neither produces a measurement in hif-v4; their blocks ship in the --trace artifact as evidence. Off by default because both cost extra compute. |
-| `--application` | Application archetype (support-chatbot, rag-qa, coding-assistant, summarization, extraction, classification, agent-tool-use, multimodal-qa, document-understanding). Labels the run and supplies the default --analysis-window; both are recorded in the JSON record. It does not change how anything is measured. |
-| `--mode` | fast: fewer perturbation variants. audit: full perturbation set (multimodal: exhaustive grid sweep). Input is always passed in full regardless of mode. *(default: `fast`)* |
+| `--application` | Application archetype (support-chatbot, rag-qa, coding-assistant, summarization, extraction, classification, agent-tool-use, document-understanding). Labels the run and supplies the default --analysis-window; both are recorded in the JSON record. It does not change how anything is measured. |
+| `--mode` | fast: fewer perturbation variants. audit: full perturbation set. Input is always passed in full regardless of mode. *(default: `fast`)* |
 | `--variant-io` | Include a `variant_io` block in the --json record: each perturbation variant's input text and the continuation it elicited (null where none was — synthesized-input tier, or a failure). Opt-in because it adds model-generated content to every record; outputs live in records, inputs stay immutable. |
 | `--acquisition` | Ceiling on what this run may bring into existence. observational: read the prompt as given and the one continuation the run produces — nothing else is sent to the model and no new model output exists afterwards. synthesized-input: additionally author paraphrased prompts and teacher-force over them (the model still does not generate). elicited-output (default): additionally let the model generate variant continuations and trajectory branches. Measurements above the ceiling are absent, not zero. Run `hif schema` to see each measurement's acquisition tier. *(default: `elicited-output`)* |
 | `--lite` | Skip every stage that costs an extra generation pass or an embedding sweep: perturbation variants, trajectory branches, and per-step candidate geometry. The entropy-side measurements are unchanged; the ones those stages feed are omitted, not zeroed. Overrides --mode and --config-file for the stages it disables. |
@@ -133,7 +132,7 @@ Run the full HI pipeline on a single (model, prompt) pair.
 | `--json` | Output machine-readable JSON profile |
 | `--units` | Include a per-measurement units block in each record. Constant per signal_set_version and identical on every record, so off by default; `hif schema` prints the same information without running a model. |
 | `--truncate` | Truncate input to N tokens before analysis. Results reflect truncated context only. |
-| `--surrogate` | Recover the input-side measurements (input_entropy_shift_bits, input_entropy_std_bits, prompt_surprisal_excess_bits) on backends that cannot teacher-force (ollama, openai, gemini, anthropic) by teacher-forcing a small local proxy model over the prompt+output — the same technique the study harness uses. Ignored when the target backend already teacher-forces (hf/tlens/hf-vlm). Implied by --surrogate-model, so passing that alone is enough. |
+| `--surrogate` | Recover the input-side measurements (input_entropy_shift_bits, input_entropy_std_bits, prompt_surprisal_excess_bits) on backends that cannot teacher-force (ollama, openai, gemini, anthropic) by teacher-forcing a small local proxy model over the prompt+output — the same technique the study harness uses. Ignored when the target backend already teacher-forces (hf/tlens). Implied by --surrogate-model, so passing that alone is enough. |
 | `--surrogate-model` | Open-weight HF model id used for --surrogate (default: Llama 3.2 1B, ungated mirror). Passing this flag implies --surrogate — you don't need both. |
 
 ## `hif render`
@@ -156,25 +155,6 @@ Print the measurement registry: every key with its full row.
 | flag | meaning |
 | --- | --- |
 | `--json` | Emit the machine-readable schema document (default) or a human table. *(default: `True`)* |
-
-## `hif validate-model`
-
-Validate region-sensitivity measurement for a model against HIF's known-answer suite.
-
-| argument | meaning |
-| --- | --- |
-| `model_name` | Model name (e.g. a HF VLM checkpoint or gpt-4o) |
-
-| flag | meaning |
-| --- | --- |
-| `--backend` | Model backend: hf-vlm \| openai-vlm. EXPERIMENTAL — this command validates the image path, which is not yet covered by the measurement-set guarantees the text path carries. |
-| `--grid` | Mask grid as ROWSxCOLS (default: 4x4; 2x2 with --pilot). |
-| `--corpus` | Directory containing a corpus.jsonl known-answer suite (default: built-in suite, generated to ~/.hif/validation-corpus/ on first use). |
-| `--pilot` | Fast smoke run: 4 images on a 2x2 grid instead of 10 images on 4x4. |
-| `--seed` | Corpus-generation / run seed *(default: `20260703`)* |
-| `--yes` | Skip the full-run confirmation prompt |
-| `--json` | Output machine-readable JSON |
-| `--quiet` | Suppress progress output |
 
 ## What `hif doctor` checks
 

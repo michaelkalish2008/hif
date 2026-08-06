@@ -12,7 +12,7 @@ A HIF run involves up to four model roles. Conflating them is the most common co
 
 **1. Model under analysis**
 
-The causal language model whose behavioral range is being characterized. HIF extracts only what the model exposes externally: tokenized text, full-vocabulary logits (for HF/TLens/HF-VLM), and top-K logprobs at generation time.
+The causal language model whose behavioral range is being characterized. hif extracts only what the model exposes externally: tokenized text, full-vocabulary logits (for HF/TLens), and top-K logprobs at generation time.
 
 Backends are constructed by `hif/models/factory.py` from a `ModelConfig`; `hif/models/capabilities.py` is the single source of truth for what each one exposes (and backs `hif models`, `hif doctor`, and the early `--metric` guard in `hif profile`):
 
@@ -20,10 +20,8 @@ Backends are constructed by `hif/models/factory.py` from a `ModelConfig`; `hif/m
 |---------|-------|------|-----------------|-----------|----------|
 | `hf` | `HFModel` | local-open | Yes | Yes | full |
 | `tlens` | `TLensModel` | local-open | Yes | Yes | full |
-| `hf-vlm` | `HFVLMModel` | local-open (multimodal) | Yes | Yes | full |
 | `ollama` | `OllamaModel` | local-service | No | No | top-k |
 | `openai` | `OpenAIModel` | hosted-api | No | No | top-k |
-| `openai-vlm` | `OpenAIVLMModel` | hosted-api (multimodal) | No | No | top-k |
 | `gemini` | `GeminiModel` | hosted-api | No | No | top-k |
 | `anthropic` | `AnthropicModel` | hosted-api | No | No | selected-only |
 
@@ -136,7 +134,7 @@ hif/
   __init__.py              # version
   config.py                # Pydantic v2 RunConfig and sub-configs
   cli.py                   # Typer CLI: profile, suite, batch, compare, render,
-                           #   schema, models, doctor, validate-model
+                           #   schema, models, doctor
   engine.py                # SessionEngine — load model/embedder/surrogate once, profile many
   batch.py                 # `hif batch` workload runner; streams one JSON record per row
 
@@ -144,12 +142,9 @@ hif/
     base.py                # Abstract Model interface; Logits, TopKEntry, StepRecord, GenerationResult
     factory.py             # load_model() — backend → class dispatch, KNOWN_BACKENDS
     capabilities.py        # BACKENDS table, metric_support(), signals_available(), SURROGATE_CANDIDATES
-    mm.py                  # InputPart / MultimodalInput / PreparedInput; MultimodalModel ABC
     hf.py                  # HFModel (AutoModelForCausalLM)
-    hf_vlm.py              # HFVLMModel (AutoProcessor + AutoModelForImageTextToText)
     tlens.py               # TLensModel (TransformerLens)
     openai_model.py        # OpenAIModel (and OpenAI-compatible endpoints)
-    openai_vlm.py          # OpenAIVLMModel (vision chat completions; output-side only)
     anthropic_model.py     # AnthropicModel (selected-token-only logprobs)
     gemini_model.py        # GeminiModel (top-k logprobs on Vertex AI)
     ollama.py              # OllamaModel (local Ollama server)
@@ -178,7 +173,6 @@ hif/
     ambiguity.py           # AmbiguityGenerator (hedging and qualification variants)
     tone.py                # ToneGenerator (formal, casual, direct, hedged)
     llm.py                 # LLMParaphraseGenerator (opt-in; explicit base_url/api_key)
-    image_grid.py          # ImageGridMaskFamily, ImageBrightnessFamily (media perturbation)
     __init__.py            # get_generator() / get_family() registries
 
   clustering/
@@ -201,8 +195,8 @@ hif/
     __init__.py            # flat-YAML archetype registry (--application)
     *.yaml                 # rag-qa, summarization, classification, extraction,
                            #   coding-assistant, support-chatbot, agent-tool-use,
-                           #   document-understanding, multimodal-qa
-    suites/                # bundled prompt suites (JSONL) + multimodal-qa images
+                           #   document-understanding
+    suites/                # bundled prompt suites (JSONL)
 
   viz/
     __init__.py            # generate_signal_plots() entry point
@@ -224,11 +218,7 @@ hif/
     attention.py           # AttentionAnalyzer, TextAttentionAnalysis, and Pydantic schemas
     exposure.py            # ExposureAnalyzer → ExposureProfile (per-step counterfactual exposure)
     semantic_field.py      # SemanticFieldAnalyzer → SemanticFieldReading
-    region_sensitivity.py  # per-grid-cell perturbation JSD artifact (multimodal)
 
-  validation/
-    corpus.py              # synthetic known-answer image corpus generator
-    harness.py             # region-sensitivity validation harness (backs `hif validate-model`)
 
   utils/
     logging.py             # get_logger()
@@ -244,10 +234,8 @@ hif/
 |---------|-------|-----------------|-------|
 | `hf` | (base) | Yes | Primary. Full-vocabulary logits and attention — every measurement |
 | `tlens` | `[tlens]` | Yes | Replicability with MI literature; same interface as HF |
-| `hf-vlm` | (base, + Pillow) | Yes | Multimodal (image+text); full fidelity on the text parts |
 | `ollama` | `[ollama]` | No | Local Ollama server. Output-side only (top-20). Model must be pulled first |
 | `openai` | `[openai]` | No | Output-side only (top-20 logprobs) |
-| `openai-vlm` | `[openai]` | No | Multimodal vision chat; output-side only. No patch geometry in the part map |
 | `gemini` | `[gemini]` | No | Top-20 logprobs on Vertex AI only; the developer API degenerates |
 | `anthropic` | `[anthropic]` | No | Selected token only — distribution measurements degenerate without `--surrogate` |
 
@@ -284,101 +272,6 @@ The full pipeline, as orchestrated by `build_profile()` in `hif/profile/builder.
 15. **Charts (optional)** — `generate_signal_plots()` renders the registry's signal charts plus a combined dashboard index.
 
 `SessionEngine` (`hif/engine.py`) wraps steps 1–13 for the load-once/profile-many callers (`hif profile`, `hif batch`); it never writes an artifact implicitly.
-
----
-
-## Multimodal notes (M1)
-
-> **Experimental.** The image path — the `hf-vlm`/`openai-vlm` backends,
-> `hif profile --input`, image rows in a batch workload, the `image_grid`
-> perturbation family, `hif validate-model`, and the `input_part_map` /
-> `region_sensitivity` blocks — is not covered by the guarantees the text path
-> carries. The Significance Gate in [MEASUREMENTS.md](MEASUREMENTS.md) was
-> applied to the text measurements; no equivalent pass has been made over the
-> image-side quantities, and `SIGNAL_SET_VERSION` does not version them. Treat
-> image records as provisional and do not compare them across hif versions.
-> The code below is accurate and the tests hold; what is deferred is the
-> decision about which image-side quantities earn a place in the set.
-
-The multimodal path was built against a design/risk spec (`MULTIMODAL.md`)
-that lives in a private monorepo and is not part of this repository — part of
-it is under legal review, so its text cannot be copied in. Code comments used
-to cite it by section, which pointed readers at a document they cannot open.
-This section replaces those citations: it restates the cited rules **as the
-code and its tests verifiably implement them**, and for this repository it —
-together with the code and tests it describes — is the authority. The
-original rule labels (Design §N, Risk rule N) are preserved because the code
-cites them by number.
-
-### Design rules
-
-- **§1–2 — Scope and interfaces.** One multimodal milestone is implemented:
-  image+text input → text output (`PromptRecord.modality` is a closed enum,
-  `"text" | "image+text"`). Text-only models and call sites are untouched:
-  `tokenize/detokenize/forward/generate` keep their exact signatures on
-  `Model`; multimodality enters only through the `MultimodalModel` ABC
-  (`prepare()` / `forward_prepared()` / `generate_prepared()`,
-  `hif/models/mm.py`). `prepare()` runs exactly once per input (and once per
-  media variant); the processor owns all media/tokenization logic, and
-  `tokenize()` is never called with media anywhere in the pipeline.
-  Input-side entropy/surprisal are computed only over
-  `part_map.text_positions()` — patch/placeholder positions have no
-  meaningful vocab distribution and are excluded from the aggregates.
-- **§3 — Region sensitivity is derived from perturbation response.** The
-  per-grid-cell artifact is assembled from (mask-trace, `SensitivityMetrics`)
-  pairs produced by the `image_grid_mask` family — perturbation-JSD per cell,
-  nothing else (see also Risk rule 7).
-- **§6 — Media perturbation is a separate namespace.** Media families
-  implement the `PerturbationFamily` protocol and resolve via
-  `get_family()`; text generators resolve via `get_generator()`. The two
-  namespaces never mix (`hif/perturbation/__init__.py`).
-- **§7 — Attention analysis reads text parts only.** The attention stage uses
-  its own bidirectional text encoder over the text parts and the generated
-  continuation — never generation-model internals.
-- **§ Builder entry point.** `build_profile` routes by input type: a plain
-  `str`, or a `MultimodalInput` with no media parts, takes the text path
-  verbatim (byte-identical profiles). Media parts on a model without
-  `supports_multimodal_input` raise `ValueError` **before any inference**.
-  Text-part perturbation of a multimodal input is out of scope in M1:
-  explicitly configured text generators are a config error, raised before
-  inference; the untouched default generator list is ignored with a warning,
-  so the default config works on multimodal input with the `image_grid_mask`
-  family (a deliberate decision, agreed 2026-07-03).
-- **§ Storage & privacy.** Raw media (pixels, base64) must never reach the
-  profile JSON or any API payload. Profiles persist `InputPartRecord` —
-  content hash + dimensions + byte length only. Perturbed images live only as
-  in-memory `image_bytes` parts; media traces (`PerturbationTrace`) carry
-  geometry and parameters, never pixels.
-- **§ Profile schema impact.** Multimodal `prompt_hash` is the sha256 over
-  the concatenated part `content_hash`es in part order, so the hash covers
-  media identity without embedding media content.
-
-### Risk rules
-
-- **Rule 2 — No pixels in persisted JSON, ever.** Including with raw-trace
-  capture enabled: traces carry geometry and knobs only. (The storage
-  enforcement of Design § Storage & privacy; asserted by
-  `tests/unit/test_mm.py` and `tests/unit/test_image_grid.py`.)
-- **Rule 3 — Text positions only, and only when certain.** Position→part
-  attribution is positive-match only: a position that cannot be attributed to
-  a text span with certainty is left out of every span, so
-  structural/chat-template tokens are never inside a part span
-  (`HFVLMModel.prepare`), and input-side analysis reads only
-  `part_map.text_positions()` (`analyze_input_side_mm`).
-- **Rule 6 — No trajectory rollouts in M1.** Trajectory analysis re-forwards
-  `input_ids` alone, which would silently drop pixel state — so the stage is
-  skipped (zero branches) on the multimodal path rather than run wrong, and
-  the profile's provenance records that it did not run.
-- **Rule 7 — Region sensitivity never touches generation-model attention.**
-  The grid artifact is perturbation-JSD only (Design §3). The originating
-  spec's rationale is not public; the behaviour is defined by
-  `hif/analysis/region_sensitivity.py` and its tests, which read nothing but
-  (mask-trace, `SensitivityMetrics`) pairs.
-- **Rule 8 — Copy rule.** Human-facing strings about masked cells say the
-  masking "materially affected the model's response behavior" — no causal,
-  correctness, or attention language (`hif/analysis/region_sensitivity.py`).
-
----
 
 ## Field-model notes
 

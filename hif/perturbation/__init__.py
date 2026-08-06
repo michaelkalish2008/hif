@@ -16,13 +16,9 @@ Two implementations exist for synonym/tone/reorder-style perturbation:
 
 from hif.perturbation.ambiguity import AmbiguityGenerator
 from hif.perturbation.base import (
-    MultimodalVariant,
-    PerturbationFamily,
     PerturbationGenerator,
     PerturbationResult,
-    PerturbationTrace,
 )
-from hif.perturbation.image_grid import ImageBrightnessFamily, ImageGridMaskFamily
 from hif.perturbation.llm import LLMParaphraseGenerator
 from hif.perturbation.substitution import SubstitutionGenerator
 from hif.perturbation.synonym import SynonymGenerator
@@ -39,12 +35,8 @@ __all__ = [
     "ToneGenerator",
     "WordOrderGenerator",
     "get_generator",
-    "PerturbationFamily",
-    "PerturbationTrace",
-    "MultimodalVariant",
     "ImageGridMaskFamily",
     "ImageBrightnessFamily",
-    "get_family",
 ]
 
 # LLM-backed variant types, keyed by the same name used for their rule-based
@@ -103,26 +95,3 @@ def get_generator(
     raise ValueError(f"Unknown generator: {name!r}. Available: {all_names}")
 
 
-# ---------------------------------------------------------------------------
-# Media-side family registry (Design §6, docs/ARCHITECTURE.md § Multimodal
-# notes) — a SEPARATE
-# namespace from get_generator(); text and media names never mix.
-# ---------------------------------------------------------------------------
-
-_FAMILY_TYPES: dict[str, type[PerturbationFamily]] = {
-    ImageGridMaskFamily.name: ImageGridMaskFamily,
-    ImageBrightnessFamily.name: ImageBrightnessFamily,
-}
-
-
-def get_family(name: str, **kwargs) -> PerturbationFamily:
-    """Resolve a media perturbation family by name.
-
-    kwargs are forwarded to the family constructor (e.g. grid_rows/grid_cols
-    for image_grid_mask, delta for image_brightness).
-    """
-    if name in _FAMILY_TYPES:
-        return _FAMILY_TYPES[name](**kwargs)
-    raise ValueError(
-        f"Unknown perturbation family: {name!r}. Available: {sorted(_FAMILY_TYPES)}"
-    )

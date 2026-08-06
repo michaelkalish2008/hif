@@ -104,8 +104,8 @@ Access is a property of what the backend exposes, not of the model. `hif/models/
 
 | Access | Backends | What is available |
 |--------|----------|------------------|
-| `[F]` full | `hf`, `tlens`, `hf-vlm` | Full-vocabulary distributions and teacher forcing — every measurement |
-| `[T-k]` truncated | `openai`, `openai-vlm`, `gemini`, `ollama` | Top-k logprobs only; output entropy is a lower bound; no teacher forcing |
+| `[F]` full | `hf`, `tlens` | Full-vocabulary distributions and teacher forcing — every measurement |
+| `[T-k]` truncated | `openai`, `gemini`, `ollama` | Top-k logprobs only; output entropy is a lower bound; no teacher forcing |
 | `[P]` proxy | `anthropic` | Selected token only. The entropy-shaped measurements degenerate unless a `--surrogate` reads the output text under teacher forcing; the distribution **divergence** `perturbation_jsd_bits` is absent outright, and no surrogate recovers it |
 
 The input-side measurements (`input_entropy_shift_bits`, `input_entropy_std_bits`, `prompt_surprisal_excess_bits`) require teacher forcing. On a backend that cannot teacher-force they are either **absent from the record entirely**, or — with `--surrogate` — computed by a small local open-weight model reading the same prompt. In the second case they describe the prompt under that reference model, not the target: their subject is `prompt-only`, so they leave `measurements` for the `prompt_measurements` block (see [Subject](#subject--whose-behaviour-the-number-describes)). `hif models` prints, per backend, which measurements degrade this way.
@@ -337,7 +337,7 @@ The interesting case is when `sᵢ` and `H(Pᵢ)` diverge: low `H(Pᵢ)` means t
 
 **Expected range.** `[0, ∞)` bits. Most positions contribute zero. Large values at specific positions identify structurally surprising tokens — places where the model had committed and the actual token overrode that commitment.
 
-**Access.** Requires teacher forcing: an open-weight backend (`hf`, `tlens`, `hf-vlm`), or a `--surrogate` proxy teacher-forced over the same prompt. A surrogate reading describes the surrogate, and is flagged as such via `findings.surrogate_model_name`.
+**Access.** Requires teacher forcing: an open-weight backend (`hf`, `tlens`), or a `--surrogate` proxy teacher-forced over the same prompt. A surrogate reading describes the surrogate, and is flagged as such via `findings.surrogate_model_name`.
 
 ---
 

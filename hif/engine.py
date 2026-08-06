@@ -82,7 +82,7 @@ class SessionEngine:
         authored_variants: Optional[list] = None,
         variant_output_sink: Optional[dict] = None,
     ):
-        """Run the full pipeline on one prompt (str or MultimodalInput).
+        """Run the full pipeline on one prompt.
 
         Returns the in-memory BehavioralRangeProfile. Nothing is written to
         disk — see `write_trace` for the explicit persistence opt-in.

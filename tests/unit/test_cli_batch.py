@@ -9,7 +9,7 @@ CliRunner. The contract under test:
 - every record on the stream — successes and row errors alike — carries the
   same schema_version.
 - a row failure emits an error record and the stream continues.
-- malformed workload / bad path / mixed image rows without a VLM backend
+- malformed workload / bad path
   exit 3 before any engine is created.
 - --limit truncates; --output-dir mirrors the stream to records.jsonl.
 """
@@ -212,18 +212,6 @@ def test_missing_required_keys_exits_3(tmp_path):
     assert FakeEngine.created == 0
 
 
-def test_image_rows_without_vlm_backend_exit_3(tmp_path):
-    (tmp_path / "form.png").write_bytes(b"png-bytes")  # exists; content not checked here
-    wl = _write_workload(tmp_path, [
-        {"query_id": "t1", "text": "plain"},
-        {"query_id": "m1", "text": "what is this?", "image": "form.png"},
-    ])
-    result = runner.invoke(app, ["batch", str(wl), "m"])
-    assert result.exit_code == 3
-    assert "hf-vlm" in result.stderr
-    assert FakeEngine.created == 0  # rejected before loading models
-
-
 # ---------------------------------------------------------------------------
 # --limit
 # ---------------------------------------------------------------------------
@@ -308,38 +296,6 @@ def test_config_file_unknown_table_exits_3(tmp_path):
     assert result.exit_code == 3
     assert "perturbaton" in result.stderr
     assert FakeEngine.created == 0
-
-
-# ---------------------------------------------------------------------------
-# image rows: missing file fails fast; unreadable file mid-run isolates the row
-# ---------------------------------------------------------------------------
-
-
-def test_missing_image_file_exits_3_before_engine(tmp_path):
-    wl = _write_workload(tmp_path, [
-        {"query_id": "m1", "text": "what is this?", "image": "gone.png"},
-    ])
-    result = runner.invoke(app, ["batch", str(wl), "m", "--backend", "hf-vlm"])
-    assert result.exit_code == 3
-    assert "gone.png" in result.stderr
-    assert FakeEngine.created == 0
-
-
-def test_unreadable_image_mid_run_emits_error_record(tmp_path):
-    # Exists at validation time but is not a decodable image — the row must
-    # fail into an {"error": ...} record, not abort the stream.
-    (tmp_path / "junk.png").write_bytes(b"not really a png")
-    wl = _write_workload(tmp_path, [
-        {"query_id": "ok_1", "text": "plain row"},
-        {"query_id": "bad_img", "text": "describe", "image": "junk.png"},
-    ])
-    result = runner.invoke(app, ["batch", str(wl), "m", "--backend", "hf-vlm"])
-    assert result.exit_code == 0, result.output
-    records = _stdout_records(result)
-    by_id = {r["query_id"]: r for r in records}
-    assert "error" not in by_id["ok_1"]
-    assert by_id["bad_img"]["error"]  # non-empty, meaningful message
-    assert "junk.png" in by_id["bad_img"]["error"]
 
 
 # ---------------------------------------------------------------------------

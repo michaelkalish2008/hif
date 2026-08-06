@@ -11,17 +11,14 @@ one stream can never mix two schema versions.
 
 Workload file: JSONL, one row per prompt:
 
-    {"query_id": str, "text": str, "image"?: str, "regime"?: str,
-     "variants"?: [str, ...]}
+    {"query_id": str, "text": str, "regime"?: str, "variants"?: [str, ...]}
 
 `variants` carries researcher-authored perturbation paraphrases for the row;
 when present they replace the configured generator pipeline for that row
 (same rule as [perturbation] variants_file, which reads this same format).
 
-`image` is a path relative to the workload file's directory (multimodal
-rows require a VLM backend). The whole file is validated up front — a
-malformed line is a caller error (WorkloadError), surfaced before any
-model is loaded.
+The whole file is validated up front — a malformed line is a caller error
+(WorkloadError), surfaced before any model is loaded.
 
 Privacy contract: same as the engine — compute-and-discard by default;
 per-row trace artifacts are written only when the run opted in (--trace).
@@ -39,7 +36,6 @@ from typing import Callable, Optional
 from hif.engine import SessionEngine
 from hif.profile.record import RECORD_SCHEMA_VERSION
 
-VLM_BACKENDS = ("hf-vlm", "openai-vlm")
 
 
 def _release_local_gpu_memory() -> None:
@@ -80,7 +76,6 @@ class BatchRow:
 
     query_id: str
     text: str
-    image: Optional[Path] = None  # resolved against the workload file's dir
     regime: Optional[str] = None  # overrides the run-level default
     # Researcher-authored perturbation variants for this prompt. When present,
     # the row's profile uses these INSTEAD of the generator pipeline — the
@@ -127,15 +122,6 @@ def load_workload(path: Path, *, limit: Optional[int] = None) -> list[BatchRow]:
             raise WorkloadError(
                 f"{path}:{lineno}: missing/invalid \"text\" (non-empty string required)"
             )
-        image = data.get("image")
-        if image is not None and (not isinstance(image, str) or not image):
-            raise WorkloadError(
-                f"{path}:{lineno}: \"image\" must be a non-empty string path"
-            )
-        if image is not None and not (path.parent / image).exists():
-            raise WorkloadError(
-                f"{path}:{lineno}: image file not found: {path.parent / image}"
-            )
         regime = data.get("regime")
         if regime is not None and (not isinstance(regime, str) or not regime):
             raise WorkloadError(
@@ -157,7 +143,6 @@ def load_workload(path: Path, *, limit: Optional[int] = None) -> list[BatchRow]:
             BatchRow(
                 query_id=query_id,
                 text=text,
-                image=(path.parent / image) if image else None,
                 regime=regime,
                 variants=variants,
             )
@@ -166,10 +151,6 @@ def load_workload(path: Path, *, limit: Optional[int] = None) -> list[BatchRow]:
     if limit is not None:
         rows = rows[: max(limit, 0)]
     return rows
-
-
-def has_image_rows(rows: list[BatchRow]) -> bool:
-    return any(r.image is not None for r in rows)
 
 
 def sanitize_query_id(query_id: str) -> str:
@@ -183,34 +164,6 @@ def _error_record(query_id: str, message: str) -> dict:
         "query_id": query_id,
         "error": message,
     }
-
-
-def _row_input(row: BatchRow):
-    """The engine input for a row: plain text, or a MultimodalInput for
-    image rows (image first, then text — same construction as `hif
-    profile --input`).
-
-    Deliberately NOT the CLI's `_build_multimodal_input`: that helper prints
-    and raises typer.Exit, which would abort the whole stream. Here a bad
-    image raises a plain ValueError so run_batch's row isolation turns it
-    into a meaningful error record and the run continues.
-    """
-    if row.image is None:
-        return row.text
-    from hif.models.mm import InputPart, MultimodalInput
-
-    try:
-        from PIL import Image
-
-        with Image.open(row.image) as img:
-            img.verify()
-    except Exception as exc:
-        raise ValueError(
-            f"image {row.image} is not a readable image (PNG/JPEG): {exc}"
-        ) from exc
-    return MultimodalInput(
-        parts=[InputPart.from_image_path(str(row.image)), InputPart.from_text(row.text)]
-    )
 
 
 def _write_row_trace(engine, profile, row: BatchRow, *, seed: int,
@@ -269,7 +222,7 @@ def run_batch(
             # row's record, then dropped with the loop variable.
             variant_output_sink: Optional[dict] = {} if variant_io else None
             profile = engine.profile_one(
-                _row_input(row), regime=regime, seed=seed,
+                row.text, regime=regime, seed=seed,
                 authored_variants=row.variants,
                 variant_output_sink=variant_output_sink,
             )

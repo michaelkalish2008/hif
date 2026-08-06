@@ -18,14 +18,15 @@ EXPECTED_IDS = [
     "coding-assistant",
     "document-understanding",
     "extraction",
-    "multimodal-qa",
     "rag-qa",
     "summarization",
     "support-chatbot",
 ]
 
-# Multimodal archetypes carry the smaller default analysis window.
-MULTIMODAL_IDS = {"multimodal-qa", "document-understanding"}
+# Long-context archetypes carry the smaller default analysis window.
+# `multimodal-qa` was removed with the image path in hif-v4;
+# `document-understanding` is text and stays.
+LONG_CONTEXT_IDS = {"document-understanding"}
 
 
 # ---------------------------------------------------------------------------
@@ -48,7 +49,7 @@ def test_load_archetype_valid(archetype_id):
     assert isinstance(a, Archetype)
     assert a.id == archetype_id
     assert a.description
-    if archetype_id in MULTIMODAL_IDS:
+    if archetype_id in LONG_CONTEXT_IDS:
         assert a.default_analysis_window == 256
     assert a.default_analysis_window == "adaptive" or isinstance(
         a.default_analysis_window, int

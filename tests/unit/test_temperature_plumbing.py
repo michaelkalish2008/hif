@@ -1,7 +1,7 @@
 """[generation] temperature must actually reach the model.
 
 The sampling adapters consume ModelConfig.temperature (hif/models/hf.py,
-openai_model.py, hf_vlm.py) — GenerationConfig.temperature is read by nothing
+openai_model.py) — GenerationConfig.temperature is read by nothing
 at inference time. `_make_run_config` therefore mirrors a TOML-set
 [generation] temperature onto cfg.model.temperature, with an explicitly-set
 [model] temperature winning, and None (backend default) when neither is set.

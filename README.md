@@ -124,7 +124,6 @@ lines that creates *shell* variables, and a child process inherits only the
 | `hif batch --sample-set all <model>` | the same, over the built-in fixed stimulus set |
 | `hif config init` / `hif config show` | author a run.toml; see what will actually run |
 | `hif compare <a.json> <b.json>` | per-measurement difference between two profiles |
-| `hif validate-model <model>` | region-sensitivity check against a known-answer suite |
 | `hif render <profile.json>` | re-render Markdown from an existing profile |
 
 Both scales take the **same** `--config-file`, `--mode`, `--acquisition`,

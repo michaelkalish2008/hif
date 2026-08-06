@@ -11,7 +11,7 @@ import torch.nn.functional as F
 
 
 def _sample(logits: torch.Tensor, temp, seed: int = 42) -> int:
-    """Mirror of the hf.py/hf_vlm.py sampling block."""
+    """Mirror of the hf.py sampling block."""
     probs = torch.exp(F.log_softmax(logits, dim=-1))
     if temp is not None and temp != 1.0 and temp > 0:
         sample_probs = F.softmax(logits / temp, dim=-1)

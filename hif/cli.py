@@ -51,7 +51,6 @@ from hif.cli_config import (
     _make_run_config,
 )
 from hif.cli_load import (
-    _build_multimodal_input,
     _check_surrogate_candidates,
     _live_models_for_backend,
     _load_embedder,
@@ -192,7 +191,6 @@ def _run_single_profile(
     model=None,
     embedder=None,
     n_perturbation_variants: int = 2,
-    mm_input=None,
     diagnostics: bool = False,
     metric: Optional[str] = None,
     surrogate: bool = False,
@@ -211,10 +209,6 @@ def _run_single_profile(
     the derived reports (markdown, charts); `trace` opts into persisting the
     full profile artifact (raw per-step top-K distributions) for
     traceability/reconstruction — trace_path is None unless it did.
-
-    When mm_input is provided (a MultimodalInput with media parts), it is
-    passed to build_profile in place of the text prompt; `prompt` still names
-    the text portion for hashing/labels.
     """
     from hif.engine import SessionEngine
     from hif.profile.render_markdown import render_public, render_technical
@@ -254,8 +248,7 @@ def _run_single_profile(
             config.perturbation.variants_file, prompt
         )
 
-    profile = engine.profile_one(mm_input if mm_input is not None else prompt,
-                                 regime=regime, seed=seed,
+    profile = engine.profile_one(prompt, regime=regime, seed=seed,
                                  authored_variants=authored_variants,
                                  variant_output_sink=variant_output_sink)
 
@@ -305,20 +298,7 @@ def profile(
     regime: str = typer.Option("ordinary_conversation", help="Prompt regime"),
     backend: str = typer.Option(
         "hf",
-        help="Model backend: hf | tlens | ollama | openai | anthropic | gemini | "
-        "hf-vlm | openai-vlm. For image inputs (--input) use an explicit VLM "
-        "backend: hf-vlm (local AutoModelForImageTextToText checkpoints, e.g. "
-        "SmolVLM/Gemma 3 multimodal) or openai-vlm (hosted vision API, e.g. "
-        "gpt-4o). Both VLM backends are EXPERIMENTAL — see --input.",
-    ),
-    input_files: list[Path] = typer.Option(
-        [],
-        "--input",
-        help="EXPERIMENTAL. Image file (PNG/JPEG) to include as model input; "
-        "repeatable. Images are presented before the prompt text. Requires "
-        "--backend hf-vlm or openai-vlm. The image path is not yet covered by "
-        "the measurement-set guarantees the text path carries: treat its "
-        "records as provisional and do not compare them across hif versions.",
+        help="Model backend: hf | tlens | ollama | openai | anthropic | gemini",
     ),
     seed: int = typer.Option(42, help="Random seed"),
     output_dir: Optional[Path] = typer.Option(
@@ -357,7 +337,7 @@ def profile(
     ),
     application: Optional[str] = typer.Option(
         None,
-        help="Application archetype (support-chatbot, rag-qa, coding-assistant, summarization, extraction, classification, agent-tool-use, multimodal-qa, document-understanding). "
+        help="Application archetype (support-chatbot, rag-qa, coding-assistant, summarization, extraction, classification, agent-tool-use, document-understanding). "
         "Labels the run and supplies the default --analysis-window; both are "
         "recorded in the JSON record. It does not change how anything is "
         "measured.",
@@ -365,7 +345,7 @@ def profile(
     mode: str = typer.Option(
         "fast",
         help="fast: fewer perturbation variants. "
-        "audit: full perturbation set (multimodal: exhaustive grid sweep). "
+        "audit: full perturbation set. "
         "Input is always passed in full regardless of mode.",
     ),
     variant_io: bool = typer.Option(
@@ -429,7 +409,7 @@ def profile(
         "that cannot teacher-force (ollama, openai, gemini, "
         "anthropic) by teacher-forcing a small local proxy model over the "
         "prompt+output — the same technique the study harness uses. Ignored when the "
-        "target backend already teacher-forces (hf/tlens/hf-vlm). Implied by "
+        "target backend already teacher-forces (hf/tlens). Implied by "
         "--surrogate-model, so passing that alone is enough.",
     ),
     surrogate_model: Optional[str] = typer.Option(
@@ -538,38 +518,12 @@ def profile(
             )
             raise typer.Exit(3)
 
-    # Multimodal input: validate image files and assemble the input up front,
-    # before any model work (exit 3 on bad files).
-    mm_input = None
-    run_modality = "text"
-    if input_files:
-        if backend not in ("hf-vlm", "openai-vlm"):
-            err_console.print(
-                "[red]--input requires a multimodal backend: use --backend "
-                "hf-vlm (local VLM) or --backend openai-vlm (hosted vision API).[/red]"
-            )
-            raise typer.Exit(3)
-        mm_input = _build_multimodal_input(list(input_files), prompt)
-        run_modality = mm_input.modality
-
     # mode affects perturbation count only; input is always full unless --truncate is set
-    if mm_input is not None:
-        # Multimodal: audit = exhaustive grid-mask sweep (n_variants<=0 means
-        # every cell, 16 on the default 4x4 grid); fast = default variant budget.
-        n_variants = 0 if mode == "audit" else 2
-    else:
-        n_variants = 2 if mode == "fast" else 5
+    n_variants = 2 if mode == "fast" else 5
 
     # Input truncation — explicit user choice only, never a silent default
     input_truncated = False
     if truncate is not None:
-        if mm_input is not None:
-            err_console.print(
-                "[red]--truncate is not supported with --input (image runs "
-                "always send the full input — media inputs are the "
-                "experimental condition).[/red]"
-            )
-            raise typer.Exit(3)
         if truncate <= 0:
             err_console.print("[red]--truncate must be a positive integer[/red]")
             raise typer.Exit(3)
@@ -618,10 +572,6 @@ def profile(
             console.print(f"  Application: {application}")
         console.print(f"  Model:   {model_name} ({backend})")
         console.print(f"  Prompt:  {prompt[:80]!r}")
-        if input_files:
-            for f in input_files:
-                console.print(f"  Input:   {f}")
-            console.print(f"  Modality: {run_modality}")
         # In single-profile mode the regime is a category label only — it tags
         # the run (run_id) but does not change any metric computation
         # and nothing is compared against it. Say so, so the number isn't
@@ -667,7 +617,6 @@ def profile(
                 model=model,
                 embedder=embedder,
                 n_perturbation_variants=n_variants,
-                mm_input=mm_input,
                 diagnostics=diagnostics,
                 metric=metric,
                 surrogate=surrogate,
@@ -768,16 +717,6 @@ def profile(
 
     _print_measurements(p)
 
-    # Region sensitivity (perturbation-JSD heatmap; multimodal runs only)
-    rs = getattr(p, "region_sensitivity", None)
-    if rs is not None:
-        console.print("[bold]Region sensitivity[/bold]")
-        console.print(
-            "[dim]Cells that materially affected the model's response behavior[/dim]"
-        )
-        console.print(rs.to_text_grid())
-        console.print()
-
     if verbose:
         _print_verbose_stats(p)
         _print_latency(timings)
@@ -792,7 +731,7 @@ def profile(
 @app.command()
 def models(
     backend: Optional[str] = typer.Option(
-        None, help="Show only this backend (hf, tlens, ollama, openai, anthropic, gemini, hf-vlm, openai-vlm)."
+        None, help="Show only this backend (hf, tlens, ollama, openai, anthropic, gemini)."
     ),
     list_live: bool = typer.Option(
         False, "--list",
@@ -882,7 +821,6 @@ def models(
                 "setup": info.setup,
                 "teacher_forcing": info.teacher_forcing,
                 "logprobs": info.logprobs,
-                "multimodal": info.multimodal,
                 "models": catalogue,
                 "models_source": source,
                 "models_note": models_note,
@@ -1004,13 +942,13 @@ def doctor() -> None:
     # Per-backend readiness
     console.print("\n[bold]backends[/bold]")
     dep_probe = {
-        "hf": "transformers", "tlens": "transformer_lens", "hf-vlm": "transformers",
+        "hf": "transformers", "tlens": "transformer_lens",
         "ollama": "httpx", "openai": "openai", "anthropic": "anthropic",
-        "gemini": "google.genai", "openai-vlm": "openai",
+        "gemini": "google.genai",
     }
     cred_probe = {
         "openai": "OPENAI_API_KEY", "anthropic": "ANTHROPIC_API_KEY",
-        "gemini": "GEMINI_API_KEY", "openai-vlm": "OPENAI_API_KEY",
+        "gemini": "GEMINI_API_KEY",
     }
     for name, info in BACKENDS.items():
         dep = dep_probe.get(name, "")
@@ -1169,192 +1107,6 @@ def compare(
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_text("\n".join(lines))
         console.print(f"\nComparison written to: [cyan]{output}[/cyan]")
-
-
-@app.command("validate-model")
-def validate_model(
-    model_name: str = typer.Argument(..., help="Model name (e.g. a HF VLM checkpoint or gpt-4o)"),
-    backend: str = typer.Option(
-        ..., "--backend",
-        help="Model backend: hf-vlm | openai-vlm. EXPERIMENTAL — this command "
-        "validates the image path, which is not yet covered by the "
-        "measurement-set guarantees the text path carries.",
-    ),
-    grid: Optional[str] = typer.Option(
-        None, "--grid",
-        help="Mask grid as ROWSxCOLS (default: 4x4; 2x2 with --pilot).",
-    ),
-    corpus: Optional[Path] = typer.Option(
-        None, "--corpus",
-        help="Directory containing a corpus.jsonl known-answer suite "
-        "(default: built-in suite, generated to ~/.hif/validation-corpus/ on first use).",
-    ),
-    pilot: bool = typer.Option(
-        False, "--pilot",
-        help="Fast smoke run: 4 images on a 2x2 grid instead of 10 images on 4x4.",
-    ),
-    seed: int = typer.Option(20260703, help="Corpus-generation / run seed"),
-    yes: bool = typer.Option(False, "--yes", help="Skip the full-run confirmation prompt"),
-    output_json: bool = typer.Option(False, "--json", help="Output machine-readable JSON"),
-    quiet: bool = typer.Option(False, "--quiet", help="Suppress progress output"),
-) -> None:
-    """Validate region-sensitivity measurement for a model against HIF's known-answer suite.
-
-    Runs the model on synthetic tasks where the task-relevant region of each
-    image is known by construction, and checks that region sensitivity locates
-    it. The output reports where the model ranked the known region and how far
-    that region separated from the rest — numbers about the measurement
-    instrument on this model, not an accuracy claim about your workload. There
-    is no pass/fail: no threshold here would generalise across grids, models
-    and tasks, so the separation is reported and the reader judges it.
-
-    Exit codes: 0 ran, 3 usage error.
-    """
-    if backend not in ("hf-vlm", "openai-vlm"):
-        err_console.print("[red]--backend must be 'hf-vlm' or 'openai-vlm'[/red]")
-        raise typer.Exit(3)
-
-
-    if grid is None:
-        grid_tuple = (2, 2) if pilot else (4, 4)
-    else:
-        try:
-            r, c = grid.lower().split("x")
-            grid_tuple = (int(r), int(c))
-            if grid_tuple[0] <= 0 or grid_tuple[1] <= 0:
-                raise ValueError
-        except ValueError:
-            err_console.print(f"[red]--grid must look like 4x4, got {grid!r}[/red]")
-            raise typer.Exit(3)
-
-    corpus_dir = _resolve_validation_corpus(corpus, seed, quiet or output_json)
-
-    if not pilot and not yes:
-        n_cells = grid_tuple[0] * grid_tuple[1]
-        console.print(
-            f"[yellow]Full validation runs 10 images x 3 question variants x "
-            f"({n_cells} masked cells + 1 baseline) = {10 * 3 * (n_cells + 1)} "
-            "inference runs. This can take a while on local models and incurs "
-            "API cost on hosted backends. Use --pilot for a fast smoke run.[/yellow]"
-        )
-        if not typer.confirm("Proceed?"):
-            raise typer.Exit(3)
-
-    from hif.validation.harness import validate_region_sensitivity
-
-    if not quiet and not output_json:
-        console.print(
-            f"[dim]Validating {model_name} ({backend}) on "
-            f"{grid_tuple[0]}x{grid_tuple[1]} grid"
-            f"{' (pilot subset)' if pilot else ''}...[/dim]"
-        )
-
-    try:
-        model = _load_model(model_name, backend)
-        result = validate_region_sensitivity(
-            model, corpus_dir=corpus_dir, grid=grid_tuple, pilot=pilot, seed=seed,
-        )
-    except FileNotFoundError as exc:
-        err_console.print(f"[red]{exc}[/red]")
-        raise typer.Exit(3)
-    except typer.Exit:
-        raise
-    except Exception as exc:
-        err_console.print(f"[red]Validation run failed: {exc}[/red]")
-        raise typer.Exit(1)
-
-    if output_json:
-        payload = {
-            # What each field is, in the record that carries it. A reader
-            # should not need this file open to know whether 44.05 is good, and
-            # `separation` in particular is a bare ratio that says nothing for
-            # itself — the same defect as a "0.98" labelled Stability.
-            "fields": {
-                "answer_cell": "Ground-truth location of the answer in the image, {row, col} on the grid below.",
-                "cell_jsd": "Per cell: Jensen-Shannon divergence in bits between the unmasked output distribution and the distribution with that cell masked. Higher = hiding that region disturbed the model more.",
-                "answer_cell_rank": "Where the ground-truth cell placed when cells are ordered by cell_jsd. 1 = the model was disturbed most by hiding the answer.",
-                "separation": "Largest cell_jsd divided by the second largest — how decisively the ordering was decided. Near 1.0 means the top two cells are nearly tied and the rank would likely differ on a rerun; large values mean the answer region dominates. Dimensionless. Null when the runner-up is exactly zero.",
-                "rank1_count": "Cases where the ground-truth cell ranked first, out of n.",
-                "top2_count": "Cases where it placed first or second, out of n.",
-            },
-            "note": (
-                "Known-answer synthetic tasks: this describes the measurement "
-                "instrument on this model, not your workload. There is no pass "
-                "mark — read rank together with separation and apply whatever "
-                "bar your use demands."
-            ),
-            "model": result.model_id,
-            "backend": backend,
-            "grid": f"{result.grid[0]}x{result.grid[1]}",
-            "n": len(result.per_image),
-            "rank1_count": result.rank1_count,
-            "top2_count": result.top2_count,
-            "per_image": [
-                {
-                    "image_id": rec.image_id,
-                    "variant": rec.variant,
-                    "answer_cell": rec.answer_cell,
-                    "answer_cell_rank": rec.answer_cell_rank,
-                    "in_top2": rec.in_top2,
-                    # How decisively the cells ordered. The rank discards this,
-                    # and it is the part that stays put across runs.
-                    "separation": round(rec.separation, 4) if rec.separation != float("inf") else None,
-                    "cell_jsd": {k: round(v, 6) for k, v in rec.cell_jsd.items()},
-                }
-                for rec in result.per_image
-            ],
-        }
-        sys.stdout.write(json.dumps(payload, indent=2) + "\n")
-    else:
-        table = Table(
-            title=f"Region-sensitivity validation — {result.model_id}",
-            show_header=True,
-        )
-        table.add_column("Image", style="bold")
-        table.add_column("Variant")
-        table.add_column("Answer cell")
-        table.add_column("Rank", justify="right")
-        table.add_column("Separation", justify="right")
-        for rec in result.per_image:
-            sep = rec.separation
-            table.add_row(
-                rec.image_id,
-                str(rec.variant),
-                f"({rec.answer_cell['row']},{rec.answer_cell['col']})",
-                str(rec.answer_cell_rank),
-                "—" if sep == float("inf") else f"{sep:.2f}x",
-            )
-        console.print(table)
-        console.print()
-        seps = [r.separation for r in result.per_image if r.separation != float("inf")]
-        n = len(result.per_image)
-        console.print(
-            f"Answer cell ranked 1 in {result.rank1_count}/{n}, "
-            f"top-2 in {result.top2_count}/{n}, "
-            f"grid {result.grid[0]}x{result.grid[1]}."
-        )
-        if seps:
-            ordered = sorted(seps)
-            console.print(
-                f"Separation (winner JSD / runner-up): min {ordered[0]:.2f}x · "
-                f"median {ordered[len(ordered) // 2]:.2f}x · max {ordered[-1]:.2f}x"
-            )
-        console.print(
-            "[dim]No pass mark. A rank says which cell led; the separation says "
-            "by how much, and only the second distinguishes a decisive result "
-            "from one a rerun would reverse. Read them together and apply "
-            "whatever bar your use demands.[/dim]"
-        )
-        console.print(
-            "[dim]Ground-truth synthetic tasks — a statement about the "
-            "measurement instrument on this model, not about your workload.[/dim]"
-        )
-
-    # Exit 0. There is no failing outcome to signal: the command reports where
-    # the answer cell ranked and by how much it led, and a non-zero exit would
-    # be the same verdict the numbers deliberately stop short of. A caller that
-    # wants a gate reads --json and applies its own rule — which is also the
-    # only way that rule gets stated somewhere a reader can see it.
 
 
 @app.command()
@@ -1750,16 +1502,13 @@ def batch(
     ctx: typer.Context,
     workload: Optional[Path] = typer.Argument(
         None,
-        help="Workload JSONL file: one {\"query_id\", \"text\"[, \"image\", "
-        "\"regime\", \"variants\"]} row per line. Omit it when using "
-        "--sample-set.",
+        help="Workload JSONL file: one {\"query_id\", \"text\"[, \"regime\", "
+        "\"variants\"]} row per line. Omit it when using --sample-set.",
     ),
     model_name: Optional[str] = typer.Argument(None, help="Model name (e.g. gpt2)"),
     backend: str = typer.Option(
         "hf",
-        help="Model backend: hf | tlens | ollama | openai | anthropic | gemini | "
-        "hf-vlm | openai-vlm. Workloads containing image rows require hf-vlm "
-        "or openai-vlm; image rows are EXPERIMENTAL — see `hif profile --input`.",
+        help="Model backend: hf | tlens | ollama | openai | anthropic | gemini",
     ),
     regime: str = typer.Option(
         "batch", help="Default prompt regime (a per-row \"regime\" key overrides it)."
@@ -1937,13 +1686,6 @@ def batch(
         err_console.print(
             f"[red]Workload {workload} has no rows to profile"
             f"{' after --limit' if limit is not None else ''} — nothing to do.[/red]"
-        )
-        raise typer.Exit(3)
-
-    if batch_mod.has_image_rows(rows) and backend not in batch_mod.VLM_BACKENDS:
-        err_console.print(
-            "[red]This workload contains image rows — use --backend hf-vlm "
-            "(local VLM) or --backend openai-vlm (hosted vision API).[/red]"
         )
         raise typer.Exit(3)
 

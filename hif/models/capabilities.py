@@ -5,7 +5,7 @@ directly determines which measurements can be computed:
 
 - **Teacher forcing** (running the model forward over the prompt to get per-
   position logits) is required for the input-side measurements. Only local
-  open-weight backends (hf, tlens, hf-vlm) can do it. Hosted APIs and Ollama
+  open-weight backends (hf, tlens) can do it. Hosted APIs and Ollama
   cannot. A `--surrogate` recovers the input-side rows by reading the prompt,
   which makes their subject prompt-only.
 - **Top-K logprobs** are required for the output-side measurements
@@ -162,7 +162,6 @@ class BackendInfo:
     # reading text (see the module docstring). A per-backend column implied a
     # backend-dependence that does not exist, so the column is gone rather than
     # set to True everywhere.
-    multimodal: bool = False
     example_models: list[str] = field(default_factory=list)
     notes: str = ""
 
@@ -185,14 +184,6 @@ BACKENDS: dict[str, BackendInfo] = {
         teacher_forcing=True, logprobs="full",
         example_models=["gpt2", "gpt2-medium", "EleutherAI/pythia-160m"],
         notes="Full fidelity via TransformerLens.",
-    ),
-    "hf-vlm": BackendInfo(
-        name="hf-vlm", kind="local-open",
-        deps="torch, transformers, Pillow (base install)",
-        setup="none (HF_TOKEN for gated); weights auto-download",
-        teacher_forcing=True, logprobs="full", multimodal=True,
-        example_models=["HuggingFaceTB/SmolVLM-256M-Instruct"],
-        notes="Multimodal (image+text). Full fidelity on the text parts.",
     ),
     "ollama": BackendInfo(
         name="ollama", kind="local-service",
@@ -231,14 +222,6 @@ BACKENDS: dict[str, BackendInfo] = {
         teacher_forcing=False, logprobs="top-k",
         example_models=["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash"],
         notes="Top-20 logprobs on Vertex AI only; the developer API degenerates.",
-    ),
-    "openai-vlm": BackendInfo(
-        name="openai-vlm", kind="hosted-api",
-        deps="openai, tiktoken  (pip install 'hif[openai]')",
-        setup="OPENAI_API_KEY env var (billed per token)",
-        teacher_forcing=False, logprobs="top-k", multimodal=True,
-        example_models=["gpt-4o", "gpt-4o-mini"],
-        notes="Multimodal (image+text). Output-side signals only.",
     ),
 }
 

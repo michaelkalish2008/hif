@@ -20,8 +20,6 @@ from hif.metrics.sensitivity import SensitivityMetrics
 from hif.metrics.field import PerturbationField
 from hif.metrics.similarity import SimilarityMetrics
 from hif.metrics.stability import StabilityMetrics
-from hif.models.mm import InputPartMap
-from hif.perturbation.base import PerturbationTrace
 from hif.profile.provenance import RunProvenance
 
 if TYPE_CHECKING:
@@ -41,31 +39,11 @@ class ModelIdentity(BaseModel):
     parameter_count: Optional[int] = None  # None if unknown
 
 
-class InputPartRecord(BaseModel):
-    """Persisted record of one multimodal input part: hash + dims ONLY.
-
-    Never pixels/base64 — raw media must not reach the profile JSON or any
-    API payload (§ Storage & privacy and Risk rule 2, docs/ARCHITECTURE.md
-    § Multimodal notes; the hosted platform enforces the same guard on its
-    side at import).
-    """
-
-    kind: str                      # "text" | "image" (M2/M3 add more)
-    content_hash: str              # sha256 of text-utf8 or media bytes
-    width: Optional[int] = None
-    height: Optional[int] = None
-    byte_len: Optional[int] = None
-
-
 class PromptRecord(BaseModel):
-    text: str                      # multimodal: MultimodalInput.text_concat
+    text: str
     regime: str
     token_count: int
-    # sha256 of text; for multimodal profiles: sha256 over the concatenated
-    # part content_hashes (in part order) — see builder._build_profile_mm.
-    prompt_hash: str
-    modality: str = "text"         # "text" | "image+text" (closed enum, M1)
-    input_parts: list[InputPartRecord] = Field(default_factory=list)
+    prompt_hash: str               # sha256 of text
 
     @classmethod
     def from_text(cls, text: str, regime: str, token_count: int) -> PromptRecord:
@@ -96,10 +74,6 @@ class PerturbationRecord(BaseModel):
     generator: str
     variants: list[str]
     sensitivity: list[SensitivityMetrics]     # one per variant
-    # Media-family traces (one per variant when a PerturbationFamily produced
-    # the variants; empty for text generators). Geometry + params only — never
-    # pixels. Default keeps existing text profiles valid under schema 0.3.0.
-    traces: list[PerturbationTrace] = Field(default_factory=list)
 
 
 class VariantRawTrace(BaseModel):
@@ -189,7 +163,7 @@ class BehavioralRangeProfile(BaseModel):
     # 0.2.0: added metrics.distribution[].nucleus_entropy_bits,
     #   findings.similarity_level, findings.similarity_trend. Profiles written
     #   under 0.1.0 do not have these fields and will fail validation.
-    # 0.3.0: multimodal M1 — added prompt.modality (default "text"),
+    # 0.3.0: the image path — added prompt.modality (default "text"),
     #   prompt.input_parts (default []), input_part_map (default None),
     #   region_sensitivity (default None), perturbations[].traces (default []).
     #   All new fields default, so 0.2.0 profile JSON still validates
@@ -230,7 +204,7 @@ class BehavioralRangeProfile(BaseModel):
     #   still carries the key and loads unchanged: pydantic ignores unknown
     #   fields on validation, so removal is read-compatible in the direction
     #   that matters (old artifact → new code).
-    # 0.10.0 (current): the exposure vocabulary replaces the last hallucination
+    # 0.10.0: the exposure vocabulary replaces the last hallucination
     #   remnants in persisted keys. ExposureCandidate.hallucinated_token/-_prob
     #   → divergent_token/-_prob, ExposureProfile.high_risk_steps →
     #   exposed_steps, and RunConfig.hallucination → RunConfig.exposure
@@ -247,7 +221,15 @@ class BehavioralRangeProfile(BaseModel):
     #   the embedded config, output.save_plots / output.plot_format,
     #   attention.top_pairs, and traceability.profiles_dir. Old JSON carrying
     #   any of them still validates — unknown fields are ignored on load.
-    schema_version: str = "0.10.0"
+    # 0.11.0 (current): REMOVED the image path. prompt.modality,
+    #   prompt.input_parts, input_part_map, region_sensitivity and
+    #   perturbations[].traces are gone with the VLM backends that populated
+    #   them. No measurement ever read any of them — the image quantities were
+    #   never argued through the Significance Gate and were never covered by
+    #   SIGNAL_SET_VERSION, so records from that path were unversioned claims.
+    #   A MAJOR removal for image profiles and a no-op for text profiles,
+    #   which never carried the fields.
+    schema_version: str = "0.11.0"
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     model: ModelIdentity
     prompt: PromptRecord
@@ -282,12 +264,6 @@ class BehavioralRangeProfile(BaseModel):
         default=None,
         validation_alias=AliasChoices("exposure", "hallucination"),
     )
-    # Multimodal (0.3.0): position → part/patch-grid geometry for the prepared
-    # sequence (geometry only, never pixels). None for text-only profiles.
-    input_part_map: Optional[InputPartMap] = None
-    # Runtime type is RegionSensitivityResult | None (perturbation-JSD per
-    # grid cell; M1 session 2+). Lazy-typed like `attention`.
-    region_sensitivity: Optional[Any] = None
     # Within-generation semantic field instrument (Veer). Runtime type is
     # SemanticFieldReading | None (hif.analysis.semantic_field). Derived scalars
     # only; None unless config.semantic_field.enabled. Lazy-typed like `exposure`.

@@ -82,16 +82,6 @@ class Model(ABC):
     def supports_teacher_forcing(self) -> bool:
         """True for HF and TLens; False for Ollama."""
 
-    @property
-    def supports_multimodal_input(self) -> bool:
-        """True only for MultimodalModel subclasses (hif/models/mm.py).
-
-        Concrete default (NOT abstract) so every existing backend inherits
-        False without changes — capability-flag pattern, mirroring
-        supports_teacher_forcing.
-        """
-        return False
-
     @abstractmethod
     def tokenize(self, text: str) -> list[int]: ...
 

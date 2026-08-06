@@ -12,7 +12,6 @@ from hif.config import ModelConfig
 
 KNOWN_BACKENDS = (
     "hf", "tlens", "ollama", "openai", "anthropic", "gemini",
-    "hf-vlm", "openai-vlm",
 )
 
 
@@ -38,12 +37,6 @@ def load_model(config: ModelConfig):
     elif backend == "gemini":
         from hif.models.gemini_model import GeminiModel
         return GeminiModel(config)
-    elif backend == "hf-vlm":
-        from hif.models.hf_vlm import HFVLMModel
-        return HFVLMModel(config)
-    elif backend == "openai-vlm":
-        from hif.models.openai_vlm import OpenAIVLMModel
-        return OpenAIVLMModel(config)
     raise ValueError(
         f"Unknown backend: {backend!r}. Use one of: {', '.join(KNOWN_BACKENDS)}."
     )

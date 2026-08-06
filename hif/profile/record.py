@@ -182,7 +182,6 @@ def signals_record(
         "backend": backend,
         "regime": regime,
         "seed": seed,
-        "modality": getattr(profile.prompt, "modality", "text") or "text",
         # Every measurement OF THIS MODEL in its natural unit. Absent
         # measurements are omitted. See MEASUREMENT_REGISTRY for what each
         # quantity and unit means, and which subject it has.
@@ -225,8 +224,6 @@ def signals_record(
         "output_tokens": len(profile.output_side.generated_ids),
         "input_tokens": len(profile.input_side.prompt_token_ids),
     }
-    # Multimodal provenance — InputPartRecord is hash + dims ONLY (never
-    # pixels/base64; see schema.py), so it is safe in a derived record.
     # Units are constant per signal_set_version and identical on every record,
     # so they are opt-in (`--units`) rather than repeated on every JSONL line.
     # `hif schema` prints them for every measurement without running a model.
@@ -237,13 +234,6 @@ def signals_record(
         record["units"] = {
             k: MEASUREMENT_UNITS[k] for k in keyed if k in MEASUREMENT_UNITS
         }
-    input_parts = getattr(profile.prompt, "input_parts", None)
-    if input_parts:
-        record["input_parts"] = [part.model_dump() for part in input_parts]
-    rs = getattr(profile, "region_sensitivity", None)
-    if rs is not None:
-        # Derived per-cell JSD grid (multimodal runs) — scalars only.
-        record["region_sensitivity"] = rs.model_dump()
     if latency:
         record["latency"] = {k: round(v, 6) for k, v in latency.items()}
     if trace_path:

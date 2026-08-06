@@ -117,8 +117,6 @@ needs at least one variant continuation to compare against, so a run with
 | `llm_model` | `null` | Model at that endpoint; omit for the generator's own default |
 | `elicit_variant_outputs` | `true` | Whether the model **generates** from each variant. `false` authors and teacher-forces them only — the input-side pair survives, the four output-side ones go absent. See [`--acquisition`](#--acquisition--what-the-run-may-bring-into-existence) |
 | `variants_file` | `null` | Workload JSONL of researcher-authored variants — the tool authors nothing. See below |
-| `media_families` | `["image_grid_mask"]` | Multimodal only; ignored on the text path |
-| `image_grid_rows` / `image_grid_cols` | `4` / `4` | Mask granularity for multimodal runs |
 
 ### `variants_file` — author the perturbations yourself
 

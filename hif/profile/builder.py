@@ -25,13 +25,11 @@ from hif.metrics.sensitivity import SensitivityMetrics, compute_sensitivity_metr
 from hif.metrics.similarity import SimilarityMetrics, compute_similarity_metrics
 from hif.metrics.stability import StabilityMetrics, compute_stability_metrics
 from hif.models.base import Model
-from hif.models.mm import MultimodalInput, MultimodalModel
 from hif.perturbation import get_generator
 from hif.profile.provenance import RunProvenance
 from hif.profile.schema import (
     BehavioralRangeProfile,
     Findings,
-    InputPartRecord,
     MetricBundle,
     ModelIdentity,
     PerturbationRecord,
@@ -110,15 +108,12 @@ def generate_findings(
 # Stages that are the same computation in build_profile (text) and
 # _build_profile_mm (image+text) live here once, so what stays inline in each
 # orchestrator is only what actually differs. Where a stage differs, the
-# difference is an ARGUMENT, visible at the call site. The two that matter:
+# difference is an ARGUMENT, visible at the call site. The shape is kept from
+# when there were two builder paths — one of them an image path removed in
+# hif-v4 — because it is what stops a stage from growing a second, silently
+# different implementation.
 #
-#   * the output-side basis. The text path may substitute a surrogate-recovered
-#     step series (`semantic_steps`, step 6b) for the target's own; the
-#     multimodal path never does.
-#   * the attention stage's inputs. The text path feeds it perturbation
-#     variants; the multimodal path feeds it none.
-#
-# A stage whose log line differs between the paths keeps that line at the call
+# A stage whose log line differs between callers keeps that line at the call
 # site: moving it in would change what one path emits, and these change nothing.
 
 
@@ -158,10 +153,8 @@ def _zeroed_input_analysis(
 def _skipped_trajectory(*, start_step: int, rollout_steps: int) -> TrajectoryAnalysis:
     """An empty trajectory: no branches were generated.
 
-    The two paths reach it for different reasons — a text backend that cannot
-    teacher-force, or the multimodal path, where re-forwarding a context from
-    input_ids alone would drop the pixel state. Either way `branches=[]`, which
-    is what `trajectory_analysis_ran` reads.
+    Reached when the backend cannot teacher-force. `branches=[]`, which is
+    what `trajectory_analysis_ran` reads.
     """
     return TrajectoryAnalysis(
         start_step=start_step,
@@ -292,12 +285,10 @@ def _attention_reading(
     """Attention-row analysis over (prompt, continuation), plus any variants.
 
     The analyser is a separate bidirectional encoder reading text as an object;
-    the model under analysis contributes only the text. `variants` is what the
-    two paths disagree about — perturbed prompts on the text path, none on the
-    multimodal path, where a media perturbation leaves the text unchanged.
+    the model under analysis contributes only the text. `variants` carries the
+    perturbed prompts.
 
-    The caller owns the enabled check and the log line; the paths word it
-    differently.
+    The caller owns the enabled check and the log line.
     """
     from hif.analysis.attention import AttentionAnalyzer
 
@@ -356,9 +347,8 @@ def _run_provenance(
 
     Every field is an observation made while the pipeline ran, never an
     inference from the result — the evidence each declared `subject` is checked
-    against. `output_distribution_model` is the one argument the paths differ
-    on: the text path names the surrogate when step 6b recovered a cloud, the
-    multimodal path always names the target, having run no such recovery.
+    against. `output_distribution_model` names the surrogate when step 6b
+    recovered a cloud, and the target otherwise.
     """
     return RunProvenance(
         generation_model=model.name,
@@ -379,7 +369,7 @@ def _run_provenance(
 
 def build_profile(
     model: Model,
-    prompt: "str | MultimodalInput",
+    prompt: str,
     regime: str,
     config: RunConfig,
     embedder: EmbeddingModel,
@@ -395,11 +385,7 @@ def build_profile(
     model:
         The model under analysis.
     prompt:
-        The text prompt to analyze, or a MultimodalInput. A plain str (or a
-        MultimodalInput with no media parts) takes the existing text path
-        verbatim. Media parts require a MultimodalModel — a ValueError is
-        raised before any inference otherwise (the builder entry-point rule,
-        docs/ARCHITECTURE.md § Multimodal notes).
+        The text prompt to analyze.
     regime:
         A label for the prompt category/regime (e.g., "factual", "creative").
     config:
@@ -413,26 +399,6 @@ def build_profile(
         model does not support it (e.g. all API backends). If None and the
         target model lacks teacher forcing, input-side metrics are zeroed.
     """
-    # 0. Route by input type/modality (the builder entry-point rule,
-    #    docs/ARCHITECTURE.md § Multimodal notes).
-    #    Text-only inputs — plain str or MultimodalInput without media —
-    #    take the existing text path verbatim (byte-identical profiles).
-    if isinstance(prompt, MultimodalInput):
-        has_media = any(p.kind != "text" for p in prompt.parts)
-        if has_media:
-            if not model.supports_multimodal_input:
-                # Before any inference.
-                raise ValueError(
-                    f"Input has media parts (modality "
-                    f"'{prompt.modality}') but model '{model.name}' does not "
-                    "support multimodal input. Use a MultimodalModel backend "
-                    "(e.g. HFVLMModel)."
-                )
-            return _build_profile_mm(
-                model, prompt, regime, config, embedder, seed,
-                surrogate_model=surrogate_model,
-            )
-        prompt = prompt.text_concat
 
     # 1. Seed everything
     seed_everything(seed)
@@ -866,460 +832,6 @@ def _attention_analysis_model(attention_analysis) -> str | None:
         return attention_analysis.input_analysis.attention_map.analysis_model
     except AttributeError:
         return None
-
-
-# ---------------------------------------------------------------------------
-# Multimodal builder path (M1: image+text → text)
-# ---------------------------------------------------------------------------
-
-
-def _build_profile_mm(
-    model: Model,
-    mm_input: MultimodalInput,
-    regime: str,
-    config: RunConfig,
-    embedder: EmbeddingModel,
-    seed: int = 42,
-    surrogate_model: "Model | None" = None,
-) -> BehavioralRangeProfile:
-    """Multimodal profile path (docs/ARCHITECTURE.md § Multimodal notes —
-    the in-repo statement of the design and risk rules cited below).
-
-    Key differences from the text path (each a stated rule, none improvised):
-    - prepare() is run exactly once; tokenize() is never called with media.
-    - Input-side entropy/surprisal are computed only over
-      part_map.text_positions() (Risk rule 3).
-    - Trajectory analysis is skipped/zeroed in M1 (Risk rule 6 — rollout
-      re-forwarding with pixel state is deferred).
-    - Text-part perturbation of a multimodal input is out of scope for M1:
-      EXPLICITLY configured text generators are a config error, raised before
-      inference. Default (unset) text generators are ignored with a warning
-      when a media family is configured — default config on multimodal input
-      Just Works with the image_grid_mask family (a deliberate decision,
-      agreed 2026-07-03; § Builder entry point in the doc section above).
-    - Media perturbation runs via PerturbationFamily (image_grid_mask by
-      default); per-variant SensitivityMetrics mirror the text path, and the
-      grid-mask traces are assembled into the region_sensitivity artifact.
-    - prompt_hash = sha256 over the concatenated part content_hashes (in
-      part order); PromptRecord.text holds MultimodalInput.text_concat.
-    """
-    import hashlib
-
-    from hif.hourglass.input_side import analyze_input_side_mm
-    from hif.hourglass.output_side import collect_output_trace_mm
-    from hif.perturbation import get_family
-    from hif.perturbation.base import PerturbationTrace
-
-    assert isinstance(model, MultimodalModel)
-
-    # Config errors before any inference. Text generators explicitly set by
-    # the user are a hard error; the untouched default list is ignored with a
-    # warning so the default config works on multimodal input.
-    if config.perturbation.generators:
-        explicitly_set = "generators" in config.perturbation.model_fields_set
-        if explicitly_set:
-            raise ValueError(
-                "Text-part perturbation of a multimodal input is out of scope "
-                "in M1 (docs/ARCHITECTURE.md § Multimodal notes). Set "
-                "perturbation.generators=[] for multimodal profiles."
-            )
-        _note_once(
-            ("mm-generators", tuple(config.perturbation.generators)),
-            "Ignoring default text perturbation generators %s on multimodal "
-            "input — media perturbation families %s will run instead.",
-            config.perturbation.generators,
-            config.perturbation.media_families,
-        )
-
-    # 1. Seed everything
-    seed_everything(seed)
-
-    # 2. Prepare once (processor owns all media/tokenization logic)
-    logger.debug("Preparing multimodal input (%s)...", mm_input.modality)
-    prepared = model.prepare(mm_input)
-    text_concat = mm_input.text_concat
-
-    # 3. Input-side analysis — text positions only (Risk rule 3)
-    input_teacher_forcing_model: str | None = None
-    if model.supports_teacher_forcing:
-        logger.debug("Running input-side analysis over text positions...")
-        input_teacher_forcing_model = model.name
-        input_analysis = analyze_input_side_mm(
-            model, prepared, text_concat, top_k=config.generation.top_k
-        )
-    elif surrogate_model is not None:
-        input_teacher_forcing_model = surrogate_model.name
-        # Same proxy technique as the text path: teacher-force the surrogate
-        # over the concatenated TEXT parts. Risk rule 3 already restricts
-        # input-side analysis to text positions on full-access mm backends,
-        # so a text-only surrogate reading text_concat is the exact proxy
-        # analogue — it recovers the input-side readings (Surprise/Wager and
-        # the Stability baseline) that were previously zeroed on closed
-        # (API) multimodal arms.
-        logger.debug(
-            "Running input-side analysis via surrogate (%s) over text parts "
-            "for %s...", surrogate_model.name, model.name,
-        )
-        input_analysis = analyze_input_side(
-            surrogate_model, text_concat, top_k=config.generation.top_k
-        )
-    else:
-        input_analysis = _zeroed_input_analysis(
-            model,
-            prompt_token_ids=list(prepared.input_ids),
-            prompt_text=text_concat,
-        )
-
-    # 4. Output trace via generate_prepared
-    logger.debug("Collecting multimodal output trace...")
-    output_trace = collect_output_trace_mm(
-        model,
-        prepared,
-        text_concat,
-        max_new_tokens=config.generation.max_new_tokens,
-        top_k=config.generation.top_k,
-        seed=seed,
-    )
-
-    # 5. Center diagnostics
-    logger.debug("Computing center diagnostics...")
-    center = compute_center_diagnostics(
-        input_analysis,
-        output_trace,
-        embedder,
-        max_entropy=input_analysis.max_entropy,
-    )
-
-    # 6. Trajectory analysis skipped for multimodal in M1 (Risk rule 6):
-    #    context re-forwarding with input_ids alone would drop pixel state.
-    logger.debug(
-        "Skipping trajectory analysis — multimodal trajectory is deferred in M1."
-    )
-    context_len = len(prepared.input_ids) + len(output_trace.generated_ids)
-    trajectory = _skipped_trajectory(
-        start_step=context_len,
-        rollout_steps=config.trajectory.rollout_steps,
-    )
-
-    # 7. Media perturbation analysis (PerturbationFamily protocol). Each
-    #    variant is a NEW MultimodalInput (original never mutated); perturbed
-    #    pixels live only in memory as image_bytes parts. SensitivityMetrics
-    #    are computed per variant exactly like the text path.
-    logger.debug("Running media perturbation analysis...")
-    perturbation_records: list[PerturbationRecord] = []
-    all_sensitivity_metrics: list[SensitivityMetrics] = []
-    perturbed_input_analyses: list[InputSideAnalysis] = []
-    # Transient field members (see text path) — discarded after field compute.
-    field_variant_traces: list[tuple[str, OutputSideTrace]] = []
-    # Opt-in raw-trace capture (see text path §6) — empty unless
-    # config.traceability.enabled.
-    raw_variant_traces: list[VariantRawTrace] = []
-    trace_sensitivity_pairs: list[tuple[PerturbationTrace, SensitivityMetrics]] = []
-    # (input, output) text pairs for similarity metrics. Media perturbation
-    # never changes the text parts, so every input text is text_concat; the
-    # outputs vary with the perturbed pixels.
-    baseline_output_text = "".join(s.selected_token_str for s in output_trace.steps)
-    similarity_inputs: list[str] = [text_concat]
-    similarity_outputs: list[str] = [baseline_output_text]
-
-    for family_name in config.perturbation.media_families:
-        try:
-            family_kwargs = {}
-            if family_name == "image_grid_mask":
-                family_kwargs = {
-                    "grid_rows": config.perturbation.image_grid_rows,
-                    "grid_cols": config.perturbation.image_grid_cols,
-                }
-            family = get_family(family_name, **family_kwargs)
-            mm_variants = family.perturb(
-                mm_input, config.perturbation.n_variants, seed
-            )
-        except Exception as exc:
-            logger.warning("Perturbation family %r failed: %s", family_name, exc)
-            continue
-
-        per_variant_sensitivity: list[SensitivityMetrics] = []
-        variant_descriptors: list[str] = []
-        variant_traces: list[PerturbationTrace] = []
-        for variant_index, variant in enumerate(mm_variants):
-            descriptor = (
-                f"{variant.trace.family}[part={variant.trace.part_index}, "
-                f"regions={variant.trace.regions}, params={variant.trace.params}]"
-            )
-            try:
-                prepared_variant = model.prepare(variant.input)
-                variant_trace = collect_output_trace_mm(
-                    model,
-                    prepared_variant,
-                    text_concat,
-                    max_new_tokens=config.generation.max_new_tokens,
-                    top_k=config.generation.top_k,
-                    seed=seed,
-                )
-                sens = compute_sensitivity_metrics(
-                    output_trace, variant_trace, descriptor, family.name
-                )
-                per_variant_sensitivity.append(sens)
-                all_sensitivity_metrics.append(sens)
-                field_variant_traces.append((family.name, variant_trace))
-                if config.traceability.enabled:
-                    # Sanctioned exception to compute-and-discard (see text
-                    # path): retain the reference for the artifact (0.7.0).
-                    raw_variant_traces.append(
-                        VariantRawTrace(
-                            generator=family.name,
-                            variant_index=variant_index,
-                            trace=variant_trace,
-                        )
-                    )
-                variant_descriptors.append(descriptor)
-                variant_traces.append(variant.trace)
-                trace_sensitivity_pairs.append((variant.trace, sens))
-                similarity_inputs.append(text_concat)
-                similarity_outputs.append(
-                    "".join(s.selected_token_str for s in variant_trace.steps)
-                )
-                # Input-side analysis of the perturbed input. Full access:
-                # perturbed pixels shift the teacher-forced distributions at
-                # TEXT positions, so this is a real, varying input-side
-                # series — it feeds input_stability and
-                # input_output_correlation exactly like the text path.
-                # Patch positions stay excluded (Risk rule 3) inside
-                # analyze_input_side_mm.
-                #
-                # Closed (API) backends fall back to the surrogate proxy,
-                # mirroring the text path's tf_model rule so Stability and
-                # I/O Correlation are produced (not absent) on API mm arms.
-                # KNOWN PROXY LIMIT: media families perturb pixels only, and
-                # a text-only surrogate reads the (unchanged) text parts, so
-                # its perturbed series equals its baseline — input_stability
-                # reads ~1.0 and io_correlation degenerates to a measured
-                # 0.0 at the proxy tier. That is the proxy-tier statement
-                # "text-position input distributions did not move", the
-                # blind approximation of the full-access measurement (e.g.
-                # gemma_mm reads 0.998); the record carries the surrogate
-                # provenance (findings.surrogate_model_name) so consumers
-                # can see the [P] tier.
-                tf_model = (
-                    model if model.supports_teacher_forcing else surrogate_model
-                )
-                if tf_model is not None:
-                    try:
-                        if model.supports_teacher_forcing:
-                            p_input = analyze_input_side_mm(
-                                model,
-                                prepared_variant,
-                                text_concat,
-                                top_k=config.generation.top_k,
-                            )
-                        else:
-                            p_input = analyze_input_side(
-                                tf_model,
-                                variant.input.text_concat,
-                                top_k=config.generation.top_k,
-                            )
-                        perturbed_input_analyses.append(p_input)
-                    except Exception as exc:
-                        logger.warning(
-                            "Input-side analysis failed for media variant %s: %s",
-                            descriptor, exc,
-                        )
-            except Exception as exc:
-                logger.warning(
-                    "Sensitivity computation failed for media variant %s: %s",
-                    descriptor, exc,
-                )
-
-        perturbation_records.append(
-            PerturbationRecord(
-                generator=family.name,
-                variants=variant_descriptors,
-                sensitivity=per_variant_sensitivity,
-                traces=variant_traces,
-            )
-        )
-
-    # 7b. Region-sensitivity artifact (perturbation-JSD per grid cell; never
-    #     generation-model attention — Risk rule 7).
-    from hif.analysis.region_sensitivity import assemble_region_sensitivity
-
-    region_sensitivity = assemble_region_sensitivity(trace_sensitivity_pairs)
-
-    # 8/9. Distribution and semantic metrics — the same stages the text path
-    #      runs, but always over the target's OWN trace: there is no step-6b
-    #      equivalent here, so `model.vocab_size` is always the denominator.
-    distribution_metrics = _distribution_metrics_for(
-        output_trace.steps, vocab_size=model.vocab_size
-    )
-    semantic_metrics = _semantic_metrics_for(
-        output_trace.steps,
-        embedder=embedder,
-        cluster_config=config.cluster,
-        enabled=config.semantic.enabled,
-    )
-
-    # 10. Stability metrics. Full-access models feed real per-variant
-    #     input-side analyses (computed over text positions in the loop
-    #     above); partial-access models feed surrogate-proxy analyses when a
-    #     surrogate is available (see the proxy-limit note in the loop), and
-    #     only when NEITHER is available are stability's input-side
-    #     components ABSENT (None), never pinned.
-    stability = compute_stability_metrics(
-        baseline_input=input_analysis,
-        perturbed_inputs=perturbed_input_analyses,
-        sensitivity_results=all_sensitivity_metrics,
-    )
-
-    # 10a. Perturbation field (compute-and-discard; see text path §9a).
-    from hif.metrics.field import compute_perturbation_field
-    perturbation_field = compute_perturbation_field(
-        output_trace, field_variant_traces
-    )
-
-    # 10b. Similarity metrics from the media-variant generations (baseline +
-    #      at least one variant output; input text identical across pairs).
-    similarity: SimilarityMetrics | None = None
-    if len(similarity_inputs) >= 2:
-        logger.info("Computing similarity metrics...")
-        similarity = compute_similarity_metrics(
-            input_texts=similarity_inputs,
-            output_texts=similarity_outputs,
-            semantic_metrics=semantic_metrics,
-            embedder=embedder,
-        )
-    else:
-        logger.info("Skipping similarity metrics — no perturbation variants available.")
-
-    metric_bundle = MetricBundle(
-        distribution=distribution_metrics,
-        semantic=semantic_metrics,
-        sensitivity=all_sensitivity_metrics,
-        stability=stability,
-        similarity=similarity,
-        field=perturbation_field,
-    )
-
-    # Surrogate provenance mirrors the text path: input-side readings on a
-    # non-teacher-forcing mm backend came from the proxy, and the record's
-    # surrogate.input_side field must say so.
-    used_surrogate = not model.supports_teacher_forcing and surrogate_model is not None
-    findings = generate_findings(
-        input_analysis, output_trace, center, metric_bundle,
-        surrogate_model_name=surrogate_model.name if used_surrogate else None,
-    )
-
-    # Optional counterfactual exposure analysis (text-side outputs only), over
-    # the target's own trace — again, no recovered basis exists here.
-    exposure_profile = _exposure_reading(
-        config,
-        trace=output_trace,
-        semantic_metrics=semantic_metrics,
-        embedder=embedder,
-    )
-
-    # Within-generation semantic field (centroid veer) — mm path uses the raw output
-    # trace (no surrogate output-recovery on the mm path). Compute-and-discard.
-    semantic_field_reading = None
-    if config.semantic_field.enabled:
-        from hif.analysis.semantic_field import SemanticFieldAnalyzer
-
-        semantic_field_reading = SemanticFieldAnalyzer(
-            embedder, context_window=config.semantic_field.context_window
-        ).analyze(output_trace)
-
-    # Optional attention analysis — separate analysis model, text parts only
-    # (never generation-model internals; Design §7 and Risk rule 7,
-    # docs/ARCHITECTURE.md § Multimodal notes).
-    attention_analysis = None
-    if config.attention.enabled:
-        logger.debug("Running attention analysis on text parts...")
-        # No variants: a media perturbation leaves the text an encoder would
-        # read unchanged, so there is nothing for the analyser to contrast.
-        attention_analysis = _attention_reading(
-            config,
-            model=model,
-            prompt_text=text_concat,
-            output_trace=output_trace,
-            variants=[],
-        )
-
-    model_identity = _model_identity(model, config)
-
-    # Multimodal prompt_hash: sha256 over concatenated part content_hashes,
-    # in part order (§ Profile schema impact, docs/ARCHITECTURE.md
-    # § Multimodal notes).
-    prompt_hash = hashlib.sha256(
-        "".join(p.content_hash for p in mm_input.parts).encode()
-    ).hexdigest()
-
-    input_parts: list[InputPartRecord] = []
-    for p in mm_input.parts:
-        if p.kind == "text":
-            byte_len = len((p.text or "").encode())
-        elif p.image_bytes is not None:
-            byte_len = len(p.image_bytes)
-        elif p.image_path is not None:
-            import os
-            byte_len = os.path.getsize(p.image_path)
-        else:
-            byte_len = None
-        input_parts.append(
-            InputPartRecord(
-                kind=p.kind,
-                content_hash=p.content_hash,
-                width=p.width,
-                height=p.height,
-                byte_len=byte_len,
-            )
-        )
-
-    prompt_record = PromptRecord(
-        text=text_concat,
-        regime=regime,
-        token_count=len(prepared.input_ids),
-        prompt_hash=prompt_hash,
-        modality=mm_input.modality,
-        input_parts=input_parts,
-    )
-
-    # Opt-in raw-trace capture (schema 0.7.0; see text path §12b). None by
-    # default — disabled behavior is unchanged.
-    raw_traces = _raw_traces(
-        config, variant_traces=raw_variant_traces, trajectory=trajectory
-    )
-
-    config = _record_effective_embedder(config, embedder)
-    return BehavioralRangeProfile(
-        model=model_identity,
-        prompt=prompt_record,
-        input_side=input_analysis,
-        output_side=output_trace,
-        center=center,
-        trajectory=trajectory,
-        perturbations=perturbation_records,
-        metrics=metric_bundle,
-        findings=findings,
-        config=config,
-        attention_capture=attention_analysis,
-        exposure=exposure_profile,
-        semantic_field=semantic_field_reading,
-        input_part_map=prepared.part_map,
-        region_sensitivity=region_sensitivity,
-        raw_traces=raw_traces,
-        # Same roles as the text path. The mm path runs no output-distribution
-        # surrogate recovery and no trajectory rollouts (Risk rule 6), so the
-        # output-distribution role always names the target and
-        # trajectory_analysis_ran is always False — recorded as facts rather
-        # than left to be inferred.
-        provenance=_run_provenance(
-            model=model,
-            input_teacher_forcing_model=input_teacher_forcing_model,
-            output_distribution_model=model.name,
-            attention_analysis=attention_analysis,
-            output_trace=output_trace,
-            trajectory=trajectory,
-        ),
-    )
 
 
 def _record_effective_embedder(config: RunConfig, embedder: EmbeddingModel) -> RunConfig:

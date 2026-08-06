@@ -1,7 +1,7 @@
 """Everything the CLI loads or probes before (and about) a run.
 
 Backend resolution, the model / embedder / surrogate loads, assembling a
-multimodal input from image files, the validation corpus, and the live
+the live
 catalogue probes `hif models` uses. Grouped because each one answers the same
 question — what does this run actually get to work with — and because the
 backend a name resolves to has to be answered identically everywhere it is
@@ -94,32 +94,6 @@ def _load_surrogate(model_id: str):
     ))
 
 
-def _build_multimodal_input(image_paths: list[Path], prompt: str):
-    """Validate image files and assemble a MultimodalInput (images first, then
-    text — matching the multimodal_v1 study construction). Exit 3 on any
-    unreadable/non-image file."""
-    from hif.models.mm import InputPart, MultimodalInput
-
-    parts = []
-    for path in image_paths:
-        if not path.exists():
-            err_console.print(f"[red]--input file not found: {path}[/red]")
-            raise typer.Exit(3)
-        try:
-            from PIL import Image
-
-            with Image.open(path) as img:
-                img.verify()
-        except Exception as exc:
-            err_console.print(
-                f"[red]--input {path} is not a readable image (PNG/JPEG): {exc}[/red]"
-            )
-            raise typer.Exit(3)
-        parts.append(InputPart.from_image_path(str(path)))
-    parts.append(InputPart.from_text(prompt))
-    return MultimodalInput(parts=parts)
-
-
 def _live_models_for_backend(name: str) -> tuple[list[str] | None, str | None]:
     """Query a backend's actual model catalog right now.
 
@@ -142,7 +116,7 @@ def _live_models_for_backend(name: str) -> tuple[list[str] | None, str | None]:
             return [m.id for m in client.models.list(limit=100)], None
         except Exception as exc:  # noqa: BLE001
             return None, f"couldn't reach Anthropic's models API ({exc})."
-    if name in ("openai", "openai-vlm"):
+    if name == "openai":
         api_key = os.environ.get("OPENAI_API_KEY")
         if not api_key:
             return None, "OPENAI_API_KEY not set — showing examples instead."
@@ -175,7 +149,7 @@ def _live_models_for_backend(name: str) -> tuple[list[str] | None, str | None]:
             return pulled, None if pulled else "no models pulled — run `ollama pull <model>`."
         except Exception:  # noqa: BLE001
             return None, "ollama server not reachable — run `ollama serve` — showing examples instead."
-    # hf / tlens / hf-vlm: any HF repo id is eligible, there's no fixed catalog.
+    # hf / tlens: any HF repo id is eligible, there's no fixed catalog.
     return None, "any Hugging Face repo id is eligible — no fixed catalog to list."
 
 
