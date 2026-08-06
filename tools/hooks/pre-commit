@@ -3,8 +3,10 @@
 #
 # The site renders copies of README.md and docs/*.md rather than restating
 # them (tools/sync_docs.py), and generates its measurement vocabulary from
-# `hif schema` (tools/gen_site_measurements.py). A copy that is only updated
-# when someone remembers is not a copy for long, so the checks run here.
+# `hif schema` (tools/gen_site_measurements.py). docs/FLAGS.md is generated
+# from the command surface itself (tools/gen_flags_doc.py). A copy that is
+# only updated when someone remembers is not a copy for long, so the checks
+# run here.
 #
 # Each fires only when the files it guards are actually staged, and both pass
 # quietly when the site is not checked out — working on the CLI alone must not
@@ -20,6 +22,23 @@ case "$staged" in
       echo
       echo "pre-commit: documentation the site publishes has drifted from this repo."
       echo "Run the sync, review the change in the site repo, then commit again."
+      echo "To commit anyway: git commit --no-verify"
+      exit 1
+    }
+    ;;
+esac
+
+# Being generated only means the doc was right when someone last ran the
+# generator. Rename a flag and forget, and docs/FLAGS.md describes the old
+# surface with no more warning than a hand-written list would have given —
+# the failure tools/gen_flags_doc.py exists to prevent. Needs no site
+# checkout: this one compares the repo against itself.
+case "$staged" in
+  *hif/cli/*.py*|*tools/gen_flags_doc.py*|*models/capabilities.py*)
+    python3 tools/gen_flags_doc.py --check || {
+      echo
+      echo "pre-commit: docs/FLAGS.md has drifted from the command surface."
+      echo "Run the generator, review the diff, then commit again."
       echo "To commit anyway: git commit --no-verify"
       exit 1
     }

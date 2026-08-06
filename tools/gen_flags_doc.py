@@ -1,6 +1,7 @@
 """Generate docs/FLAGS.md — every command, argument and flag, from the CLI itself.
 
-Run: python tools/gen_flags_doc.py
+    python3 tools/gen_flags_doc.py            # write the doc
+    python3 tools/gen_flags_doc.py --check    # exit 1 if it has drifted
 
 The flag reference is GENERATED, never hand-written. A hand-maintained list of
 options is the same failure as a hand-maintained measurement reference: it
@@ -8,6 +9,14 @@ agrees with the tool on the day it is written and drifts silently afterwards,
 and a flag documented but removed is worse than a flag never documented. This
 introspects the live typer app, so the doc cannot claim a flag the CLI does not
 have.
+
+`--check` closes the other half of that gap, and it is the half this file used
+to leave open. Being generated only guarantees the doc was right at the moment
+someone last ran the generator: rename a flag and forget, and docs/FLAGS.md
+describes the old surface with no more warning than a hand-written list would
+have given. `--check` runs in tools/hooks/pre-commit alongside sync_docs and
+gen_site_measurements, so a commit that changes the command surface cannot
+leave the reference behind.
 
 `hif doctor` takes no flags — it is listed for completeness, with the checks it
 performs, because a reader looking for "what does doctor tell me" should not
@@ -38,17 +47,31 @@ Three decisions follow, and the order matters:
 
 from __future__ import annotations
 
+import argparse
 import re
+import sys
 from pathlib import Path
 
-import click
-import typer
-
-from hif.cli import app
-import hif.cli  # noqa: F401 — importing registers every command on `app`
-from hif.models.capabilities import BACKENDS
-
 ROOT = Path(__file__).resolve().parent.parent
+
+# Document THIS working tree's CLI, not whatever `hif` the interpreter happens
+# to have installed. `python3 tools/gen_flags_doc.py` puts tools/ on sys.path,
+# never the repo root, so without this line the generator introspects
+# site-packages — and it silently produced a doc describing backends the
+# working tree had already deleted, which is the drift this file exists to
+# prevent, arriving through its own front door.
+#
+# It also lets tools/hooks/pre-commit run --check under a bare system python3
+# with no editable install: the repo's own package is enough.
+sys.path.insert(0, str(ROOT))
+
+import click  # noqa: E402
+import typer  # noqa: E402
+
+from hif.cli import app  # noqa: E402
+import hif.cli  # noqa: E402,F401 — importing registers every command on `app`
+from hif.models.capabilities import BACKENDS  # noqa: E402
+
 OUT = ROOT / "docs" / "FLAGS.md"
 
 # The shared section, and the anchor every `--backend` cell points at. Both
@@ -286,6 +309,35 @@ def build() -> str:
     return "\n".join(parts)
 
 
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--check", action="store_true",
+        help="Report drift and exit 1 instead of writing. For hooks and CI.",
+    )
+    args = parser.parse_args()
+
+    doc = build()
+    if not args.check:
+        OUT.write_text(doc)
+        print(f"wrote {OUT.relative_to(ROOT)}")
+        return 0
+
+    rel = OUT.relative_to(ROOT)
+    # A missing file is drift, not a crash: it is exactly the state a commit
+    # must not reach, and read_text would raise before saying so.
+    current = OUT.read_text() if OUT.exists() else None
+    if current == doc:
+        print(f"gen_flags_doc: {rel} is current.")
+        return 0
+    print(
+        f"gen_flags_doc: {rel} is missing." if current is None
+        else f"gen_flags_doc: {rel} has drifted from the CLI.",
+        file=sys.stderr,
+    )
+    print("Run: python3 tools/gen_flags_doc.py", file=sys.stderr)
+    return 1
+
+
 if __name__ == "__main__":
-    OUT.write_text(build())
-    print(f"wrote {OUT.relative_to(ROOT)}")
+    raise SystemExit(main())
