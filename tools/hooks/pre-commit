@@ -38,5 +38,18 @@ case "$staged" in
       echo "To commit anyway: git commit --no-verify"
       exit 1
     }
+
+    # The published corpus is the evidence for every number on the site, and
+    # it is the surface that drifted furthest: hif-v4 cut ten rows and 120
+    # profiles went on carrying seven of them, unstamped. Fetches a ~6KB
+    # manifest, not the 390MB corpus, and passes quietly when offline —
+    # a hook must not block a commit on the network.
+    python3 tools/check_corpus.py --check || {
+      echo
+      echo "pre-commit: the published corpus describes a different measurement set."
+      echo "Recompute the blocks, re-upload, rerun --write, and upload the manifest."
+      echo "To commit anyway: git commit --no-verify"
+      exit 1
+    }
     ;;
 esac
