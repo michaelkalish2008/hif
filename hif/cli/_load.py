@@ -15,7 +15,7 @@ from typing import Optional
 
 import typer
 
-from hif.cli_base import console, err_console
+from hif.cli._app import console, err_console
 
 
 def _resolve_backend(model_name: str, backend: str, *, warn: bool = True) -> str:

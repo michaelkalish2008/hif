@@ -15,6 +15,8 @@ import pytest
 from typer.testing import CliRunner
 
 import hif.cli as cli
+import hif.cli._load  # noqa: F401
+import hif.cli._run  # noqa: F401
 from hif.analysis.exposure import (
     DEFAULT_DISTANCE_THRESHOLD,
     DEFAULT_MIN_PROB,
@@ -103,16 +105,16 @@ EXPOSURE_KEY = "counterfactual_exposure_fraction"
 
 
 def _patch_pipeline(monkeypatch, profile):
-    monkeypatch.setattr(cli, "_load_model", lambda *a, **k: object())
-    monkeypatch.setattr(cli, "_load_embedder", lambda *a, **k: object())
-    monkeypatch.setattr(cli, "_run_single_profile", lambda *a, **k: (profile, None))
+    monkeypatch.setattr(cli._load, "_load_model", lambda *a, **k: object())
+    monkeypatch.setattr(cli._load, "_load_embedder", lambda *a, **k: object())
+    monkeypatch.setattr(cli._run, "_run_single_profile", lambda *a, **k: (profile, None))
 
 
 class TestExposureCli:
     def test_measurement_absent_when_not_computed(self):
         p = _make_profile()
         p.exposure = None
-        values = cli._measurements(p)
+        values = cli._run._measurements(p)
         assert EXPOSURE_KEY not in values  # absent, never pinned to 0
 
     def test_measurement_absent_when_no_candidates(self):
@@ -121,7 +123,7 @@ class TestExposureCli:
             candidates=[], exposed_steps=[],
             mean_semantic_distance=0.0, diffusion_zone_ratio=0.0,
         )
-        values = cli._measurements(p)
+        values = cli._run._measurements(p)
         assert EXPOSURE_KEY not in values
 
     def test_populated_exposure_block_emits_no_measurement(self):
@@ -134,7 +136,7 @@ class TestExposureCli:
         """
         p = _make_profile()
         p.exposure = _synthetic_profile(4, [0, 2])
-        values = cli._measurements(p)
+        values = cli._run._measurements(p)
         assert EXPOSURE_KEY not in values
 
 
@@ -190,7 +192,7 @@ class TestSurprisalExcessAbsent:
         # 0.0 — absent-not-pinned, same rule as exposure above.
         p = _make_profile()
         p.input_side.positions = []
-        values = cli._measurements(p)
+        values = cli._run._measurements(p)
         assert SURPRISAL_KEY not in values
 
     def test_present_with_positions_as_surprisal_excess_in_bits(self):
@@ -200,7 +202,7 @@ class TestSurprisalExcessAbsent:
         for pos in p.input_side.positions:
             pos.surprisal = 6.0
             pos.entropy = 2.0
-        values = cli._measurements(p)
+        values = cli._run._measurements(p)
         assert values[SURPRISAL_KEY] == pytest.approx(4.0)
 
     def test_zero_excess_is_measured_not_absent(self):
@@ -208,5 +210,5 @@ class TestSurprisalExcessAbsent:
         for pos in p.input_side.positions:
             pos.surprisal = 1.0
             pos.entropy = 4.0  # excess clamps at 0
-        values = cli._measurements(p)
+        values = cli._run._measurements(p)
         assert values[SURPRISAL_KEY] == pytest.approx(0.0)

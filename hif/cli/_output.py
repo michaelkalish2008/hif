@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from rich.table import Table
 
-from hif.cli_base import console
+from hif.cli._app import console
 from hif.profile.measure import (
     measurements as _measurements,
     prompt_measurements as _prompt_measurements,

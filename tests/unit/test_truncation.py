@@ -21,6 +21,9 @@ import pytest
 from typer.testing import CliRunner
 
 import hif.cli as cli
+import hif.cli._app   # noqa: F401
+import hif.cli._load  # noqa: F401
+import hif.cli._run  # noqa: F401
 from hif.cli import app
 from tests.unit.profile_helpers import _make_profile
 
@@ -38,9 +41,9 @@ def captured(monkeypatch):
         seen["prompt"] = kwargs.get("prompt", args[1] if len(args) > 1 else None)
         return _make_profile(), None
 
-    monkeypatch.setattr(cli, "_load_model", lambda *a, **k: object())
-    monkeypatch.setattr(cli, "_load_embedder", lambda *a, **k: object())
-    monkeypatch.setattr(cli, "_run_single_profile", fake_run)
+    monkeypatch.setattr(cli._load, "_load_model", lambda *a, **k: object())
+    monkeypatch.setattr(cli._load, "_load_embedder", lambda *a, **k: object())
+    monkeypatch.setattr(cli._run, "_run_single_profile", fake_run)
     return seen
 
 
@@ -102,7 +105,7 @@ def test_non_positive_truncate_exits_3(captured, tmp_path, bad):
 
 
 def test_record_records_truncation(captured, tmp_path, monkeypatch):
-    monkeypatch.setattr(cli.console, "width", 100_000)  # no soft-wrap in JSON
+    monkeypatch.setattr(cli._app.console, "width", 100_000)  # no soft-wrap in JSON
     result = runner.invoke(app, [
         "profile", "m", LONG_PROMPT, "--output-dir", str(tmp_path),
         "--truncate", "3", "--json",
@@ -121,7 +124,7 @@ def test_record_records_truncation(captured, tmp_path, monkeypatch):
 
 
 def test_untruncated_record_carries_no_truncation_keys(captured, tmp_path, monkeypatch):
-    monkeypatch.setattr(cli.console, "width", 100_000)
+    monkeypatch.setattr(cli._app.console, "width", 100_000)
     result = runner.invoke(app, [
         "profile", "m", LONG_PROMPT, "--output-dir", str(tmp_path), "--json",
     ])

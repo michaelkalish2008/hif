@@ -12,12 +12,9 @@ import json
 
 from typer.testing import CliRunner
 
-from hif.cli import (
-    SIGNAL_SET_VERSION,
-    _artifact_signal_set_version,
-    _signal_set_family,
-    app,
-)
+from hif.cli import app
+from hif.cli._compat import _artifact_signal_set_version, _signal_set_family
+from hif.profile.registry import SIGNAL_SET_VERSION
 from tests.unit.profile_helpers import _make_profile
 
 runner = CliRunner()
@@ -145,7 +142,7 @@ def test_compare_major_family_mismatch_exits_2(tmp_path):
 def test_compare_json_delta_covers_shared_measurements_only(tmp_path, monkeypatch):
     import hif.cli as cli
 
-    monkeypatch.setattr(cli.console, "width", 100_000)  # no soft-wrap in JSON
+    monkeypatch.setattr(cli._app.console, "width", 100_000)  # no soft-wrap in JSON
     a, b = tmp_path / "a.json", tmp_path / "b.json"
     _write_profile(a)
     _write_profile(b)

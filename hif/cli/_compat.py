@@ -13,7 +13,7 @@ import re
 
 import typer
 
-from hif.cli_base import err_console
+from hif.cli._app import err_console
 
 
 def _profile_modality(p) -> str:

@@ -14,7 +14,7 @@ import pytest
 from typer.testing import CliRunner
 
 from hif.cli import app
-from hif.cli_base import (
+from hif.cli._app import (
     ENV_SOURCES,
     discover_env_files,
     env_origin,
@@ -136,7 +136,7 @@ def test_user_config_file_is_read_after_the_project_one(tmp_path, monkeypatch):
     user_env = home / ".config" / "hif"
     user_env.mkdir(parents=True)
     _write(user_env / ".env", f"{KEY}=user\n")
-    monkeypatch.setattr("hif.cli_base.USER_ENV_FILE", user_env / ".env")
+    monkeypatch.setattr("hif.cli._app.USER_ENV_FILE", user_env / ".env")
 
     project = tmp_path / "project"
     project.mkdir()
@@ -180,7 +180,7 @@ def test_doctor_reports_a_discovered_dotenv(tmp_path, monkeypatch):
     unset for a file the run would go on to read."""
     _write(tmp_path / ".env", "OPENAI_API_KEY=sk-test\n")
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    monkeypatch.setattr("hif.cli_base.USER_ENV_FILE", tmp_path / "absent")
+    monkeypatch.setattr("hif.cli._app.USER_ENV_FILE", tmp_path / "absent")
     monkeypatch.chdir(tmp_path)
 
     result = runner.invoke(app, ["doctor"])
@@ -192,7 +192,7 @@ def test_env_file_option_beats_discovery(tmp_path, monkeypatch):
     _write(tmp_path / ".env", "OPENAI_API_KEY=from-discovered\n")
     named = _write(tmp_path / "named.env", "OPENAI_API_KEY=from-named\n")
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    monkeypatch.setattr("hif.cli_base.USER_ENV_FILE", tmp_path / "absent")
+    monkeypatch.setattr("hif.cli._app.USER_ENV_FILE", tmp_path / "absent")
     monkeypatch.chdir(tmp_path)
 
     result = runner.invoke(app, ["--env-file", str(named), "doctor"])

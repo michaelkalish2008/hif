@@ -13,13 +13,14 @@ what happened to the old `hif suite`: no --config-file, no ceilings.
 
 from __future__ import annotations
 
+import importlib
 import inspect
 import json
 
 import pytest
 from typer.testing import CliRunner
 
-from hif.cli_base import app
+from hif.cli import app
 import hif.cli as cli_mod  # noqa: F401 — registers commands
 
 runner = CliRunner()
@@ -32,8 +33,14 @@ SHARED_CONTROLS = ["config_file", "mode", "acquisition", "lite", "variant_io"]
 
 
 def _params(command_name: str) -> set[str]:
-    fn = getattr(cli_mod, command_name)
-    return set(inspect.signature(fn).parameters)
+    """The command function's signature.
+
+    One module per command means `hif.cli.profile` is the MODULE; the command
+    function of the same name lives inside it. Reach through rather than
+    getattr on the package, which would hand back the module.
+    """
+    module = importlib.import_module(f"hif.cli.{command_name}")
+    return set(inspect.signature(getattr(module, command_name)).parameters)
 
 
 def _args_for(command: str, tmp_path) -> list[str]:

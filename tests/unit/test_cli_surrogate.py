@@ -10,6 +10,8 @@ surrogate when the boolean was explicitly set. --surrogate-model must imply
 from typer.testing import CliRunner
 
 import hif.cli as cli
+import hif.cli._load  # noqa: F401
+import hif.cli._run  # noqa: F401
 from hif.cli import app
 from tests.unit.profile_helpers import _make_profile
 
@@ -17,14 +19,14 @@ runner = CliRunner()
 
 
 def _patch_pipeline(monkeypatch, captured, profile=None):
-    monkeypatch.setattr(cli, "_load_model", lambda *a, **k: object())
-    monkeypatch.setattr(cli, "_load_embedder", lambda *a, **k: object())
+    monkeypatch.setattr(cli._load, "_load_model", lambda *a, **k: object())
+    monkeypatch.setattr(cli._load, "_load_embedder", lambda *a, **k: object())
 
     def fake_run_single_profile(*args, **kwargs):
         captured.update(kwargs)
         return (profile if profile is not None else _make_profile()), None
 
-    monkeypatch.setattr(cli, "_run_single_profile", fake_run_single_profile)
+    monkeypatch.setattr(cli._run, "_run_single_profile", fake_run_single_profile)
 
 
 def test_surrogate_model_alone_implies_surrogate(monkeypatch, tmp_path):

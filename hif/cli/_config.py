@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Optional
 
 import typer
 
-from hif.cli_base import err_console
+from hif.cli._app import err_console
 
 if TYPE_CHECKING:
     from hif.config import RunConfig

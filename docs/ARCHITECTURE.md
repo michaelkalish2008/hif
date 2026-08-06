@@ -133,8 +133,26 @@ No concatenation in readings 1–3, no joint forward pass, and the generation pr
 hif/
   __init__.py              # version
   config.py                # Pydantic v2 RunConfig and sub-configs
-  cli.py                   # Typer CLI: profile, suite, batch, compare, render,
-                           #   schema, models, doctor
+  cli/                     # the command surface. ONE MODULE PER COMMAND,
+                           #   named for the command; shared infrastructure
+                           #   prefixed with `_`. That is the whole rule.
+    __init__.py            #   builds `app`, registers commands by importing
+                           #   them, and is the `hif.cli:app` entry point
+    __main__.py            #   `python -m hif.cli`
+    profile.py             #   `hif profile`
+    models.py              #   `hif models`
+    doctor.py              #   `hif doctor`
+    compare.py             #   `hif compare`
+    render.py              #   `hif render`
+    schema.py              #   `hif schema`
+    batch.py               #   `hif batch`
+    config.py              #   `hif config show|init`
+    _app.py                #   the Typer app, consoles, .env discovery
+    _run.py                #   the shared pipeline call (profile and batch)
+    _load.py               #   model / embedder / surrogate loading
+    _config.py             #   RunConfig assembly from flags and files
+    _output.py             #   terminal rendering helpers
+    _compat.py             #   signal-set family checks across versions
   engine.py                # SessionEngine — load model/embedder/surrogate once, profile many
   batch.py                 # `hif batch` workload runner; streams one JSON record per row
 

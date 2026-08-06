@@ -111,7 +111,7 @@ def test_surrogates_json_marks_exactly_one_default(monkeypatch):
     # cli.py binds the name at import, so this is the binding that runs — and
     # patching it keeps the test off the Hugging Face Hub.
     monkeypatch.setattr(
-        "hif.cli._check_surrogate_candidates",
+        "hif.cli._load._check_surrogate_candidates",
         lambda: [(DEFAULT_SURROGATE_MODEL_ID, "ok"), ("gpt2", "ok")],
     )
     doc = _document("--surrogates")
