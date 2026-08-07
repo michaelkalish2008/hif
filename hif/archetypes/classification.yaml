@@ -1,3 +1,0 @@
-id: classification
-description: Label or category prediction
-default_analysis_window: 512

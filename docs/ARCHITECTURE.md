@@ -209,12 +209,6 @@ hif/
     regimes.py             # REGIMES list, Regime dataclass, the regime definitions
     suite.py               # get_regime(), suite accessors
 
-  archetypes/
-    __init__.py            # flat-YAML archetype registry (--application)
-    *.yaml                 # rag-qa, summarization, classification, extraction,
-                           #   coding-assistant, support-chatbot, agent-tool-use,
-                           #   document-understanding
-    suites/                # bundled prompt suites (JSONL)
 
   viz/
     __init__.py            # generate_signal_plots() entry point

@@ -20,7 +20,7 @@ Profile many prompts against one loaded model.
 | `--sample-set` | Profile the built-in prompt suite instead of a workload file: `all` (8 regimes x 5 prompts) or one regime name. A fixed stimulus set, identical for every model — not a benchmark, and nothing is scored. |
 | `--limit` | Profile only the first N rows. |
 | `--export-workload` | Write the resolved rows to a workload JSONL and exit; no model loads. This is how you fork --sample-set: edit the rows, add per-row `variants`, run it back. |
-| `--regime` | Regime for rows with no "regime" key of their own. A free-form label recorded with the run — any string, compared against nothing, changing no measurement. The built-in suite's regimes: ordinary_conversation, healthcare_advice, legal_compliance, literary_continuation, ambiguous_moral, technical_explanation, adversarial_unstable, poetic_metaphorical. *(default: `batch`)* |
+| `--regime` | Regime for rows with no "regime" key of their own. A free-form label recorded with the run — any string, compared against nothing, changing no measurement. Name it whatever your work calls it; `hif batch --sample-set` names its own. *(default: `batch`)* |
 | `--backend` | Model backend: `hf`, `tlens`, `ollama`, `openai`, `anthropic`, `gemini`. Run `hif models` for what each one can measure. See [Backends](#backends). *(default: `hf`)* |
 | `--max-new-tokens` | Maximum new tokens to generate, per row. *(default: `64`)* |
 | `--top-k` | How many candidates to record at each step. *(default: `50`)* |
@@ -173,9 +173,8 @@ Run the full hif pipeline on a single (model, prompt) pair.
 | `--charts` | One interactive Plotly HTML per signal, plus an index.html dashboard. Needs --output-dir. |
 | `--trace` | Persist the full profile artifact — raw per-step top-K distributions, reconstructable content — so measurements can be recomputed later without re-running the model. |
 | `--trace-dir` | Where --trace artifacts are written (default: <output-dir>/traces, or ./traces when no --output-dir). Passing this implies --trace. |
-| `--regime` | A free-form label recorded with the run — any string, compared against nothing, changing no measurement. The built-in suite's regimes: ordinary_conversation, healthcare_advice, legal_compliance, literary_continuation, ambiguous_moral, technical_explanation, adversarial_unstable, poetic_metaphorical. *(default: `ordinary_conversation`)* |
-| `--application` | Application archetype recorded with the run: support-chatbot, rag-qa, coding-assistant, summarization, extraction, classification, agent-tool-use, document-understanding. It supplies the default --analysis-window and changes no measurement. |
-| `--analysis-window` | The intended analysis window, recorded with the run: an integer or 'adaptive'. It truncates nothing and no measurement reads it. |
+| `--regime` | A free-form label recorded with the run — any string, compared against nothing, changing no measurement. Name it whatever your work calls it; `hif batch --sample-set` names its own. *(default: `ordinary_conversation`)* |
+| `--application` | A free-form label for what this run is for, recorded with the run — any string, changing no measurement. |
 | `--surrogate` | Recover the input-side measurements on backends that cannot teacher-force — score text they did not generate (ollama, openai, anthropic, gemini; see `hif models`). A small local proxy model is teacher-forced instead, so those numbers describe the proxy, not your model. Ignored on hf/tlens. |
 | `--surrogate-model` | Open-weight HF model id to use as that proxy (default: Llama 3.2 1B, ungated mirror). Passing it implies --surrogate; `hif models --surrogates` lists candidates. |
 

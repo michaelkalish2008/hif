@@ -377,10 +377,9 @@ CHARTS_HELP = (
 # tool knows (--sample-set, docs/PROMPT_SUITE.md) — so it is read from the
 # module that defines it. A hand-typed copy here is exactly the drift a
 # generated flag reference exists to prevent.
-from hif.prompts.regimes import REGIMES as _REGIMES  # noqa: E402
 
 REGIME_LABEL_HELP = (
     "A free-form label recorded with the run — any string, compared against "
-    "nothing, changing no measurement. The built-in suite's regimes: "
-    + ", ".join(r.name for r in _REGIMES) + "."
+    "nothing, changing no measurement. Name it whatever your work calls it; "
+    "`hif batch --sample-set` names its own."
 )

@@ -307,24 +307,8 @@ def profile(
     application: Optional[str] = typer.Option(
         None,
         rich_help_panel=PANEL_LABELS,
-        help="Application archetype recorded with the run: support-chatbot, "
-        "rag-qa, coding-assistant, summarization, extraction, classification, "
-        "agent-tool-use, document-understanding. It supplies the default "
-        "--analysis-window and changes no measurement.",
-    ),
-    analysis_window: Optional[str] = typer.Option(
-        None,
-        # The parameter is a str because it admits two shapes; the default
-        # <str> metavar would hide the shape that matters. Say what you may
-        # actually type.
-        metavar="<int|adaptive>",
-        rich_help_panel=PANEL_LABELS,
-        # It sits under Labels, not under Scope, because that is all it is:
-        # the value is validated, recorded in the record's extras, and read by
-        # no stage. The old help ("Maximum output tokens to analyze") named a
-        # cap nothing enforces.
-        help="The intended analysis window, recorded with the run: an integer "
-        "or 'adaptive'. It truncates nothing and no measurement reads it.",
+        help="A free-form label for what this run is for, recorded with the "
+        "run — any string, changing no measurement.",
     ),
     # -- Input-side recovery: the expert path, last. -------------------------
     surrogate: bool = typer.Option(
@@ -470,35 +454,6 @@ def profile(
                 "see a different count.[/yellow]"
             )
 
-    # Validate --application against the archetype registry and apply defaults
-    archetype_def = None
-    if application:
-        from hif.archetypes import UnknownArchetypeError, load_archetype
-
-        try:
-            archetype_def = load_archetype(application)
-        except UnknownArchetypeError as exc:
-            err_console.print(
-                f"[red]Unknown archetype {application!r}. "
-                f"Valid: {', '.join(exc.valid_ids)}[/red]"
-            )
-            raise typer.Exit(3)
-        # Apply the archetype's default analysis window when not set by the user
-        if analysis_window is None:
-            analysis_window = str(archetype_def.default_analysis_window)
-
-    # Validate analysis_window's form. The value itself is recorded in the
-    # run's extras (and nothing else): no pipeline stage consumes it, so no
-    # parsed copy is kept — a local integer sat here for a while, assigned and
-    # never read, which made the flag look wired into analysis when it is a
-    # recorded label.
-    if analysis_window and analysis_window != "adaptive":
-        try:
-            int(analysis_window)
-        except ValueError:
-            err_console.print(f"[red]--analysis-window must be an integer or 'adaptive', got {analysis_window!r}[/red]")
-            raise typer.Exit(3)
-
     if not output_json:
         console.print(f"[bold]hif Profile[/bold]")
         if application:
@@ -512,8 +467,6 @@ def profile(
         console.print(f"  Regime:  {regime} [dim](label only — not a comparison)[/dim]")
         console.print(f"  Seed:    {seed}")
         console.print(f"  Mode:    {mode}")
-        if analysis_window:
-            console.print(f"  Analysis window: {analysis_window}")
         console.print()
 
     with Progress(
@@ -615,8 +568,6 @@ def profile(
         extras: dict = {}
         if application:
             extras["application"] = application
-        if analysis_window:
-            extras["analysis_window"] = analysis_window
         if input_truncated:
             extras["input_truncated"] = True
             extras["input_truncate_tokens"] = truncate
