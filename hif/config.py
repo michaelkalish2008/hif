@@ -56,6 +56,14 @@ class GenerationConfig(BaseModel):
     top_k: int = 50
     temperature: float = 1.0
     seed: int = 42
+    # Mass threshold for output_nucleus_entropy_bits, as a fraction (0.95 for
+    # p95). None — the default — means the measurement is not taken at all, so
+    # output_entropy_bits keeps the full-vocabulary basis every published
+    # profile carries. Raising this does not retune effective_support_size or
+    # the charts; those are defined at a fixed 0.95 (see
+    # metrics/distribution.py) and redefining them from here would change
+    # three numbers to answer a question about one.
+    entropy_percentile: Optional[float] = None
 
 
 class TrajectoryConfig(BaseModel):

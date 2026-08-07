@@ -4,6 +4,8 @@ import numpy as np
 import pytest
 
 from hif.metrics.distribution import (
+    percentile_entropy_bits,
+    nucleus_entropy_bits,
     DistributionMetrics,
     compute_distribution_metrics,
     effective_support_size,
@@ -318,3 +320,47 @@ class TestNucleusFraction:
         f90 = nucleus_fraction(p, p=0.90)
         f95 = nucleus_fraction(p, p=0.95)
         assert f95 >= f90 - 1e-9
+
+
+# ---------------------------------------------------------------------------
+# percentile_entropy_bits — the measurement-grade nucleus
+# ---------------------------------------------------------------------------
+
+class TestPercentileEntropyBits:
+    """The one behaviour separating it from nucleus_entropy_bits: refusing."""
+
+    def test_agrees_with_nucleus_when_the_slice_contains_the_nucleus(self):
+        # A full distribution carries all the mass, so both read the same
+        # quantity and must return the same number.
+        probs = np.array([0.5, 0.25, 0.15, 0.10])
+        assert percentile_entropy_bits(probs, 0.95) == pytest.approx(
+            nucleus_entropy_bits(probs, p=0.95)
+        )
+
+    def test_absent_when_the_captured_slice_falls_short(self):
+        # Top-k from a long-tailed vocabulary: 0.80 of the mass is visible and
+        # the p95 nucleus extends into tokens this run never saw. Where
+        # nucleus_entropy_bits degrades to "use what I have", the measurement
+        # reports nothing.
+        probs = np.array([0.4, 0.2, 0.1, 0.1])
+        assert probs.sum() < 0.95
+        assert percentile_entropy_bits(probs, 0.95) is None
+        assert nucleus_entropy_bits(probs, p=0.95) > 0  # still draws a chart
+
+    def test_exact_mass_is_enough(self):
+        # A slice carrying exactly p contains the nucleus — the boundary is
+        # inclusive, so a run is not refused for landing on it.
+        probs = np.array([0.6, 0.35])
+        assert probs.sum() == pytest.approx(0.95)
+        assert percentile_entropy_bits(probs, 0.95) is not None
+
+    def test_a_lower_percentile_reads_a_smaller_choice_set(self):
+        # Monotonicity is the property that makes the flag meaningful: asking
+        # for less mass must never report more uncertainty.
+        probs = np.array([0.4, 0.3, 0.2, 0.1])
+        assert percentile_entropy_bits(probs, 0.50) < percentile_entropy_bits(
+            probs, 0.99
+        )
+
+    def test_empty_is_absent_not_zero(self):
+        assert percentile_entropy_bits(np.array([]), 0.95) is None

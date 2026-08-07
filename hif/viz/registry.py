@@ -218,6 +218,12 @@ NEAREST_CHART: dict[str, str] = {
     # Mean of the same per-variant entropy-shift series whose spread the
     # stability chart's measurement summarises.
     "input_entropy_shift_bits": "stability",
+    # No chart of its own, and deliberately so: it is the same per-step series
+    # the entropy chart already draws, read over a fixed fraction of the mass
+    # instead of over everything the backend exposed. A second near-identical
+    # trace would invite reading the gap between the two lines as a finding,
+    # when it is the definition of the two lines.
+    "output_nucleus_entropy_bits": "entropy",
 }
 
 

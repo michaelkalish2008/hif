@@ -170,7 +170,7 @@ def _skipped_trajectory(*, start_step: int, rollout_steps: int) -> TrajectoryAna
 
 
 def _distribution_metrics_for(
-    steps: list, *, vocab_size: int
+    steps: list, *, vocab_size: int, entropy_percentile: float | None = None
 ) -> list[DistributionMetrics]:
     """One DistributionMetrics per step of the caller's chosen basis.
 
@@ -192,6 +192,7 @@ def _distribution_metrics_for(
                 top_k_for_mass=min(10, len(probs_arr)),
                 truncated=True,
                 vocab_size=vocab_size,
+                entropy_percentile=entropy_percentile,
             )
         )
     return out
@@ -632,7 +633,9 @@ def build_profile(
     # 7. Distribution metrics — one DistributionMetrics per output step, over
     #    the (possibly surrogate-recovered) basis chosen in 6b.
     distribution_metrics = _distribution_metrics_for(
-        semantic_steps, vocab_size=dist_vocab_size
+        semantic_steps,
+        vocab_size=dist_vocab_size,
+        entropy_percentile=config.generation.entropy_percentile,
     )
 
     # 8. Semantic metrics — one SemanticMetrics per output step, same basis.

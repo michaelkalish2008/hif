@@ -141,6 +141,13 @@ The measurement set is defined once, in `MEASUREMENT_REGISTRY` in `hif/profile/r
 | `io_cosine_similarity` | Input/output cosine similarity | dimensionless | aggregate | `target-output-text` | ≥ 1 perturbation variant + an embedding encoder |
 | `prompt_surprisal_excess_bits` | Prompt surprisal excess (bits) | bits | per-position | `target-distribution` → `prompt-only` | teacher forcing (or `--surrogate`) |
 | `output_entropy_bits` | Output entropy (bits) | bits | per-step | `target-distribution` → `target-output-text` | top-k logprobs |
+| `output_nucleus_entropy_bits` | Output nucleus entropy (bits) | bits | per-step | `target-distribution` → `target-output-text` | full logprobs + `--entropy-percentile` |
+
+**hif-v4.1 adds `output_nucleus_entropy_bits`** — an addition, so a minor
+bump: a v4 artifact and a v4.1 one stay in the same family and `hif compare`
+still intersects over the six rows both carry. It is off unless
+`--entropy-percentile` is passed, so a run that does not ask for it is
+byte-identical to a v4 run.
 
 **hif-v4 cut the set from sixteen rows to these six**, each removal argued
 against the project's own 120-profile corpus — the evidence is recorded row by
@@ -358,6 +365,42 @@ The chart draws two series: the **nucleus entropy** (95% mass, renormalised — 
 **Expected range.** `[0, log₂ K]` bits — about 5.64 bits for K=50. The full-vocabulary ceiling `log₂|V|` (≈ 15.6 bits for a 50,257-token vocabulary) is not reachable from a truncated distribution.
 
 **Access.** All models with output logprob data. On a selected-token-only backend the distribution degenerates unless a `--surrogate` recovers it.
+
+---
+
+### `output_nucleus_entropy_bits` — entropy over a fixed share of the mass
+
+**Formula.** `H(Q̃ⱼ)` where `Q̃ⱼ` is the smallest prefix of `Qⱼ`, sorted by
+descending probability, whose cumulative mass reaches `p`, renormalised to sum
+to 1. Reported as the mean over generation steps `j = 1…G`.
+
+**Why a separate key.** `output_entropy_bits` is the entropy of whatever the
+backend exposed; this is the entropy of a *fixed fraction* of the mass. They
+answer different questions, so they are two rows rather than one row with a
+flag deciding its own meaning. Reported under one key, every published profile
+would have to be read alongside the flag to know what its number was.
+
+**When it is absent.** Whenever the captured top-K did not reach `p` at every
+step. This is the condition that makes the number comparable at all: a nucleus
+computed from a slice that does not contain the nucleus is the entropy of the
+slice, not of the nucleus, and two such values from different backends compare
+two different definitions. `nucleus_entropy_bits` in `DistributionMetrics`
+deliberately degrades instead — it must draw a chart on every backend — which
+is why the measurement does not read it.
+
+**Cost.** The requirement is strict in practice, not just in principle. On
+GPT-2, `--top-k 50` captures roughly half the mass at a typical step; reaching
+95% takes a top-K in the low thousands, and the pipeline cost scales with it.
+Lower percentiles are reachable at ordinary budgets: p50 needs only the handful
+of candidates carrying half the mass.
+
+**Expected range.** `[0, log₂ n_p]` where `n_p` is the nucleus size. Monotone
+in `p` — a smaller share of the mass can never spread over more candidates —
+so p50 ≤ p80 ≤ p95 on the same distribution.
+
+**Access.** Backends exposing full logprobs (`hf`, `tlens`). The CLI refuses
+`--entropy-percentile` elsewhere rather than reporting a number computed from a
+slice that cannot contain the nucleus.
 
 ---
 

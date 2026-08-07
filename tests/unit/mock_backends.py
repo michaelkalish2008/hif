@@ -461,7 +461,13 @@ def contract_config(backend: str, *, n_variants: int = 4) -> RunConfig:
     """
     return RunConfig(
         model=ModelConfig(name="mock", backend=backend),
-        generation=GenerationConfig(max_new_tokens=6, top_k=16),
+        # entropy_percentile on, so output_nucleus_entropy_bits is exercised
+        # like every other row. The mocks normalise their top-K to sum to 1,
+        # so the captured slice always contains the nucleus and the row is
+        # produced rather than gated — the gate itself is checked in
+        # test_distribution.py, on slices built to fall short.
+        generation=GenerationConfig(max_new_tokens=6, top_k=16,
+                                    entropy_percentile=0.95),
         trajectory=TrajectoryConfig(n_branches=2, rollout_steps=3),
         perturbation=PerturbationConfig(n_variants=n_variants, generators=["synonym"]),
         cluster=ClusterConfig(method="kmeans", n_clusters=3),

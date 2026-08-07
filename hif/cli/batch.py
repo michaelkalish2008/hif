@@ -18,6 +18,7 @@ from hif.cli._app import (
 )
 from hif.cli._config import (
     _check_acquisition,
+    _check_entropy_percentile,
     _check_mode,
     _explicit_generation_params,
     _load_config_file,
@@ -101,6 +102,14 @@ def batch(
     seed: int = typer.Option(42, help="Random seed"),
     max_new_tokens: int = typer.Option(64, help="Maximum new tokens to generate"),
     top_k: int = typer.Option(50, help="Top-K candidates per step"),
+    entropy_percentile: Optional[float] = typer.Option(
+        None,
+        help="Also report output_nucleus_entropy_bits: the entropy of the "
+             "smallest per-step prefix carrying this percent of the output "
+             "distribution's mass (e.g. 95), renormalized. Off by default, "
+             "so output_entropy_bits keeps its full-vocabulary basis. Needs "
+             "a backend exposing full logprobs.",
+    ),
     config_file: Optional[Path] = typer.Option(
         None,
         help="TOML run config (tables mirror RunConfig). CLI flags you pass "
@@ -283,6 +292,7 @@ def batch(
         base_config=base_config, explicit=explicit,
         n_perturbation_variants=(2 if mode == "fast" else 5),
         trace=trace, lite=lite, acquisition=acquisition,
+        entropy_percentile=_check_entropy_percentile(entropy_percentile, backend),
     )
     # A --config-file [generation] seed wins over the CLI *default* (an
     # explicit --seed still beats the file) — the seed passed to the run must

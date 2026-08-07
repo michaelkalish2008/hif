@@ -15,6 +15,11 @@ class DistributionMetrics(BaseModel):
     tail_weight: float                       # probability mass below threshold
     truncated: bool                          # True if distribution was truncated to top-K before computation
     nucleus_fraction: dict[str, float]       # {p90, p95}: fraction of vocab in top-p nucleus
+    # H of the --entropy-percentile nucleus, renormalized. None when the option
+    # was not passed, or when the captured top-K does not carry that much mass
+    # — see percentile_entropy_bits() for why the second case is an absence
+    # rather than a smaller number.
+    percentile_entropy_bits: float | None = None
 
 
 def entropy_bits(probs: np.ndarray) -> float:
@@ -23,6 +28,33 @@ def entropy_bits(probs: np.ndarray) -> float:
     mask = probs > 1e-10
     p = probs[mask]
     return float(-np.sum(p * np.log2(p)))
+
+
+def percentile_entropy_bits(probs: np.ndarray, p: float) -> float | None:
+    """H of the top-p nucleus — or None when this slice cannot determine it.
+
+    The same computation as `nucleus_entropy_bits`, with the one behaviour that
+    distinguishes a measurement from a chart companion: it refuses.
+
+    `nucleus_entropy_bits` deliberately degrades. Handed a top-K slice carrying
+    less than p of the mass, it falls back to "use every token I have", which
+    is the right call for a chart series that must draw something on every
+    backend. As a measurement it would be a different quantity under the same
+    key — the entropy of whatever the backend happened to expose, not the
+    entropy of the top-p nucleus — and comparing two such numbers across
+    backends compares two different definitions.
+
+    So the nucleus has to be *inside* the captured slice for the answer to be
+    about the nucleus. When it is not, the run produced no evidence for this
+    quantity, and absent is the honest report.
+    """
+    if len(probs) == 0:
+        return None
+    captured = float(np.sum(probs))
+    # Strictly less: a slice carrying exactly p contains the nucleus.
+    if captured < p:
+        return None
+    return nucleus_entropy_bits(probs, p=p)
 
 
 def nucleus_entropy_bits(probs: np.ndarray, p: float = 0.95) -> float:
@@ -152,6 +184,7 @@ def compute_distribution_metrics(
     truncated: bool = False,
     vocab_size: int | None = None,
     nucleus_p: float = 0.95,
+    entropy_percentile: float | None = None,
 ) -> DistributionMetrics:
     """Compute all distribution metrics and return bundled result.
 
@@ -166,9 +199,22 @@ def compute_distribution_metrics(
         for the uniform-tail upper-bound correction when truncated=True.
     nucleus_p:
         Nucleus mass threshold for nucleus_entropy_bits (default 0.95).
+    entropy_percentile:
+        Mass threshold for the OPTIONAL percentile_entropy_bits measurement,
+        as a fraction. None (the default) leaves that field absent, which is
+        what keeps `--entropy-percentile` additive: every existing field is
+        computed exactly as before whether or not it is passed. Deliberately
+        separate from nucleus_p — that one is pinned at 0.95 because
+        effective_support_size and the charts are defined in terms of it, and
+        retuning them from a measurement flag would silently redefine three
+        other numbers.
     """
     h = entropy_bits(probs)
     h_nucleus = nucleus_entropy_bits(probs, p=nucleus_p)
+    h_percentile = (
+        percentile_entropy_bits(probs, p=entropy_percentile)
+        if entropy_percentile is not None else None
+    )
     h_upper = (
         uniform_tail_entropy(probs, vocab_size)
         if (truncated and vocab_size is not None)
@@ -178,6 +224,7 @@ def compute_distribution_metrics(
         entropy_bits=h,
         entropy_bits_upper=h_upper,
         nucleus_entropy_bits=h_nucleus,
+        percentile_entropy_bits=h_percentile,
         logit_margin=logit_margin(logits),
         topk_cumulative_mass=topk_cumulative_mass(probs, k=top_k_for_mass),
         effective_support_size=float(2.0 ** h_nucleus),

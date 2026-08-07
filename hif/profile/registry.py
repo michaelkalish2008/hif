@@ -143,7 +143,36 @@ from typing import Optional
 # can return by meeting the Significance Gate in docs/MEASUREMENTS.md: about the
 # target, powered at the default n, no embedded thresholds, and present on
 # the backends it claims.
-SIGNAL_SET_VERSION = "hif-v4"
+# hif-v4.1 (current): adds output_nucleus_entropy_bits. An ADDITION, so a
+# MINOR bump — a v4 artifact and a v4.1 one stay in the same family and
+# `hif compare` still intersects over the six rows both carry.
+#
+# The Significance Gate asks four questions; this row answers them and one
+# more that the gate does not yet ask.
+#   about the target        the same per-step candidate cloud
+#                           output_entropy_bits reads, under the same subject
+#                           and the same surrogate story.
+#   no embedded thresholds  the one number that shapes it, the nucleus mass,
+#                           is not embedded — it is the flag, absent by
+#                           default, and recorded in run_config on every run
+#                           that sets it. A row whose constant is the user's
+#                           choice is not a row with a hidden constant.
+#   present where claimed   `--entropy-percentile` refuses a backend that
+#                           cannot expose full logprobs, and the row is absent
+#                           on any run whose captured top-K missed the nucleus
+#                           at any step.
+#   powered at default n    it is a per-step mean like output_entropy_bits,
+#                           over the same steps.
+#
+# The extra question is comparability, and it is why this is a separate key
+# rather than a basis switch on output_entropy_bits. The two are different
+# quantities: one is the entropy of everything the backend exposed, the other
+# the entropy of a fixed fraction of the mass. Reported under one key with a
+# flag deciding which, every published profile would need reading alongside
+# the flag to know what its number meant. Reported as two keys, a run that
+# took both reports both, a run that took neither is unchanged, and no
+# existing artifact's meaning moves.
+SIGNAL_SET_VERSION = "hif-v4.1"
 
 
 # ---------------------------------------------------------------------------
@@ -533,6 +562,29 @@ MEASUREMENT_REGISTRY: tuple[Measurement, ...] = (
         resolution="per-step",
         # builder.py step 7 iterates the same `semantic_steps` basis — see
         # candidate_cluster_entropy_bits.
+        subject=SUBJECT_TARGET_DISTRIBUTION,
+        subject_under_surrogate=SUBJECT_TARGET_OUTPUT_TEXT,
+        surrogate_group="output",
+    ),
+    Measurement(
+        key="output_nucleus_entropy_bits",
+        name="Output nucleus entropy (bits)",
+        unit="bits",
+        definition=(
+            "mean Shannon entropy of the smallest per-step prefix carrying "
+            "--entropy-percentile of the output distribution's mass, "
+            "renormalized to a proper distribution. Absent unless "
+            "--entropy-percentile is passed, and absent on any run whose "
+            "captured top-K does not reach that mass at every step — the "
+            "entropy of a slice that does not contain the nucleus is a "
+            "different quantity, not a smaller number."
+        ),
+        observable="output distribution",
+        functional="information-theoretic",
+        resolution="per-step",
+        # Same basis and the same surrogate story as output_entropy_bits: both
+        # read the per-step candidate cloud, so a point-mass backend produces
+        # neither, and a surrogate recovers both as the proxy's distribution.
         subject=SUBJECT_TARGET_DISTRIBUTION,
         subject_under_surrogate=SUBJECT_TARGET_OUTPUT_TEXT,
         surrogate_group="output",

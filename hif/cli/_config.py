@@ -114,6 +114,7 @@ def _make_run_config(
     top_k: int,
     seed: int,
     output_dir: Optional[Path],
+    entropy_percentile: Optional[float] = None,
     diagnostics: bool = False,
     base: "Optional[RunConfig]" = None,
     explicit: frozenset = frozenset(),
@@ -179,6 +180,8 @@ def _make_run_config(
             cfg.generation.top_k = top_k
         if "seed" in explicit:
             cfg.generation.seed = seed
+        if entropy_percentile is not None:
+            cfg.generation.entropy_percentile = entropy_percentile
         if output_dir is not None:
             cfg.output.output_dir = output_dir
         if diagnostics:
@@ -192,6 +195,7 @@ def _make_run_config(
             max_new_tokens=max_new_tokens,
             top_k=top_k,
             seed=seed,
+            entropy_percentile=entropy_percentile,
         ),
         # output_dir=None means "write nothing" (privacy-first default); the
         # OutputConfig still needs a placeholder path — nothing consults it
@@ -214,10 +218,56 @@ def _explicit_generation_params(ctx: typer.Context) -> frozenset:
     # own ParameterSource enum class rather than click's, so a cross-class
     # `!=` against click.core.ParameterSource.DEFAULT is always True.
     return frozenset(
-        name for name in ("max_new_tokens", "top_k", "seed", "mode")
+        name for name in ("max_new_tokens", "top_k", "seed", "mode",
+                          "entropy_percentile")
         if (src := ctx.get_parameter_source(name)) is not None
         and getattr(src, "name", None) != "DEFAULT"
     )
+
+
+def _check_entropy_percentile(value: float | None, backend: str) -> float | None:
+    """Validate --entropy-percentile and return it as a mass fraction.
+
+    Two rejections, both because the alternative is a plausible wrong number
+    rather than an error:
+
+    A percentile is given as 95, not 0.95. Both parse, and 0.95 would be read
+    as "the 0.95th percentile" — a nucleus of essentially the top token, whose
+    entropy is ~0 bits. That is a number, it is wrong, and nothing downstream
+    could tell. So the sub-1 case is refused by name.
+
+    And the nucleus is only observable where the backend exposes the full
+    distribution. On a top-k API the captured slice usually misses it, and
+    `percentile_entropy_bits` would report absent step after step for a
+    non-obvious reason. Better to say so before the model loads than to hand
+    back a record with the measurement silently missing.
+    """
+    if value is None:
+        return None
+    if value < 1:
+        err_console.print(
+            f"[red]--entropy-percentile is a percentile, not a fraction: pass "
+            f"{value * 100:g} rather than {value:g}.[/red]"
+        )
+        raise typer.Exit(3)
+    if value > 100:
+        err_console.print(
+            f"[red]--entropy-percentile must be <= 100, got {value:g}.[/red]"
+        )
+        raise typer.Exit(3)
+
+    from hif.models.capabilities import BACKENDS
+
+    info = BACKENDS.get(backend)
+    if info is not None and info.logprobs != "full":
+        full = sorted(n for n, b in BACKENDS.items() if b.logprobs == "full")
+        err_console.print(
+            f"[red]--entropy-percentile needs the full output distribution, "
+            f"and {backend} exposes {info.logprobs} logprobs. Backends that "
+            f"can: {', '.join(full)}.[/red]"
+        )
+        raise typer.Exit(3)
+    return value / 100.0
 
 
 def _check_mode(mode: str) -> None:

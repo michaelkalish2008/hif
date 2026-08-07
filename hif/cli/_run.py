@@ -52,6 +52,7 @@ def _resolve_run_config(
     trace: bool = False,
     lite: bool = False,
     acquisition: str = "elicited-output",
+    entropy_percentile: Optional[float] = None,
 ):
     """Every source of configuration, resolved in one place.
 
@@ -68,7 +69,8 @@ def _resolve_run_config(
     """
     config = _make_run_config(model_name, backend, max_new_tokens, top_k, seed, output_dir,
                                diagnostics=diagnostics, base=base_config,
-                               explicit=explicit)
+                               explicit=explicit,
+                               entropy_percentile=entropy_percentile)
     # Apply perturbation variant count from --mode — unless a --config-file
     # set its own perturbation budget and the user didn't pass --mode.
     if base_config is None or "mode" in explicit:
@@ -138,6 +140,7 @@ def _run_single_profile(
     explicit: frozenset = frozenset(),
     lite: bool = False,
     acquisition: str = "elicited-output",
+    entropy_percentile: Optional[float] = None,
     variant_output_sink: Optional[dict] = None,
 ) -> "tuple[BehavioralRangeProfile, Optional[Path]]":
     """Core pipeline: build the profile in memory, return (profile, trace_path).
@@ -155,6 +158,7 @@ def _run_single_profile(
         diagnostics=diagnostics, base_config=base_config, explicit=explicit,
         n_perturbation_variants=n_perturbation_variants, trace=trace,
         lite=lite, acquisition=acquisition,
+        entropy_percentile=entropy_percentile,
     )
 
     if model is None:
@@ -218,6 +222,24 @@ def _run_single_profile(
             index = res.get("index", {}).get("html")
             if index is not None:
                 console.print(f"  [dim]Dashboard: {index}[/dim]")
+
+    # An absence the user asked for deserves a reason. --entropy-percentile
+    # needs every step's captured top-K to carry the requested mass, and at
+    # the default --top-k 50 a single flat step is enough to withhold the
+    # measurement for the whole run. Silence here would read as "this model
+    # has no nucleus entropy" rather than "raise --top-k".
+    if entropy_percentile is not None:
+        from hif.profile.measure import measurements as _ms
+        if "output_nucleus_entropy_bits" not in _ms(profile):
+            dist = getattr(profile.metrics, "distribution", None) or []
+            short = sum(1 for d in dist if d.percentile_entropy_bits is None)
+            console.print(
+                f"  [dim]output_nucleus_entropy_bits absent: {short} of "
+                f"{len(dist)} steps captured less than "
+                f"{entropy_percentile * 100:g}% of the output mass in "
+                f"top-{config.generation.top_k}. Raise --top-k so the nucleus "
+                f"falls inside the captured slice.[/dim]"
+            )
 
     return profile, trace_path
 

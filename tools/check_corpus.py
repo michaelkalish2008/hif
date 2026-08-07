@@ -28,11 +28,22 @@ believed. The hook runs the cheap check; run `--deep` after any corpus push.
 WHAT COUNTS AS DRIFT
 --------------------
 A published key that no longer exists in the registry, or a corpus whose
-`signal_set_version` is not this one. NOT drift: a profile carrying fewer keys
-than the registry defines — that is the absence rules working, and it is the
-normal case for every backend that cannot teacher-force. A check that demanded
-all six everywhere would fail on two thirds of the corpus and be deleted
-within a week, which is worse than no check.
+`signal_set_version` is from a different FAMILY than this one. NOT drift: a
+profile carrying fewer keys than the registry defines — that is the absence
+rules working, and it is the normal case for every backend that cannot
+teacher-force. A check that demanded all six everywhere would fail on two
+thirds of the corpus and be deleted within a week, which is worse than no
+check.
+
+Also NOT drift: a minor version behind, e.g. a hif-v4 corpus against a
+hif-v4.1 repo. This compared version strings exactly until hif-v4.1, which was
+correct only because every bump until then had been major. A minor bump is
+additive by definition — `hif compare` intersects across it, and the
+`_signal_set_family` rule exists to say so — so a corpus one minor behind
+publishes keys that all still mean what they meant. Demanding an exact match
+would have required recomputing 120 profiles to add a measurement none of them
+took, and the real hazard, a published key the registry has retired, is caught
+by the check below regardless of version.
 """
 
 from __future__ import annotations
@@ -47,6 +58,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 
+from hif.cli._compat import _signal_set_family  # noqa: E402
 from hif.profile.registry import MEASUREMENT_BY_KEY, SIGNAL_SET_VERSION  # noqa: E402
 
 DEFAULT_CORPUS = REPO.parent / "ai-interpretability" / "public" / "data"
@@ -106,10 +118,11 @@ def verify(manifest: dict) -> list[str]:
     problems: list[str] = []
 
     version = manifest.get("signal_set_version")
-    if version != SIGNAL_SET_VERSION:
+    if _signal_set_family(str(version)) != _signal_set_family(SIGNAL_SET_VERSION):
         problems.append(
             f"corpus signal_set_version is {version!r}, this repo is "
-            f"{SIGNAL_SET_VERSION!r}"
+            f"{SIGNAL_SET_VERSION!r} — a different family, so the sets do "
+            f"not intersect"
         )
 
     retired = sorted(set(manifest.get("keys_published") or []) - set(MEASUREMENT_BY_KEY))

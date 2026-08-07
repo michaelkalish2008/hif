@@ -75,9 +75,16 @@ def test_the_v4_cut_is_exactly_the_declared_core():
         "perturbation_jsd_bits", "io_cosine_similarity",
         "prompt_surprisal_excess_bits", "output_entropy_bits",
     }
-    assert set(MEASUREMENT_KEYS) == core, (
-        "the measurement set no longer matches the declared hif-v4 core — "
-        f"unexpected: {set(MEASUREMENT_KEYS) ^ core}"
+    # hif-v4.1 admitted one row. It is listed apart from the cut's survivors
+    # rather than folded into `core`, so this test keeps saying what it was
+    # written to say: these six are what the v4 cut left, and anything else
+    # present had to be argued for by name. The argument for this one is in
+    # the SIGNAL_SET_VERSION history beside the constant.
+    admitted = {"output_nucleus_entropy_bits"}
+    assert set(MEASUREMENT_KEYS) == core | admitted, (
+        "the measurement set no longer matches the declared hif-v4 core plus "
+        f"its named admissions — unexpected: "
+        f"{set(MEASUREMENT_KEYS) ^ (core | admitted)}"
     )
 
 

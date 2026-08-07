@@ -20,6 +20,7 @@ from hif.cli._app import (
 )
 from hif.cli._config import (
     _check_acquisition,
+    _check_entropy_percentile,
     _check_mode,
     _explicit_generation_params,
     _load_config_file,
@@ -81,6 +82,14 @@ def profile(
     ),
     max_new_tokens: int = typer.Option(64, help="Maximum new tokens to generate"),
     top_k: int = typer.Option(50, help="Top-K candidates per step"),
+    entropy_percentile: Optional[float] = typer.Option(
+        None,
+        help="Also report output_nucleus_entropy_bits: the entropy of the "
+             "smallest per-step prefix carrying this percent of the output "
+             "distribution's mass (e.g. 95), renormalized. Off by default, "
+             "so output_entropy_bits keeps its full-vocabulary basis. Needs "
+             "a backend exposing full logprobs.",
+    ),
     config_file: Optional[Path] = typer.Option(
         None,
         help="TOML run config (tables mirror RunConfig: [generation], "
@@ -229,6 +238,9 @@ def profile(
 
     _check_mode(mode)
     _check_acquisition(acquisition)
+    # Validated before the model loads: a bad percentile or an incapable
+    # backend should cost a message, not a pipeline.
+    entropy_pct = _check_entropy_percentile(entropy_percentile, backend)
 
     if metric is not None and metric not in MEASUREMENT_KEYS:
         err_console.print(
@@ -397,6 +409,7 @@ def profile(
                 trace_dir=trace_dir,
                 base_config=base_config,
                 explicit=explicit,
+                entropy_percentile=entropy_pct,
                 lite=lite,
                 acquisition=acquisition,
                 variant_output_sink=variant_output_sink,

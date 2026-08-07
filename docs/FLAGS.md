@@ -22,6 +22,7 @@ Profile many prompts against one loaded model.
 | `--seed` | Random seed *(default: `42`)* |
 | `--max-new-tokens` | Maximum new tokens to generate *(default: `64`)* |
 | `--top-k` | Top-K candidates per step *(default: `50`)* |
+| `--entropy-percentile` | Also report output_nucleus_entropy_bits: the entropy of the smallest per-step prefix carrying this percent of the output distribution's mass (e.g. 95), renormalized. Off by default, so output_entropy_bits keeps its full-vocabulary basis. Needs a backend exposing full logprobs. |
 | `--config-file` | TOML run config (tables mirror RunConfig). CLI flags you pass explicitly override the file. |
 | `--mode` | fast: fewer perturbation variants. audit: full perturbation set. *(default: `fast`)* |
 | `--acquisition` | Ceiling on what this run may bring into existence, applied to every row. observational \| synthesized-input \| elicited-output. Same meaning as `hif profile --acquisition`; run `hif schema` for each measurement's tier. *(default: `elicited-output`)* |
@@ -116,6 +117,7 @@ Run the full hif pipeline on a single (model, prompt) pair.
 | `--output-dir` | Write derived reports (technical + public markdown, --charts plots) here. Default: nothing is written to disk — results print to the terminal only (privacy-first compute-and-discard). |
 | `--max-new-tokens` | Maximum new tokens to generate *(default: `64`)* |
 | `--top-k` | Top-K candidates per step *(default: `50`)* |
+| `--entropy-percentile` | Also report output_nucleus_entropy_bits: the entropy of the smallest per-step prefix carrying this percent of the output distribution's mass (e.g. 95), renormalized. Off by default, so output_entropy_bits keeps its full-vocabulary basis. Needs a backend exposing full logprobs. |
 | `--config-file` | TOML run config (tables mirror RunConfig: [generation], [perturbation], [trajectory], [attention], [semantic_field], ...). CLI flags you pass explicitly override the file. |
 | `--trace` | Opt-in traceability: persist the full profile artifact (raw per-step top-K distributions — reconstructable content) so signals can be recomputed or audited later without re-running the model. Default off: compute-and-discard. |
 | `--trace-dir` | Where --trace artifacts are written (default: <output-dir>/traces, or ./traces when no --output-dir). Passing this implies --trace. |

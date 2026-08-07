@@ -99,6 +99,17 @@ def _all_measured_values(p) -> dict[str, float]:
         ents = [d.entropy_bits for d in m.distribution]
         out["output_entropy_bits"] = sum(ents) / len(ents)
 
+        # The percentile companion, present only when every step could answer.
+        # A mean over the subset of steps whose top-K happened to reach the
+        # threshold is an average of a self-selecting sample — peaked steps
+        # reach it, flat ones do not — so it would report LOWER entropy the
+        # more often the nucleus went unobserved. One missing step makes the
+        # run's answer absent, which is the same rule the rest of the set
+        # follows.
+        nuc = [d.percentile_entropy_bits for d in m.distribution]
+        if nuc and all(v is not None for v in nuc):
+            out["output_nucleus_entropy_bits"] = sum(nuc) / len(nuc)
+
     # One enforcement of needs_distribution_pair, derived from the rows rather
     # than hand-written per quantity.
     #
