@@ -17,6 +17,19 @@ from hif.profile.registry import (
 from hif.profile.schema import BehavioralRangeProfile
 
 
+def _absent_reason(key: str, profile) -> str:
+    """Why this row is absent: never requested, or requested and unobtainable."""
+    from hif.cli._output import OPT_IN_FLAGS
+
+    flag = OPT_IN_FLAGS.get(key)
+    if flag is not None and getattr(
+        getattr(getattr(profile, "config", None), "generation", None),
+        "entropy_percentile", None,
+    ) is None:
+        return f"absent (not requested — pass {flag})"
+    return "absent (not measurable on this run)"
+
+
 def _cell(text: str) -> str:
     """Escape the table delimiter in text destined for a Markdown table cell.
 
@@ -90,7 +103,10 @@ def render_technical(profile: BehavioralRangeProfile, output_path: Path) -> None
             continue
         v = vals.get(m.key)
         mark = star if m.surrogate_group else ""
-        shown = "absent (not measurable on this run)" if v is None else f"{v:.6g}"
+        # Same two absences the terminal distinguishes (hif/cli/_output.py):
+        # a report that says "not measurable" about an opt-in row nobody asked
+        # for sends the reader to check their backend over a missing flag.
+        shown = f"{v:.6g}" if v is not None else _absent_reason(m.key, profile)
         a(
             f"| {_cell(m.name)}{mark} | {shown} | {subjects.get(m.key, '')} | "
             f"{_cell(m.unit)} — {_cell(m.definition)} |"

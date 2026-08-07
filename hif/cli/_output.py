@@ -40,6 +40,36 @@ from hif.profile.registry import (
 # number.
 ABSENT_TEXT = "absent (not measurable on this backend/run)"
 
+# ...except where the run never asked. Every measurement used to be attempted
+# on every run, so "absent" and "not measurable" were the same statement and
+# one string could serve both. `output_nucleus_entropy_bits` is the first row
+# that is opt-in, and ABSENT_TEXT libels the run for it: printed against gpt2
+# on hf — one of exactly two backends that CAN produce it — "not measurable on
+# this backend" is false, and it points a reader at their backend when the
+# answer is a flag they did not pass.
+NOT_REQUESTED_TEXT = "absent (not requested — pass {flag})"
+
+# key -> the flag that asks for it. A row here is absent-by-default; a row not
+# here is absent only when the run could not produce it.
+OPT_IN_FLAGS: dict[str, str] = {
+    "output_nucleus_entropy_bits": "--entropy-percentile",
+}
+
+
+def _absent_text(key: str, profile) -> str:
+    """Which absence this is: not asked for, or not obtainable."""
+    flag = OPT_IN_FLAGS.get(key)
+    if flag is None:
+        return ABSENT_TEXT
+    # Asked for and still absent is a real absence — the run tried and the
+    # data did not support it (see percentile_entropy_bits). Only an unasked
+    # measurement gets the softer, accurate line.
+    requested = getattr(
+        getattr(getattr(profile, "config", None), "generation", None),
+        "entropy_percentile", None,
+    )
+    return ABSENT_TEXT if requested is not None else NOT_REQUESTED_TEXT.format(flag=flag)
+
 
 def _print_measurements(p) -> None:
     """The measurement set, one row per quantity, in natural units.
@@ -81,7 +111,7 @@ def _print_measurements(p) -> None:
         v = vals.get(m.key)
         table.add_row(
             f"{m.name}{marks}",
-            ABSENT_TEXT if v is None else f"{v:.6g}",
+            _absent_text(m.key, p) if v is None else f"{v:.6g}",
             m.unit,
         )
     console.print(table)
