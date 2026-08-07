@@ -5,8 +5,10 @@ Single source of truth for the viz engine: which signals exist, their identity
 availability predicate that decides whether *this* profile has the backing data.
 
 Insertion order is stable and taxonomy-faithful:
-  aggregates: stability, breadth, surprise, sensitivity, similarity
-  readings:   entropy, wager
+  aggregates: input_entropy_trace, effective_support_size,
+              prompt_surprisal_excess_trace, perturbation_jsd_bits,
+              io_cosine_similarity
+  readings:   output_entropy_bits, prompt_surprisal_excess_bits
 
 Charts for the measurements cut in hif-v4 were cut with them: a chart whose
 measurement is gone recreates the "existed only as a chart" gap that hif-v3.1
@@ -18,25 +20,32 @@ drawn as zero/flat.
 
 Relation to the measurement registry (hif/profile/registry.py)
 -------------------------------------------------------------
-Signal ids are chart names, not measurement keys — the two namespaces are
-deliberately different (a chart may draw a trace whose run-level summary is
-the measurement). Ids are also filenames: generated charts are written under
-them and consumers link to those paths, so an id is renamed only with a
-corresponding migration of the artifacts. A `label` is display text and
-carries no such cost.
+A chart that draws a measurement carries that measurement's key as its id.
+The two namespaces used to be deliberately different, and the difference is
+what let the retired shorthand survive here: `stability`, `breadth`,
+`surprise`, `sensitivity`, `similarity`, `entropy`, `wager` were removed from
+the measurement rows in `6a0dd45` — "Stability" on `input_entropy_std_bits`
+inverts the reading of its own number — and this registry kept them for two
+more versions, so `--charts` went on writing `stability.html`. One namespace
+now, and no shorthand in it.
+
+Ids are also filenames: generated charts are written under them and consumers
+link to those paths, so an id is renamed only with a corresponding migration
+of the artifacts (the site's sample charts and their generated catalog moved
+with this one). A `label` is display text and carries no such cost.
 
 Labels name the quantity drawn, in the terms it is computed in — the same
-convention as `name` on a measurement row, and for the same reason
-(SIGNAL_SET_VERSION history, hif-v3.3: a coined shorthand is free to drift
-off the quantity while the key stays pinned to it). Three charts do not draw
-a measurement directly and say so in their label: `stability` draws the
-per-position input entropy trace behind the aggregate, `surprise` draws the
-same per-position series `wager` summarises, and `breadth` draws effective
-support size, which is not in the measurement set at all.
+convention as `name` on a measurement row, and for the same reason. Three
+charts do not draw a measurement directly, and their ids say so by not being
+registry keys: `input_entropy_trace` draws the per-position series behind the
+aggregate, `prompt_surprisal_excess_trace` draws the per-position series
+`prompt_surprisal_excess_bits` summarises, and `effective_support_size` draws
+a quantity that is not in the measurement set at all.
 
 The bridge is explicit: `measurement_key` on each row names
-the measurement the chart draws (None for a chart, like breadth, that draws a
-component quantity which is deliberately NOT in the measurement set), and
+the measurement the chart draws (None for a chart, like
+`effective_support_size`, that draws a component quantity which is
+deliberately NOT in the measurement set), and
 `family` is copied from that measurement's `functional` so the two registries
 share one vocabulary. `resolve_signal()` accepts either a signal id or a
 measurement key, which is what lets `hif profile --metric <key> --charts`
@@ -50,7 +59,13 @@ from typing import Callable
 
 from hif.profile.registry import MEASUREMENT_BY_KEY
 from hif.viz.signals import (
-    breadth, entropy, sensitivity, similarity, stability, surprise, wager,
+    effective_support_size,
+    input_entropy_trace,
+    io_cosine_similarity,
+    output_entropy_bits,
+    perturbation_jsd_bits,
+    prompt_surprisal_excess_bits,
+    prompt_surprisal_excess_trace,
 )
 
 
@@ -71,7 +86,10 @@ class SignalViz:
     # the basis the measurement reduces — so the chart must decline exactly
     # the runs the measurement declines, enforced in `_gated` below. False
     # means the key is carried for `resolve_signal` only, and the chart is
-    # gated on its own data like an unkeyed chart. Only `stability` is False.
+    # gated on its own data like an unkeyed chart. Only `input_entropy_trace`
+    # is False, and its name says so: a chart that draws its measurement is
+    # named FOR that measurement, so an id that is not a registry key is the
+    # visible sign that this one draws the series instead.
     draws_measurement: bool = True
 
 
@@ -82,31 +100,45 @@ class SignalViz:
 # entropy trace", and the chart a reader actually saw was titled from the
 # module.
 #
-# NOTE on `stability`: the chart draws the per-position input entropy TRACE,
-# not the aggregate its measurement reduces it to (input_entropy_std_bits, the
-# spread of per-variant entropy shifts). The aggregate is a single scalar with
-# no informative direct chart; the trace is the series behind it.
+# Chart ids are measurement keys, and the coined vocabulary that used to
+# supply them — stability, breadth, surprise, sensitivity, similarity,
+# entropy, wager — is gone. `6a0dd45` removed exactly those words from the
+# measurement rows because a second naming layer drifts off the quantity while
+# the key stays pinned to it, and it named the worst case: "Stability" sat on
+# `input_entropy_std_bits`, a standard deviation, where a HIGHER number means
+# LESS stable. That purge cleaned the measurement registry and left this one
+# untouched, so `--charts` went on writing `stability.html` for two more
+# versions. A chart that draws a measurement is now named for it; a chart that
+# draws a series that is deliberately not a measurement is named for the
+# series.
 _SPEC = [
     # id, kind, module, measurement_key, draws_measurement
     #
-    # stability is the one False: it plots the per-position input entropy of
+    # input_entropy_trace is the one False: it plots the per-position input entropy of
     # the ORIGINAL prompt, while `input_entropy_std_bits` is the spread of
     # per-VARIANT entropy shifts. Real data either way, but not the same
     # series, so the measurement's absence is not this chart's absence. The
     # key is carried so `--metric input_entropy_std_bits --charts` resolves.
-    ("stability",      "aggregate", stability,      "input_entropy_std_bits", False),
-    # Breadth draws per-step effective support size — deliberately NOT a
-    # measurement (ESS is entropy in different units; docs/MEASUREMENTS.md
-    # excludes it), so it maps to no key.
-    ("breadth",        "aggregate", breadth,        None, False),
-    # Surprise draws the same per-position excess-surprisal series as the
-    # wager reading; wager is the designated chart for the measurement, so
-    # only wager carries the key (one measurement must resolve to one chart).
-    ("surprise",       "aggregate", surprise,       None, False),
-    ("sensitivity",    "aggregate", sensitivity,    "perturbation_jsd_bits", True),
-    ("similarity",     "aggregate", similarity,     "io_cosine_similarity", True),
-    ("entropy",        "reading",   entropy,        "output_entropy_bits", True),
-    ("wager",          "reading",   wager,          "prompt_surprisal_excess_bits", True),
+    ("input_entropy_trace", "aggregate", input_entropy_trace,
+     "input_entropy_std_bits", False),
+    # Draws per-step effective support size — deliberately NOT a measurement
+    # (ESS is entropy in different units; docs/MEASUREMENTS.md excludes it),
+    # so it maps to no key.
+    ("effective_support_size", "aggregate", effective_support_size, None, False),
+    # The same per-position excess-surprisal series that
+    # prompt_surprisal_excess_bits reduces. That chart is the designated one
+    # for the measurement, so only it carries the key — one measurement must
+    # resolve to one chart — and this one is named for the series it draws.
+    ("prompt_surprisal_excess_trace", "aggregate", prompt_surprisal_excess_trace,
+     None, False),
+    ("perturbation_jsd_bits", "aggregate", perturbation_jsd_bits,
+     "perturbation_jsd_bits", True),
+    ("io_cosine_similarity", "aggregate", io_cosine_similarity,
+     "io_cosine_similarity", True),
+    ("output_entropy_bits", "reading", output_entropy_bits,
+     "output_entropy_bits", True),
+    ("prompt_surprisal_excess_bits", "reading", prompt_surprisal_excess_bits,
+     "prompt_surprisal_excess_bits", True),
 ]
 
 WITHHELD = (
@@ -160,7 +192,8 @@ def _gated(mod, mkey: str | None, draws: bool):
         # is prompt-only under `--surrogate` leaves `measurements()` for
         # `prompt_measurements()` with its value intact — that is a change of
         # subject, not an absence. Reading only the first block would make
-        # `wager` write "the evidence does not exist here" onto every
+        # `prompt_surprisal_excess_bits` write "the evidence does not
+        # exist here" onto every
         # surrogate run, beside a record carrying the number.
         published = mkey in measurements(profile) or (
             mkey in prompt_measurements(profile)
@@ -185,7 +218,7 @@ def _build(sid: str, kind: str, mod, mkey: str | None, draws: bool) -> SignalViz
     return SignalViz(
         id=sid, label=mod.LABEL, kind=kind,
         # One vocabulary: the chart's family IS its measurement's functional.
-        # Breadth (no measurement) draws support size off the output
+        # effective_support_size (no measurement) draws support size off the output
         # distribution — information-theoretic like the entropy it re-scales.
         family=(
             MEASUREMENT_BY_KEY[mkey].functional
@@ -216,14 +249,14 @@ SIGNALS_BY_MEASUREMENT: dict[str, SignalViz] = {
 # them, so the failure names where to look instead of "Unknown signal".
 NEAREST_CHART: dict[str, str] = {
     # Mean of the same per-variant entropy-shift series whose spread the
-    # stability chart's measurement summarises.
-    "input_entropy_shift_bits": "stability",
+    # input_entropy_trace chart's measurement summarises.
+    "input_entropy_shift_bits": "input_entropy_trace",
     # No chart of its own, and deliberately so: it is the same per-step series
     # the entropy chart already draws, read over a fixed fraction of the mass
     # instead of over everything the backend exposed. A second near-identical
     # trace would invite reading the gap between the two lines as a finding,
     # when it is the definition of the two lines.
-    "output_nucleus_entropy_bits": "entropy",
+    "output_nucleus_entropy_bits": "output_entropy_bits",
 }
 
 

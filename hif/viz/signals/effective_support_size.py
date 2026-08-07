@@ -1,6 +1,6 @@
-"""Breadth (aggregate view) — average width of the token field per step.
+"""Effective support size (aggregate view) — average width of the token field per step.
 
-Fidelity: Breadth = mean Effective Support Size (ESS = 2^nucleus_entropy) across
+Fidelity: mean Effective Support Size (ESS = 2^nucleus_entropy) across
 generation steps — the average number of tokens meaningfully in play. The
 faithful chart is the per-step ESS trace with the mean line; peaks are
 exploratory steps, troughs are committed ones.
@@ -50,7 +50,7 @@ def generate(profile, output_path: Path, formats: list[str] = ["html"]) -> dict[
     # "mean" spelled out explicitly — a dashed line alone reads as an arbitrary
     # threshold, not obviously the average of the series it cuts through.
     fig.add_hline(y=mean, line_dash="dash", line_color=AMBER,
-                  annotation_text=f"mean = {mean:.1f} tokens (Breadth score)",
+                  annotation_text=f"mean = {mean:.1f} tokens",
                   annotation_position="top left")
     fig.add_trace(go.Scatter(
         x=steps, y=ess, mode="lines+markers",

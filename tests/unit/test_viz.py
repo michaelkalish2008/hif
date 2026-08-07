@@ -294,9 +294,9 @@ class TestSignalEngine:
             generate_signal_plots(minimal_profile, tmp_path, tier="free")
 
     def test_only_signal_renders_exactly_one_chart(self, minimal_profile, tmp_path):
-        results = generate_signal_plots(minimal_profile, tmp_path, only_signal="breadth")
-        assert set(results) == {"breadth"}  # one chart, no dashboard
-        assert results["breadth"]["html"].exists()
+        results = generate_signal_plots(minimal_profile, tmp_path, only_signal="effective_support_size")
+        assert set(results) == {"effective_support_size"}  # one chart, no dashboard
+        assert results["effective_support_size"]["html"].exists()
 
     def test_only_signal_unknown_id_raises(self, minimal_profile, tmp_path):
         with pytest.raises(ValueError, match="Unknown signal"):
@@ -318,7 +318,7 @@ class TestSignalEngine:
         results = generate_signal_plots(minimal_profile, tmp_path)
 
         # These signals should be unavailable in minimal_profile (no similarity data, etc.)
-        unavailable_ids = ["similarity"]
+        unavailable_ids = ["io_cosine_similarity"]
 
         for sig_id in unavailable_ids:
             # Signal should still be in results with a valid HTML file
@@ -336,7 +336,7 @@ class TestSignalEngine:
 
     def test_available_signals_report_none(self, minimal_profile):
         """Available signals report None from available()."""
-        available_ids = ["breadth", "entropy", "stability", "sensitivity"]
+        available_ids = ["effective_support_size", "output_entropy_bits", "input_entropy_trace", "perturbation_jsd_bits"]
 
         for sig_id in available_ids:
             sig_obj = next((s for s in SIGNALS if s.id == sig_id), None)

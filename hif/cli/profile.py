@@ -268,7 +268,8 @@ def profile(
 
     # Capability guard: fail fast when the requested metric can't be produced by
     # the chosen backend, BEFORE loading the model or running the pipeline.
-    # (This is what would have caught `--metric stability --backend ollama`.)
+    # (This is what would have caught `--metric input_entropy_std_bits
+    #  --backend ollama`.)
     if metric is not None:
         # The guard has to ask about the backend the run will really use, but
         # must not print the auto-route notice a second time — _load_model

@@ -1,7 +1,7 @@
 """Output distribution entropy per step (per-step view).
 
 Fidelity: the per-step Shannon entropy H(Qⱼ) in bits — the full trace that the
-Breadth aggregate compresses (Breadth = mean of ESS = 2^H). Shows whether a mean
+effective support size chart compresses (mean of ESS = 2^H). Shows whether a mean
 conceals a flat plateau, a single spike, or alternating peaks/troughs. Both the
 nucleus entropy (comparable across model types) and the raw top-K entropy
 (truncation lower bound) are drawn.

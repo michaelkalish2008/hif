@@ -1,4 +1,4 @@
-"""Surprise (aggregate view) — underdog selections against a committed field.
+"""Prompt surprisal excess, per position — underdog selections against a committed field.
 
 Fidelity: Surprise = mean over prompt positions of max(0, sᵢ − H(Pᵢ)), the
 excess surprisal of the actual token beyond the model's distributional entropy.

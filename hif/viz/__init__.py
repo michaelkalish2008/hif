@@ -39,7 +39,8 @@ def generate_signal_plots(
 
     - ``only_signal`` renders exactly that one chart and nothing else (no
       dashboard) — for a single ``--metric`` request. It accepts a signal id
-      (``"breadth"``) or a measurement key (``"output_entropy_bits"``): the
+      (``"effective_support_size"``) or a measurement key
+      (``"output_entropy_bits"``): the
       CLI passes measurement keys, and the registry's ``measurement_key``
       bridge maps each to the chart that draws it. A measurement no chart
       draws raises with the nearest chart named — never "Unknown signal".

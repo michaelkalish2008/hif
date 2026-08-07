@@ -1,12 +1,12 @@
 """Prompt surprisal excess (per-position view) — surprisal over entropy.
 
-Fidelity: Wagerᵢ = max(0, sᵢ − H(Pᵢ)), the per-position residual cost of the
+Fidelity: excessᵢ = max(0, sᵢ − H(Pᵢ)), the per-position residual cost of the
 actual token beyond the model's distributional entropy. This is the full-
-resolution instrument behind the Surprise aggregate (Surprise = mean Wager).
+resolution instrument behind prompt_surprisal_excess_bits (its mean).
 
 Two-panel chart: the top panel overlays surprisal sᵢ against entropy H(Pᵢ) so
 the reader sees where they diverge; the bottom panel bars the excess (the
-Wager value itself) directly, per position, so the delta doesn't rely solely on
+excess value itself) directly, per position, so the delta doesn't rely solely on
 the tooltip to read.
 
 Backing data: ``input_side.positions`` — requires teacher forcing.
@@ -47,7 +47,7 @@ def generate(profile, output_path: Path, formats: list[str] = ["html"]) -> dict[
     mean_excess = float(np.mean(excess)) if excess else 0.0
 
     hover = [f"Position {i} — {tok!r}<br>Surprisal sᵢ: {s:.2f} bits<br>"
-             f"Entropy H(Pᵢ): {h:.2f} bits<br>Wager (excess): {e:.2f} bits"
+             f"Entropy H(Pᵢ): {h:.2f} bits<br>Surprisal excess: {e:.2f} bits"
              for i, tok, s, h, e in zip(idx, toks, surp, ent, excess)]
 
     fig = make_subplots(
@@ -55,10 +55,10 @@ def generate(profile, output_path: Path, formats: list[str] = ["html"]) -> dict[
         shared_xaxes=True,
         # No top-panel subplot title — it's redundant with the main subtitle and
         # collided with the legend sitting just above the chart area.
-        subplot_titles=["", "Wager (excess) per position — the delta itself, not just the gap"],
+        subplot_titles=["", "Surprisal excess per position — the delta itself, not just the gap"],
     )
 
-    # Top: entropy floor + surprisal line; the gap above the floor is the wager.
+    # Top: entropy floor + surprisal line; the gap above the floor is the excess.
     fig.add_trace(go.Scatter(x=x_labels, y=ent, mode="lines", name="Entropy H(Pᵢ)",
                              line=dict(color=INDIGO, width=1.8)), row=1, col=1)
     fig.add_trace(go.Scatter(x=x_labels, y=surp, mode="lines+markers", name="Surprisal sᵢ",
@@ -67,7 +67,7 @@ def generate(profile, output_path: Path, formats: list[str] = ["html"]) -> dict[
     hi = [(x, s) for x, s, e in zip(x_labels, surp, excess) if e >= max(mean_excess * 2, 1.0)]
     if hi:
         fig.add_trace(go.Scatter(x=[x for x, _ in hi], y=[s for _, s in hi],
-                                 mode="markers", name="High wager",
+                                 mode="markers", name="High excess",
                                  marker=dict(color=RED, size=10, symbol="triangle-up"),
                                  hoverinfo="skip"), row=1, col=1)
 
@@ -75,19 +75,19 @@ def generate(profile, output_path: Path, formats: list[str] = ["html"]) -> dict[
     bar_colors = [RED if e >= max(mean_excess * 2, 1.0) else AMBER for e in excess]
     fig.add_trace(go.Bar(x=x_labels, y=excess, marker_color=bar_colors, opacity=0.85,
                          hovertext=hover, hoverinfo="text", showlegend=False,
-                         name="Wager (excess)"), row=2, col=1)
+                         name="Surprisal excess"), row=2, col=1)
     fig.add_hline(y=mean_excess, line_dash="dash", line_color=TEXT_SEC, row=2, col=1,
-                  annotation_text=f"mean = {mean_excess:.3f} bits (Wager)", annotation_position="top left")
+                  annotation_text=f"mean = {mean_excess:.3f} bits", annotation_position="top left")
 
     fig.update_layout(**dark_layout(
         title=signal_title(LABEL, profile.model.name,
-                           f"Wager = mean excess surprisal {mean_excess:.3f} bits · gap above the entropy "
+                           f"Mean excess surprisal {mean_excess:.3f} bits · gap above the entropy "
                            "line in the top panel = the bar height in the bottom panel · click a bar to isolate it"),
         xaxis=dict(categoryorder="array", categoryarray=x_labels, showticklabels=False),
         xaxis2=dict(title="Prompt token position", categoryorder="array", categoryarray=x_labels,
                     tickangle=-55, tickfont=dict(size=9)),
         yaxis=dict(title="Bits", rangemode="tozero"),
-        yaxis2=dict(title="Wager (bits)", rangemode="tozero"),
+        yaxis2=dict(title="Surprisal excess (bits)", rangemode="tozero"),
         height=720,
         legend=dict(orientation="h", x=0.5, xanchor="center", y=1.02, yanchor="bottom"),
         margin=dict(t=170, b=110),

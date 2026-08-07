@@ -223,12 +223,17 @@ than two:
 
 | Aggregate views | Per-step views |
 |---|---|
-| `stability`, `sensitivity`, `similarity` | `entropy`, `wager` |
-| `breadth`, `surprise` | |
+| `perturbation_jsd_bits`, `io_cosine_similarity` | `output_entropy_bits` |
+| `input_entropy_trace`, `effective_support_size` | `prompt_surprisal_excess_bits` |
+| `prompt_surprisal_excess_trace` | |
 
-`breadth` and `surprise` draw component series that are deliberately not in the
-measurement set — effective support size, and the per-position excess-surprisal
-trace that `wager` summarises — so they carry no key. Charts for the
+A chart that draws a measurement is named for it, so the chart file and the
+number in the record carry the same name. The three whose ids are *not*
+measurement keys are the three that draw a component series instead:
+`effective_support_size` (entropy in different units, deliberately not in the
+set), `prompt_surprisal_excess_trace` (the per-position series
+`prompt_surprisal_excess_bits` reduces), and `input_entropy_trace` (the
+per-position series behind `input_entropy_std_bits`). They carry no key. Charts for the
 measurements cut in hif-v4 were cut with them: a chart whose measurement is gone
 is the "visible on the website, unreachable from the CLI" gap that hif-v3.1
 existed to close.

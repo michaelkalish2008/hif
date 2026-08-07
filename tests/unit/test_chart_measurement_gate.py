@@ -197,12 +197,12 @@ def test_the_gate_places_a_placeholder_rather_than_drawing(tmp_path):
     from hif.viz.registry import SIGNALS_BY_ID
 
     profile = _profile(alpha_model(tier=TIER_SELECTED_ONLY), "anthropic")
-    entropy = SIGNALS_BY_ID["entropy"]
+    entropy = SIGNALS_BY_ID["output_entropy_bits"]
 
     reason = entropy.available(profile)
     assert reason is not None and "did not publish" in reason, reason
 
-    written = entropy.generate(profile, tmp_path / "entropy", formats=["html"])
+    written = entropy.generate(profile, tmp_path / "output_entropy_bits", formats=["html"])
     html = list(written.values())[0].read_text()
     assert "did not publish" in html, "generate() drew the chart anyway"
 

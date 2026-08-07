@@ -7,67 +7,67 @@
   },
   "signals": [
     {
-      "id": "breadth",
+      "id": "effective_support_size",
       "label": "Effective support size",
       "short": "Effective support size",
       "kind": "aggregate",
       "measurement_key": null,
       "needs_diagnostics": false,
-      "file": "breadth.html"
+      "file": "effective_support_size.html"
     },
     {
-      "id": "sensitivity",
-      "label": "Perturbation JSD (bits)",
-      "short": "Perturbation JSD",
-      "kind": "aggregate",
-      "measurement_key": "perturbation_jsd_bits",
-      "needs_diagnostics": false,
-      "file": "sensitivity.html"
-    },
-    {
-      "id": "similarity",
-      "label": "Input/output cosine similarity",
-      "short": "Input/output cosine similarity",
-      "kind": "aggregate",
-      "measurement_key": "io_cosine_similarity",
-      "needs_diagnostics": false,
-      "file": "similarity.html"
-    },
-    {
-      "id": "stability",
+      "id": "input_entropy_trace",
       "label": "Input entropy trace",
       "short": "Input entropy trace",
       "kind": "aggregate",
       "measurement_key": "input_entropy_std_bits",
       "needs_diagnostics": false,
-      "file": "stability.html"
+      "file": "input_entropy_trace.html"
     },
     {
-      "id": "surprise",
+      "id": "io_cosine_similarity",
+      "label": "Input/output cosine similarity",
+      "short": "Input/output cosine similarity",
+      "kind": "aggregate",
+      "measurement_key": "io_cosine_similarity",
+      "needs_diagnostics": false,
+      "file": "io_cosine_similarity.html"
+    },
+    {
+      "id": "perturbation_jsd_bits",
+      "label": "Perturbation JSD (bits)",
+      "short": "Perturbation JSD",
+      "kind": "aggregate",
+      "measurement_key": "perturbation_jsd_bits",
+      "needs_diagnostics": false,
+      "file": "perturbation_jsd_bits.html"
+    },
+    {
+      "id": "prompt_surprisal_excess_trace",
       "label": "Prompt surprisal excess (trace)",
       "short": "Prompt surprisal excess (trace)",
       "kind": "aggregate",
       "measurement_key": null,
       "needs_diagnostics": false,
-      "file": "surprise.html"
+      "file": "prompt_surprisal_excess_trace.html"
     },
     {
-      "id": "entropy",
+      "id": "output_entropy_bits",
       "label": "Output entropy (bits)",
       "short": "Output entropy",
       "kind": "reading",
       "measurement_key": "output_entropy_bits",
       "needs_diagnostics": false,
-      "file": "entropy.html"
+      "file": "output_entropy_bits.html"
     },
     {
-      "id": "wager",
+      "id": "prompt_surprisal_excess_bits",
       "label": "Prompt surprisal excess (bits)",
       "short": "Prompt surprisal excess (bits)",
       "kind": "reading",
       "measurement_key": "prompt_surprisal_excess_bits",
       "needs_diagnostics": false,
-      "file": "wager.html"
+      "file": "prompt_surprisal_excess_bits.html"
     }
   ]
 }
