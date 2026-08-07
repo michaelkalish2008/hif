@@ -256,6 +256,25 @@ def _rows(command: click.Command) -> tuple[list[str], list[str]]:
     return args, opts
 
 
+def _examples(command) -> list[str]:
+    """The command's worked examples, from the same decorator `--help` reads.
+
+    A reader of this file is usually here because the terminal was not to
+    hand, so the examples have to travel with the flags rather than stay in
+    `--help` — and they travel from the one source, so the page and the doc
+    cannot come to disagree about how the tool is invoked.
+    """
+    pairs = getattr(getattr(command, "callback", None), "__hif_examples__", None)
+    if not pairs:
+        return []
+    out = ["**Examples**", "", "```bash"]
+    for cmd, note in zip(pairs[::2], pairs[1::2]):
+        out += [f"# {note}", cmd, ""]
+    if out[-1] == "":
+        out.pop()
+    return out + ["```", ""]
+
+
 def _section(path: str, command) -> str:
     args, opts = _rows(command)
     out = [f"## `hif {path}`", ""]
@@ -268,6 +287,7 @@ def _section(path: str, command) -> str:
         out += ["| flag | meaning |", "| --- | --- |", *opts, ""]
     if not args and not opts:
         out += ["Takes no arguments or flags.", ""]
+    out += _examples(command)
     return "\n".join(out)
 
 

@@ -10,7 +10,9 @@ import typer
 from rich.table import Table
 
 from hif.cli._app import (
+    PanelledCommand,
     app,
+    examples,
     console,
     err_console,
 )
@@ -29,7 +31,17 @@ from hif.profile.registry import MEASUREMENT_KEYS, MEASUREMENT_UNITS
 
 
 
-@app.command()
+@app.command(cls=PanelledCommand)
+@examples(
+    'hif profile gpt2 "..." --trace --trace-dir tr',
+    "first make the artifacts: compare reads --trace profiles, NOT --json records",
+
+    "hif compare tr/profile_<a>.json tr/profile_<b>.json",
+    "per-measurement difference between the two, as a table",
+
+    "hif compare tr/profile_<a>.json tr/profile_<b>.json --json",
+    "the same comparison as a record, for a script",
+)
 def compare(
     profile_a: Path = typer.Argument(..., help="Path to the first profile JSON"),
     profile_b: Path = typer.Argument(..., help="Path to the second profile JSON"),

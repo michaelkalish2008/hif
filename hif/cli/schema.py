@@ -8,7 +8,9 @@ import typer
 from rich.table import Table
 
 from hif.cli._app import (
+    PanelledCommand,
     app,
+    examples,
     console,
 )
 
@@ -26,7 +28,14 @@ from hif.profile.registry import (
 
 
 
-@app.command()
+@app.command(cls=PanelledCommand)
+@examples(
+    "hif schema",
+    "the measurement registry as JSON: every key, unit, subject and definition",
+
+    "hif schema | jq -r '.measurements | keys[]'",
+    "just the measurement names — the valid values for --metric",
+)
 def schema(
     output_json: bool = typer.Option(
         True, "--json/--text",

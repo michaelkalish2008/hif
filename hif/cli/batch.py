@@ -38,6 +38,7 @@ from hif.cli._app import (
     PANEL_SCOPE,
     PANEL_SURROGATE,
     PanelledCommand,
+    examples,
     REGIME_LABEL_HELP,
     TRACE_DIR_HELP,
     UNITS_HELP,
@@ -114,6 +115,19 @@ def _open_records_file(output_dir: Optional[Path]):
 
 
 @app.command(cls=PanelledCommand)
+@examples(
+    "hif batch --sample-set all gpt2",
+    "the built-in suite: 8 regimes x 5 prompts, one record per row on stdout",
+
+    "hif batch workload.jsonl gpt2 --output-dir out",
+    "your own rows; records stream to stdout and mirror to out/records.jsonl",
+
+    "hif batch --sample-set all --export-workload suite.jsonl gpt2",
+    "write the suite's rows as a file to edit and run back — no model is loaded",
+
+    "hif batch workload.jsonl gpt2 --lite --limit 5",
+    "a quick shape-check of a new workload before committing to the full run",
+)
 def batch(
     ctx: typer.Context,
     workload: Optional[Path] = typer.Argument(

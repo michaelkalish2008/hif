@@ -89,6 +89,7 @@ from hif.cli._app import (
     PANEL_SCOPE,
     PANEL_SURROGATE,
     PanelledCommand,
+    examples,
     REGIME_LABEL_HELP,
     TRACE_DIR_HELP,
     UNITS_HELP,
@@ -142,6 +143,22 @@ from hif.profile.registry import (
 
 
 @app.command(cls=PanelledCommand)
+@examples(
+    'hif profile gpt2 "Why is the sky blue?"',
+    "measure one prompt; prints to the terminal and writes nothing",
+
+    'hif profile gpt2 "Why is the sky blue?" --output-dir out --charts',
+    "same run, plus Markdown reports and one Plotly chart per signal under out/",
+
+    'hif profile gpt2 "Why is the sky blue?" --metric output_entropy_bits',
+    "print one number and exit — the form to use inside a script",
+
+    'hif profile gpt2 "Why is the sky blue?" --lite --json',
+    "the fast subset, as a JSON record; skipped stages come back absent, not zero",
+
+    'hif profile gpt2 "Why is the sky blue?" --entropy-percentile 95 --top-k 2000 --lite',
+    "add output_nucleus_entropy_bits; the wide --top-k is what it needs, not the --lite",
+)
 def profile(
     ctx: typer.Context,
     model_name: str = typer.Argument(..., help="Model name (e.g. gpt2)"),
@@ -447,8 +464,10 @@ def profile(
             prompt = " ".join(words[:truncate])
             input_truncated = True
             err_console.print(
-                f"[yellow]Warning: Input truncated to {truncate} tokens — "
-                "results reflect truncated context only.[/yellow]"
+                f"[yellow]Warning: Input truncated to {truncate} words "
+                f"({len(words)} before) — results reflect truncated context "
+                "only. Whitespace-split, not tokenizer tokens: the model will "
+                "see a different count.[/yellow]"
             )
 
     # Validate --application against the archetype registry and apply defaults

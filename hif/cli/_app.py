@@ -277,6 +277,29 @@ PANEL_ROWS = "Rows to profile"
 PANEL_HELP = "Help"
 
 
+def examples(*lines: str):
+    """Attach worked examples to a command, rendered as a final panel.
+
+    Not `epilog=`. Typer's own epilog rendering is
+    (typer/rich_utils.py, "Epilogue if we have it"):
+
+        lines = obj.epilog.split("\\n\\n")
+        epilogue = "\\n".join([x.replace("\\n", " ").strip() for x in lines])
+
+    — single newlines are destroyed and blank lines collapse to one. A command
+    line and the sentence explaining it therefore cannot occupy two lines, and
+    an example you cannot copy off the screen intact is not an example. This
+    keeps the text exactly as written and renders it in a panel like the
+    option groups above it, so the page has one visual grammar.
+
+    Pass alternating command / description strings.
+    """
+    def decorate(fn):
+        fn.__hif_examples__ = tuple(lines)
+        return fn
+    return decorate
+
+
 class PanelledCommand(TyperCommand):
     """A command whose `--help` line does not head its own help page.
 
@@ -297,6 +320,25 @@ class PanelledCommand(TyperCommand):
         if option is not None and getattr(option, "rich_help_panel", None) is None:
             option.rich_help_panel = PANEL_HELP
         return option
+
+    def format_help(self, ctx, formatter):
+        super().format_help(ctx, formatter)
+        pairs = getattr(self.callback, "__hif_examples__", None)
+        if not pairs:
+            return
+        from rich.console import Console
+        from rich.panel import Panel
+        from rich.text import Text
+
+        body = Text()
+        for n, (cmd, note) in enumerate(zip(pairs[::2], pairs[1::2])):
+            if n:
+                body.append("\n")
+            body.append(cmd + "\n", style="bold cyan")
+            body.append("    " + note + "\n", style="dim")
+        Console().print(
+            Panel(body, title="Examples", title_align="left", border_style="dim")
+        )
 
 
 # ---------------------------------------------------------------------------

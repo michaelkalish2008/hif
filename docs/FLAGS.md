@@ -38,6 +38,22 @@ Profile many prompts against one loaded model.
 | `--surrogate` | Recover the input-side measurements on backends that cannot teacher-force by teacher-forcing a small local proxy model instead, so those numbers describe the proxy, not your model (see `hif profile --surrogate`). |
 | `--surrogate-model` | Open-weight HF model id to use as that proxy (default: Llama 3.2 1B, ungated mirror). Passing it implies --surrogate; `hif models --surrogates` lists candidates. |
 
+**Examples**
+
+```bash
+# the built-in suite: 8 regimes x 5 prompts, one record per row on stdout
+hif batch --sample-set all gpt2
+
+# your own rows; records stream to stdout and mirror to out/records.jsonl
+hif batch workload.jsonl gpt2 --output-dir out
+
+# write the suite's rows as a file to edit and run back — no model is loaded
+hif batch --sample-set all --export-workload suite.jsonl gpt2
+
+# a quick shape-check of a new workload before committing to the full run
+hif batch workload.jsonl gpt2 --lite --limit 5
+```
+
 ## `hif compare`
 
 Report the per-measurement difference between two profiles.
@@ -51,6 +67,19 @@ Report the per-measurement difference between two profiles.
 | --- | --- |
 | `--output` | Optional output Markdown file |
 | `--json` | Output machine-readable JSON |
+
+**Examples**
+
+```bash
+# first make the artifacts: compare reads --trace profiles, NOT --json records
+hif profile gpt2 "..." --trace --trace-dir tr
+
+# per-measurement difference between the two, as a table
+hif compare tr/profile_<a>.json tr/profile_<b>.json
+
+# the same comparison as a record, for a script
+hif compare tr/profile_<a>.json tr/profile_<b>.json --json
+```
 
 ## `hif config init`
 
@@ -100,6 +129,19 @@ List the backends you can profile, example models, and which signals each suppor
 | `--surrogates` | List recommended --surrogate-model choices (small open-weight models for recovering input-side signals on closed/Ollama backends via --surrogate) and check each is currently reachable and ungated on the Hugging Face Hub. |
 | `--json` | Emit the catalogue as a single JSON document on stdout instead of the human table, so the model list can be piped, scripted, or fed to a picker. Composes with --backend, --list and --surrogates. |
 
+**Examples**
+
+```bash
+# every backend, with example models and the signals each one supports
+hif models
+
+# just one backend's row
+hif models --backend hf
+
+# small open-weight models usable with --surrogate, checked for reachability
+hif models --surrogates
+```
+
 ## `hif profile`
 
 Run the full hif pipeline on a single (model, prompt) pair.
@@ -137,6 +179,25 @@ Run the full hif pipeline on a single (model, prompt) pair.
 | `--surrogate` | Recover the input-side measurements on backends that cannot teacher-force — score text they did not generate (ollama, openai, anthropic, gemini; see `hif models`). A small local proxy model is teacher-forced instead, so those numbers describe the proxy, not your model. Ignored on hf/tlens. |
 | `--surrogate-model` | Open-weight HF model id to use as that proxy (default: Llama 3.2 1B, ungated mirror). Passing it implies --surrogate; `hif models --surrogates` lists candidates. |
 
+**Examples**
+
+```bash
+# measure one prompt; prints to the terminal and writes nothing
+hif profile gpt2 "Why is the sky blue?"
+
+# same run, plus Markdown reports and one Plotly chart per signal under out/
+hif profile gpt2 "Why is the sky blue?" --output-dir out --charts
+
+# print one number and exit — the form to use inside a script
+hif profile gpt2 "Why is the sky blue?" --metric output_entropy_bits
+
+# the fast subset, as a JSON record; skipped stages come back absent, not zero
+hif profile gpt2 "Why is the sky blue?" --lite --json
+
+# add output_nucleus_entropy_bits; the wide --top-k is what it needs, not the --lite
+hif profile gpt2 "Why is the sky blue?" --entropy-percentile 95 --top-k 2000 --lite
+```
+
 ## `hif render`
 
 Load an existing profile from JSON and re-render Markdown.
@@ -157,6 +218,16 @@ Print the measurement registry: every key with its full row.
 | flag | meaning |
 | --- | --- |
 | `--json` | Emit the machine-readable schema document (default) or a human table. *(default: `True`)* |
+
+**Examples**
+
+```bash
+# the measurement registry as JSON: every key, unit, subject and definition
+hif schema
+
+# just the measurement names — the valid values for --metric
+hif schema | jq -r '.measurements | keys[]'
+```
 
 ## What `hif doctor` checks
 

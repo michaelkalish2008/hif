@@ -69,7 +69,13 @@ def test_truncate_shortens_prompt_and_warns(captured, tmp_path):
     result = _invoke(tmp_path, "--truncate", "4")
     assert result.exit_code == 0, result.output
     assert captured["prompt"] == "one two three four"
-    assert "Input truncated to 4 tokens" in " ".join(result.output.split())
+    # "words", not "tokens": the implementation splits on whitespace with no
+    # tokenizer, and a warning promising tokens sends the reader to count a
+    # different unit than the one that was cut. This assertion used to pin the
+    # wrong word.
+    flat = " ".join(result.output.split())
+    assert "Input truncated to 4 words" in flat
+    assert "tokens" not in flat.split("results reflect")[0]
 
 
 def test_truncate_longer_than_prompt_is_a_no_op(captured, tmp_path):

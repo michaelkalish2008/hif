@@ -8,7 +8,9 @@ from typing import Optional
 import typer
 
 from hif.cli._app import (
+    PanelledCommand,
     app,
+    examples,
     console,
     err_console,
 )
@@ -24,7 +26,17 @@ from hif.profile.registry import SIGNAL_SET_VERSION
 
 
 
-@app.command()
+@app.command(cls=PanelledCommand)
+@examples(
+    "hif models",
+    "every backend, with example models and the signals each one supports",
+
+    "hif models --backend hf",
+    "just one backend's row",
+
+    "hif models --surrogates",
+    "small open-weight models usable with --surrogate, checked for reachability",
+)
 def models(
     backend: Optional[str] = typer.Option(
         None, help="Show only this backend (hf, tlens, ollama, openai, anthropic, gemini)."
