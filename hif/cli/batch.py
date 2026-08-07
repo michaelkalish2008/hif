@@ -1,4 +1,26 @@
-"""`hif batch` — profile many prompts against one loaded model."""
+"""`hif batch` — profile many prompts against one loaded model.
+
+Every option `profile` has and `batch` also has means the same thing here and
+carries the same one-sentence help, so the reasoning behind it is in
+hif/cli/profile.py's module docstring rather than restated: why the expensive
+stages are opt-in, why `--lite`, `--mode` and `--acquisition` are three knobs
+and not one, and why the labels are labels. Two commands whose shared flags
+are explained twice are two explanations that will disagree.
+
+What is particular to `batch` is where the rows come from. A workload JSONL
+file and `--sample-set` are two sources for the same thing, so they are
+mutually exclusive and both flow through the same run: the built-in suite
+produces ROWS rather than running a pipeline of its own, which is how it
+inherits every control here instead of drifting from them. That suite is a
+FIXED stimulus set — its value is that two models profiled on it were
+profiled on identical strings, which is the condition for a cross-model
+comparison being a comparison at all. It is not a benchmark: the prompts are
+unlabeled and nothing scores anything (docs/PROMPT_SUITE.md).
+
+`--export-workload` is the fork: it resolves rows from either source, writes
+them, and exits without loading a model, so the suite can be edited, given
+per-row `variants`, and run back through the same command.
+"""
 
 from __future__ import annotations
 
@@ -9,6 +31,13 @@ from typing import Optional
 import typer
 
 from hif.cli._app import (
+    PANEL_FILES,
+    PANEL_MODEL,
+    PANEL_REPORT,
+    PANEL_ROWS,
+    PANEL_SCOPE,
+    PANEL_SURROGATE,
+    PanelledCommand,
     REGIME_LABEL_HELP,
     TRACE_DIR_HELP,
     UNITS_HELP,
@@ -84,7 +113,7 @@ def _open_records_file(output_dir: Optional[Path]):
     return (output_dir / "records.jsonl").open("w")
 
 
-@app.command()
+@app.command(cls=PanelledCommand)
 def batch(
     ctx: typer.Context,
     workload: Optional[Path] = typer.Argument(
@@ -93,103 +122,137 @@ def batch(
         "\"variants\"]} row per line. Omit it when using --sample-set.",
     ),
     model_name: Optional[str] = typer.Argument(None, help="Model name (e.g. gpt2)"),
-    backend: str = typer.Option(
-        "hf",
-        help="Model backend: hf | tlens | ollama | openai | anthropic | gemini",
-    ),
-    regime: str = typer.Option(
-        "batch",
-        help="Default prompt regime (a per-row \"regime\" key overrides it). "
-        + REGIME_LABEL_HELP,
-    ),
-    seed: int = typer.Option(42, help="Random seed"),
-    max_new_tokens: int = typer.Option(64, help="Maximum new tokens to generate"),
-    top_k: int = typer.Option(50, help="Top-K candidates per step"),
-    entropy_percentile: Optional[float] = typer.Option(
-        None,
-        help="Also report output_nucleus_entropy_bits: the entropy of the "
-             "smallest per-step prefix carrying this percent of the output "
-             "distribution's mass (e.g. 95), renormalized. Off by default, "
-             "so output_entropy_bits keeps its full-vocabulary basis. Needs "
-             "a backend exposing full logprobs.",
-    ),
-    config_file: Optional[Path] = typer.Option(
-        None,
-        help="TOML run config (tables mirror RunConfig). CLI flags you pass "
-        "explicitly override the file.",
-    ),
-    mode: str = typer.Option(
-        "fast",
-        help="fast: fewer perturbation variants. audit: full perturbation set.",
-    ),
-    acquisition: str = typer.Option(
-        "elicited-output",
-        "--acquisition",
-        help="Ceiling on what this run may bring into existence, applied to "
-        "every row. observational | synthesized-input | elicited-output. "
-        "Same meaning as `hif profile --acquisition`; run `hif schema` for "
-        "each measurement's tier.",
-    ),
-    lite: bool = typer.Option(
-        False,
-        "--lite",
-        help="Skip perturbation variants, trajectory branches, and per-step "
-        "candidate geometry on every row (see `hif profile --lite`).",
-    ),
-    variant_io: bool = typer.Option(
-        False,
-        "--variant-io",
-        help="Include a `variant_io` block in each record: every perturbation "
-        "variant's input text and the continuation it elicited.",
-    ),
-    surrogate: bool = typer.Option(
-        False,
-        "--surrogate",
-        help="Recover input-side signals on backends that cannot teacher-force "
-        "by teacher-forcing a small local proxy model (see `hif profile "
-        "--surrogate`). Implied by --surrogate-model.",
-    ),
-    surrogate_model: Optional[str] = typer.Option(
-        None,
-        "--surrogate-model",
-        help="Open-weight HF model id used for --surrogate (default: Llama 3.2 "
-        "1B, ungated mirror). Passing this implies --surrogate.",
-    ),
-    trace: bool = typer.Option(
-        False,
-        "--trace",
-        help="Opt-in traceability: persist each row's full profile artifact "
-        "(raw per-step top-K distributions). Default off: compute-and-discard.",
-    ),
-    trace_dir: Optional[Path] = typer.Option(
-        None, "--trace-dir", help=TRACE_DIR_HELP
-    ),
+    # -- Rows to profile: where the workload comes from. --------------------
     sample_set: Optional[str] = typer.Option(
         None,
         "--sample-set",
-        help="Use the built-in prompt suite instead of a workload file: "
-        "`all` (8 regimes x 5 prompts) or a single regime name. A FIXED "
-        "stimulus set — identical prompts for every model, which is the "
-        "condition for a cross-model comparison being a comparison. It is "
-        "not a benchmark: the prompts are unlabeled and nothing is scored. "
-        "Pair with --export-workload to fork it.",
+        rich_help_panel=PANEL_ROWS,
+        help="Profile the built-in prompt suite instead of a workload file: "
+        "`all` (8 regimes x 5 prompts) or one regime name. A fixed stimulus "
+        "set, identical for every model — not a benchmark, and nothing is "
+        "scored.",
+    ),
+    limit: Optional[int] = typer.Option(
+        None, "--limit", rich_help_panel=PANEL_ROWS,
+        help="Profile only the first N rows.",
     ),
     export_workload: Optional[Path] = typer.Option(
         None,
         "--export-workload",
-        help="Write the resolved rows as a workload JSONL and exit — no model "
-        "is loaded. With --sample-set, this is how you fork the built-in "
-        "suite: edit the rows, add per-row `variants`, then run it back.",
+        rich_help_panel=PANEL_ROWS,
+        help="Write the resolved rows to a workload JSONL and exit; no model "
+        "loads. This is how you fork --sample-set: edit the rows, add per-row "
+        "`variants`, run it back.",
     ),
-    limit: Optional[int] = typer.Option(
-        None, "--limit", help="Profile only the first N workload rows."
+    regime: str = typer.Option(
+        "batch",
+        rich_help_panel=PANEL_ROWS,
+        help="Regime for rows with no \"regime\" key of their own. "
+        + REGIME_LABEL_HELP,
     ),
+    # -- Model and generation ------------------------------------------------
+    backend: str = typer.Option(
+        "hf",
+        rich_help_panel=PANEL_MODEL,
+        help="Model backend: hf | tlens | ollama | openai | anthropic | gemini. "
+        "Run `hif models` for what each one can measure.",
+    ),
+    max_new_tokens: int = typer.Option(
+        64, rich_help_panel=PANEL_MODEL,
+        help="Maximum new tokens to generate, per row.",
+    ),
+    top_k: int = typer.Option(
+        50, rich_help_panel=PANEL_MODEL,
+        help="How many candidates to record at each step.",
+    ),
+    seed: int = typer.Option(
+        42, rich_help_panel=PANEL_MODEL,
+        help="Random seed, recorded with every record.",
+    ),
+    # -- Scope of the run (same three knobs as `hif profile`) ----------------
+    lite: bool = typer.Option(
+        False,
+        "--lite",
+        rich_help_panel=PANEL_SCOPE,
+        help="Speed: skip every stage that costs an extra generation pass or "
+        "an embedding sweep, on every row. Their measurements come back "
+        "absent, not zero.",
+    ),
+    mode: str = typer.Option(
+        "fast",
+        rich_help_panel=PANEL_SCOPE,
+        help="Perturbation budget per row: fast = 2 paraphrase variants, "
+        "audit = 5.",
+    ),
+    acquisition: str = typer.Option(
+        "elicited-output",
+        "--acquisition",
+        rich_help_panel=PANEL_SCOPE,
+        help="Ceiling on what each row may bring into existence — provenance, "
+        "not speed: observational | synthesized-input | elicited-output. Same "
+        "meaning as `hif profile --acquisition`; `hif schema` gives each "
+        "measurement's tier.",
+    ),
+    config_file: Optional[Path] = typer.Option(
+        None,
+        rich_help_panel=PANEL_SCOPE,
+        help="TOML run config; its tables mirror RunConfig. Flags you pass "
+        "explicitly win. Confirm with `hif config show`.",
+    ),
+    # -- What is reported ----------------------------------------------------
+    units: bool = typer.Option(
+        False, "--units", rich_help_panel=PANEL_REPORT, help=UNITS_HELP
+    ),
+    variant_io: bool = typer.Option(
+        False,
+        "--variant-io",
+        rich_help_panel=PANEL_REPORT,
+        help="Add each perturbation variant's input text and the continuation "
+        "it elicited to every record.",
+    ),
+    entropy_percentile: Optional[float] = typer.Option(
+        None,
+        rich_help_panel=PANEL_REPORT,
+        help="Also report output_nucleus_entropy_bits: the entropy of the "
+        "smallest per-step prefix carrying this percent of the output "
+        "distribution's mass (e.g. 95), renormalized. Needs a full-logprob "
+        "backend (`hif models`).",
+    ),
+    # -- Files written -------------------------------------------------------
     output_dir: Optional[Path] = typer.Option(
         None,
-        help="Also mirror the stdout record stream to <output-dir>/records.jsonl. "
-        "Default: records stream to stdout only.",
+        rich_help_panel=PANEL_FILES,
+        help="Also mirror the stdout record stream to "
+        "<output-dir>/records.jsonl.",
     ),
-    units: bool = typer.Option(False, "--units", help=UNITS_HELP),
+    trace: bool = typer.Option(
+        False,
+        "--trace",
+        rich_help_panel=PANEL_FILES,
+        help="Persist each row's full profile artifact — raw per-step top-K "
+        "distributions, reconstructable content — for later recomputation.",
+    ),
+    trace_dir: Optional[Path] = typer.Option(
+        None, "--trace-dir", rich_help_panel=PANEL_FILES, help=TRACE_DIR_HELP
+    ),
+    # -- Input-side recovery: the expert path, last. -------------------------
+    surrogate: bool = typer.Option(
+        False,
+        "--surrogate",
+        rich_help_panel=PANEL_SURROGATE,
+        help="Recover the input-side measurements on backends that cannot "
+        "teacher-force by teacher-forcing a small local proxy model instead, "
+        "so those numbers describe the proxy, not your model (see `hif "
+        "profile --surrogate`).",
+    ),
+    surrogate_model: Optional[str] = typer.Option(
+        None,
+        "--surrogate-model",
+        rich_help_panel=PANEL_SURROGATE,
+        help="Open-weight HF model id to use as that proxy (default: Llama "
+        "3.2 1B, ungated mirror). Passing it implies --surrogate; "
+        "`hif models --surrogates` lists candidates.",
+    ),
 ) -> None:
     """Profile many prompts against one loaded model.
 

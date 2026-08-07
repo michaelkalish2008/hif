@@ -17,26 +17,26 @@ Profile many prompts against one loaded model.
 
 | flag | meaning |
 | --- | --- |
-| `--backend` | Model backend: `hf`, `tlens`, `ollama`, `openai`, `anthropic`, `gemini` — see [Backends](#backends) *(default: `hf`)* |
-| `--regime` | Default prompt regime (a per-row "regime" key overrides it). A free-form label recorded with the run — any string is accepted, it changes no measurement, and nothing is compared against it. The built-in suite's regimes: ordinary_conversation, healthcare_advice, legal_compliance, literary_continuation, ambiguous_moral, technical_explanation, adversarial_unstable, poetic_metaphorical. *(default: `batch`)* |
-| `--seed` | Random seed *(default: `42`)* |
-| `--max-new-tokens` | Maximum new tokens to generate *(default: `64`)* |
-| `--top-k` | Top-K candidates per step *(default: `50`)* |
-| `--entropy-percentile` | Also report output_nucleus_entropy_bits: the entropy of the smallest per-step prefix carrying this percent of the output distribution's mass (e.g. 95), renormalized. Off by default, so output_entropy_bits keeps its full-vocabulary basis. Needs a backend exposing full logprobs. |
-| `--config-file` | TOML run config (tables mirror RunConfig). CLI flags you pass explicitly override the file. |
-| `--mode` | fast: fewer perturbation variants. audit: full perturbation set. *(default: `fast`)* |
-| `--acquisition` | Ceiling on what this run may bring into existence, applied to every row. observational \| synthesized-input \| elicited-output. Same meaning as `hif profile --acquisition`; run `hif schema` for each measurement's tier. *(default: `elicited-output`)* |
-| `--lite` | Skip perturbation variants, trajectory branches, and per-step candidate geometry on every row (see `hif profile --lite`). |
-| `--variant-io` | Include a `variant_io` block in each record: every perturbation variant's input text and the continuation it elicited. |
-| `--surrogate` | Recover input-side signals on backends that cannot teacher-force by teacher-forcing a small local proxy model (see `hif profile --surrogate`). Implied by --surrogate-model. |
-| `--surrogate-model` | Open-weight HF model id used for --surrogate (default: Llama 3.2 1B, ungated mirror). Passing this implies --surrogate. |
-| `--trace` | Opt-in traceability: persist each row's full profile artifact (raw per-step top-K distributions). Default off: compute-and-discard. |
+| `--sample-set` | Profile the built-in prompt suite instead of a workload file: `all` (8 regimes x 5 prompts) or one regime name. A fixed stimulus set, identical for every model — not a benchmark, and nothing is scored. |
+| `--limit` | Profile only the first N rows. |
+| `--export-workload` | Write the resolved rows to a workload JSONL and exit; no model loads. This is how you fork --sample-set: edit the rows, add per-row `variants`, run it back. |
+| `--regime` | Regime for rows with no "regime" key of their own. A free-form label recorded with the run — any string, compared against nothing, changing no measurement. The built-in suite's regimes: ordinary_conversation, healthcare_advice, legal_compliance, literary_continuation, ambiguous_moral, technical_explanation, adversarial_unstable, poetic_metaphorical. *(default: `batch`)* |
+| `--backend` | Model backend: `hf`, `tlens`, `ollama`, `openai`, `anthropic`, `gemini`. Run `hif models` for what each one can measure. See [Backends](#backends). *(default: `hf`)* |
+| `--max-new-tokens` | Maximum new tokens to generate, per row. *(default: `64`)* |
+| `--top-k` | How many candidates to record at each step. *(default: `50`)* |
+| `--seed` | Random seed, recorded with every record. *(default: `42`)* |
+| `--lite` | Speed: skip every stage that costs an extra generation pass or an embedding sweep, on every row. Their measurements come back absent, not zero. |
+| `--mode` | Perturbation budget per row: fast = 2 paraphrase variants, audit = 5. *(default: `fast`)* |
+| `--acquisition` | Ceiling on what each row may bring into existence — provenance, not speed: observational \| synthesized-input \| elicited-output. Same meaning as `hif profile --acquisition`; `hif schema` gives each measurement's tier. *(default: `elicited-output`)* |
+| `--config-file` | TOML run config; its tables mirror RunConfig. Flags you pass explicitly win. Confirm with `hif config show`. |
+| `--units` | Add a per-measurement units block to each record. Constant per signal_set_version, so off by default; `hif schema` prints the same information without running a model. |
+| `--variant-io` | Add each perturbation variant's input text and the continuation it elicited to every record. |
+| `--entropy-percentile` | Also report output_nucleus_entropy_bits: the entropy of the smallest per-step prefix carrying this percent of the output distribution's mass (e.g. 95), renormalized. Needs a full-logprob backend (`hif models`). |
+| `--output-dir` | Also mirror the stdout record stream to <output-dir>/records.jsonl. |
+| `--trace` | Persist each row's full profile artifact — raw per-step top-K distributions, reconstructable content — for later recomputation. |
 | `--trace-dir` | Where --trace artifacts are written (default: <output-dir>/traces, or ./traces when no --output-dir). Passing this implies --trace. |
-| `--sample-set` | Use the built-in prompt suite instead of a workload file: `all` (8 regimes x 5 prompts) or a single regime name. A FIXED stimulus set — identical prompts for every model, which is the condition for a cross-model comparison being a comparison. It is not a benchmark: the prompts are unlabeled and nothing is scored. Pair with --export-workload to fork it. |
-| `--export-workload` | Write the resolved rows as a workload JSONL and exit — no model is loaded. With --sample-set, this is how you fork the built-in suite: edit the rows, add per-row `variants`, then run it back. |
-| `--limit` | Profile only the first N workload rows. |
-| `--output-dir` | Also mirror the stdout record stream to <output-dir>/records.jsonl. Default: records stream to stdout only. |
-| `--units` | Include a per-measurement units block in each record. Constant per signal_set_version and identical on every record, so off by default; `hif schema` prints the same information without running a model. |
+| `--surrogate` | Recover the input-side measurements on backends that cannot teacher-force by teacher-forcing a small local proxy model instead, so those numbers describe the proxy, not your model (see `hif profile --surrogate`). |
+| `--surrogate-model` | Open-weight HF model id to use as that proxy (default: Llama 3.2 1B, ungated mirror). Passing it implies --surrogate; `hif models --surrogates` lists candidates. |
 
 ## `hif compare`
 
@@ -111,31 +111,31 @@ Run the full hif pipeline on a single (model, prompt) pair.
 
 | flag | meaning |
 | --- | --- |
-| `--regime` | Prompt regime. A free-form label recorded with the run — any string is accepted, it changes no measurement, and nothing is compared against it. The built-in suite's regimes: ordinary_conversation, healthcare_advice, legal_compliance, literary_continuation, ambiguous_moral, technical_explanation, adversarial_unstable, poetic_metaphorical. *(default: `ordinary_conversation`)* |
-| `--backend` | Model backend: `hf`, `tlens`, `ollama`, `openai`, `anthropic`, `gemini` — see [Backends](#backends) *(default: `hf`)* |
-| `--seed` | Random seed *(default: `42`)* |
-| `--output-dir` | Write derived reports (technical + public markdown, --charts plots) here. Default: nothing is written to disk — results print to the terminal only (privacy-first compute-and-discard). |
-| `--max-new-tokens` | Maximum new tokens to generate *(default: `64`)* |
-| `--top-k` | Top-K candidates per step *(default: `50`)* |
-| `--entropy-percentile` | Also report output_nucleus_entropy_bits: the entropy of the smallest per-step prefix carrying this percent of the output distribution's mass (e.g. 95), renormalized. Off by default, so output_entropy_bits keeps its full-vocabulary basis. Needs a backend exposing full logprobs. |
-| `--config-file` | TOML run config (tables mirror RunConfig: [generation], [perturbation], [trajectory], [attention], [semantic_field], ...). CLI flags you pass explicitly override the file. |
-| `--trace` | Opt-in traceability: persist the full profile artifact (raw per-step top-K distributions — reconstructable content) so signals can be recomputed or audited later without re-running the model. Default off: compute-and-discard. |
+| `--backend` | Model backend: `hf`, `tlens`, `ollama`, `openai`, `anthropic`, `gemini`. Run `hif models` for what each one can measure. See [Backends](#backends). *(default: `hf`)* |
+| `--max-new-tokens` | Maximum new tokens to generate. *(default: `64`)* |
+| `--top-k` | How many candidates to record at each step. *(default: `50`)* |
+| `--seed` | Random seed, recorded with the run. *(default: `42`)* |
+| `--truncate` | Cut the prompt to its first N whitespace-split tokens before the run. Results then reflect truncated context only. |
+| `--lite` | Speed: skip every stage that costs an extra generation pass or an embedding sweep. Their measurements come back absent, not zero. |
+| `--mode` | Perturbation budget: fast = 2 paraphrase variants, audit = 5. The prompt itself is always passed in full. *(default: `fast`)* |
+| `--acquisition` | Ceiling on what the run may bring into existence — provenance, not speed. observational: only the one call you asked for. synthesized-input: + authored prompts, teacher-forced. elicited-output: + model-generated variants and branches. Above the ceiling, measurements are absent; `hif schema` gives each one's tier. *(default: `elicited-output`)* |
+| `--diagnostics` | Also run attention capture and the semantic field. Neither produces a measurement; their blocks ship in the --trace artifact. |
+| `--config-file` | TOML run config; its tables mirror RunConfig ([generation], [perturbation], [trajectory], [attention], [semantic_field], ...). Flags you pass explicitly win. Confirm with `hif config show`. |
+| `--json` | Print the record as JSON: derived measurements only, never the raw per-step distributions. |
+| `--metric` | Print ONE measurement in its natural unit, then exit. Names and units: `hif schema`. |
+| `--units` | Add a per-measurement units block to each record. Constant per signal_set_version, so off by default; `hif schema` prints the same information without running a model. |
+| `--variant-io` | Add each perturbation variant's input text and the continuation it elicited to the --json record (null where none was elicited). |
+| `--entropy-percentile` | Also report output_nucleus_entropy_bits: the entropy of the smallest per-step prefix carrying this percent of the output distribution's mass (e.g. 95), renormalized. Needs a full-logprob backend (`hif models`). |
+| `--verbose`, `-v` | Also show model input/output text, perturbation variants, full numeric stats, and internal logging. |
+| `--output-dir` | Write the technical and public Markdown reports here, and the --charts plots. |
+| `--charts` | One interactive Plotly HTML per signal, plus an index.html dashboard. Needs --output-dir. |
+| `--trace` | Persist the full profile artifact — raw per-step top-K distributions, reconstructable content — so measurements can be recomputed later without re-running the model. |
 | `--trace-dir` | Where --trace artifacts are written (default: <output-dir>/traces, or ./traces when no --output-dir). Passing this implies --trace. |
-| `--charts` | Generate plots + the combined dashboard locally (off by default). |
-| `--diagnostics` | Also run the two optional analysis stages — attention capture and the semantic field. Neither produces a measurement in hif-v4; their blocks ship in the --trace artifact as evidence. Off by default because both cost extra compute. |
-| `--application` | Application archetype (support-chatbot, rag-qa, coding-assistant, summarization, extraction, classification, agent-tool-use, document-understanding). Labels the run and supplies the default --analysis-window; both are recorded in the JSON record. It does not change how anything is measured. |
-| `--mode` | fast: fewer perturbation variants. audit: full perturbation set. Input is always passed in full regardless of mode. *(default: `fast`)* |
-| `--variant-io` | Include a `variant_io` block in the --json record: each perturbation variant's input text and the continuation it elicited (null where none was — synthesized-input tier, or a failure). Opt-in because it adds model-generated content to every record; outputs live in records, inputs stay immutable. |
-| `--acquisition` | Ceiling on what this run may bring into existence. observational: read the prompt as given and the one continuation the run produces — nothing else is sent to the model and no new model output exists afterwards. synthesized-input: additionally author paraphrased prompts and teacher-force over them (the model still does not generate). elicited-output (default): additionally let the model generate variant continuations and trajectory branches. Measurements above the ceiling are absent, not zero. Run `hif schema` to see each measurement's acquisition tier. *(default: `elicited-output`)* |
-| `--lite` | Skip every stage that costs an extra generation pass or an embedding sweep: perturbation variants, trajectory branches, and per-step candidate geometry. The entropy-side measurements are unchanged; the ones those stages feed are omitted, not zeroed. Overrides --mode and --config-file for the stages it disables. |
-| `--analysis-window` | Maximum output tokens to analyze (does not truncate inference). Integer or 'adaptive' (default: adaptive = analyze all output). |
-| `--metric` | Print ONE measurement, in its natural unit, and exit. Run `hif schema` for the full list with unit definitions. |
-| `--verbose`, `-v` | Show model input/output text, perturbation variants, full numeric stats, effective-config notes, and full internal logging (pipeline + HTTP chatter) |
-| `--json` | Output machine-readable JSON profile |
-| `--units` | Include a per-measurement units block in each record. Constant per signal_set_version and identical on every record, so off by default; `hif schema` prints the same information without running a model. |
-| `--truncate` | Truncate input to N tokens before analysis. Results reflect truncated context only. |
-| `--surrogate` | Recover the input-side measurements (input_entropy_shift_bits, input_entropy_std_bits, prompt_surprisal_excess_bits) on backends that cannot teacher-force (ollama, openai, gemini, anthropic) by teacher-forcing a small local proxy model over the prompt+output — the same technique the study harness uses. Ignored when the target backend already teacher-forces (hf/tlens). Implied by --surrogate-model, so passing that alone is enough. |
-| `--surrogate-model` | Open-weight HF model id used for --surrogate (default: Llama 3.2 1B, ungated mirror). Passing this flag implies --surrogate — you don't need both. |
+| `--regime` | A free-form label recorded with the run — any string, compared against nothing, changing no measurement. The built-in suite's regimes: ordinary_conversation, healthcare_advice, legal_compliance, literary_continuation, ambiguous_moral, technical_explanation, adversarial_unstable, poetic_metaphorical. *(default: `ordinary_conversation`)* |
+| `--application` | Application archetype recorded with the run: support-chatbot, rag-qa, coding-assistant, summarization, extraction, classification, agent-tool-use, document-understanding. It supplies the default --analysis-window and changes no measurement. |
+| `--analysis-window` | The intended analysis window, recorded with the run: an integer or 'adaptive'. It truncates nothing and no measurement reads it. |
+| `--surrogate` | Recover the input-side measurements on backends that cannot teacher-force — score text they did not generate (ollama, openai, anthropic, gemini; see `hif models`). A small local proxy model is teacher-forced instead, so those numbers describe the proxy, not your model. Ignored on hf/tlens. |
+| `--surrogate-model` | Open-weight HF model id to use as that proxy (default: Llama 3.2 1B, ungated mirror). Passing it implies --surrogate; `hif models --surrogates` lists candidates. |
 
 ## `hif render`
 

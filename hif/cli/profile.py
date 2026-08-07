@@ -1,4 +1,74 @@
-"""`hif profile` — the full pipeline on one (model, prompt) pair."""
+"""`hif profile` — the full pipeline on one (model, prompt) pair.
+
+The option help below says what each flag gets you, in one sentence, and
+stops. The reasoning behind the defaults lives here instead, where there is
+room for it: a help column forty characters wide, scanned by someone looking
+for one answer, is the worst place in the tool to defend a design decision.
+
+WHY THE EXPENSIVE THINGS ARE OFF BY DEFAULT
+
+Compute-and-discard is the default posture. `--output-dir` and `--trace` are
+the two opt-ins that put anything on disk, and `--trace` is the one that
+matters: the profile artifact holds raw per-step top-K distributions with
+token identity, which is reconstructable content, so it is written only where
+the destination is trusted with prompt- and continuation-level text.
+`--variant-io` is the same decision one level down — it adds model-generated
+text to every record, so the record becomes the review surface for elicited
+output; inputs stay immutable, outputs live in records. `--diagnostics` runs
+two stages (attention capture, the semantic field) that publish no
+measurement in hif-v4 and cost real compute; their blocks ship in the trace
+as evidence. `--charts` needs `--output-dir` because plots are files.
+
+`--entropy-percentile` is off by default so `output_entropy_bits` keeps its
+full-vocabulary basis: the nucleus entropy is an ADDITIONAL row
+(`output_nucleus_entropy_bits`), never a redefinition of the existing one. It
+is also the one place `--top-k` stops being a capture detail — the nucleus
+has to fall inside the captured slice, so a run that asks for it and gets an
+absence is usually a run that needed a larger `--top-k`, which is what the
+CLI says when it happens.
+
+`--units` is off because the block is constant per signal_set_version and
+identical on every record — `hif schema` prints it without running a model.
+
+THE THREE "HOW MUCH WORK" KNOBS, AND WHY THEY ARE NOT ONE KNOB
+
+`--lite` is speed. It drops the stages that cost an extra generation pass or
+an embedding sweep — paraphrase variants, trajectory branches, and the
+per-step candidate geometry the exposure and semantic-field stages read. The
+entropy-side measurements are unchanged; the ones those stages feed come back
+ABSENT rather than zero, and it is applied after `--config-file` so a run
+asking for less never silently does more.
+
+`--mode` is the perturbation budget alone: two paraphrase variants at `fast`,
+five at `audit`. Nothing else in the pipeline changes.
+
+`--acquisition` is not a speed knob and does not belong on the same axis. It
+is a ceiling on what the run may bring into existence — `observational` sends
+nothing beyond the call the caller asked for and leaves no model output that
+did not already exist; `synthesized-input` lets the tool author prompt text
+and teacher-force over it, with the model still not generating;
+`elicited-output` lets the model generate variant continuations and
+trajectory branches, which is the tier that costs tokens and produces
+unreviewed output. It applies before `--lite` because the two compose: this
+one says what the run is permitted to produce, `--lite` says how much work to
+do within that permission. Measurements above the ceiling are absent, not
+zero, and each measurement's tier is in `hif schema`.
+
+LABELS THAT LOOK LIKE CONTROLS
+
+`--regime`, `--application` and `--analysis-window` are recorded with the run
+and read by nothing. `--application` additionally supplies the default
+`--analysis-window`, and that is the whole of its effect on the run.
+`--analysis-window` in particular is validated (an integer or `adaptive`),
+written into the record's extras, and consumed by no stage — a cap nothing
+enforces, kept because the record is where an intended window is declared.
+
+`--truncate` is the opposite case, and reads like a recording detail when it
+is not one: it cuts the prompt before anything runs — by whitespace-split
+words rather than tokenizer tokens, the CLI having no tokenizer at that
+point — so every number afterwards describes the truncated prompt and not
+the one that was typed.
+"""
 
 from __future__ import annotations
 
@@ -12,6 +82,13 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from hif.cli._app import (
     CHARTS_HELP,
+    PANEL_FILES,
+    PANEL_LABELS,
+    PANEL_MODEL,
+    PANEL_REPORT,
+    PANEL_SCOPE,
+    PANEL_SURROGATE,
+    PanelledCommand,
     REGIME_LABEL_HELP,
     TRACE_DIR_HELP,
     UNITS_HELP,
@@ -64,107 +141,159 @@ from hif.profile.registry import (
 
 
 
-@app.command()
+@app.command(cls=PanelledCommand)
 def profile(
     ctx: typer.Context,
     model_name: str = typer.Argument(..., help="Model name (e.g. gpt2)"),
     prompt: str = typer.Argument(..., help="Prompt text"),
-    regime: str = typer.Option(
-        "ordinary_conversation", help="Prompt regime. " + REGIME_LABEL_HELP
-    ),
+    # -- Model and generation: what you are running, and how it generates. ---
     backend: str = typer.Option(
         "hf",
-        help="Model backend: hf | tlens | ollama | openai | anthropic | gemini",
+        rich_help_panel=PANEL_MODEL,
+        help="Model backend: hf | tlens | ollama | openai | anthropic | gemini. "
+        "Run `hif models` for what each one can measure.",
     ),
-    seed: int = typer.Option(42, help="Random seed"),
-    output_dir: Optional[Path] = typer.Option(
+    max_new_tokens: int = typer.Option(
+        64, rich_help_panel=PANEL_MODEL,
+        help="Maximum new tokens to generate.",
+    ),
+    top_k: int = typer.Option(
+        50, rich_help_panel=PANEL_MODEL,
+        help="How many candidates to record at each step.",
+    ),
+    seed: int = typer.Option(
+        42, rich_help_panel=PANEL_MODEL,
+        help="Random seed, recorded with the run.",
+    ),
+    truncate: Optional[int] = typer.Option(
         None,
-        help="Write derived reports (technical + public markdown, --charts "
-        "plots) here. Default: nothing is written to disk — results print to "
-        "the terminal only (privacy-first compute-and-discard).",
+        "--truncate",
+        rich_help_panel=PANEL_MODEL,
+        # Says "whitespace-split" because that is what the implementation
+        # below does: it splits on whitespace and keeps N words, with no
+        # tokenizer involved. On a prompt of ordinary prose the two are close;
+        # the flag still must not promise a unit it does not count in.
+        help="Cut the prompt to its first N whitespace-split tokens before "
+        "the run. Results then reflect truncated context only.",
     ),
-    max_new_tokens: int = typer.Option(64, help="Maximum new tokens to generate"),
-    top_k: int = typer.Option(50, help="Top-K candidates per step"),
-    entropy_percentile: Optional[float] = typer.Option(
-        None,
-        help="Also report output_nucleus_entropy_bits: the entropy of the "
-             "smallest per-step prefix carrying this percent of the output "
-             "distribution's mass (e.g. 95), renormalized. Off by default, "
-             "so output_entropy_bits keeps its full-vocabulary basis. Needs "
-             "a backend exposing full logprobs.",
-    ),
-    config_file: Optional[Path] = typer.Option(
-        None,
-        # `\[` is Rich's escape for a literal bracket: help text is Rich
-        # markup, and a bare [generation] is read as a style tag and swallowed.
-        # tools/gen_flags_doc.py drops the backslash for docs/FLAGS.md.
-        help="TOML run config (tables mirror RunConfig: \\[generation], "
-        "\\[perturbation], \\[trajectory], \\[attention], \\[semantic_field], "
-        "...). CLI flags you pass explicitly override the file.",
-    ),
-    trace: bool = typer.Option(
+    # -- Scope of the run: how much work it does, and what it may create. ----
+    #
+    # The three knobs a reader confuses are adjacent and in this order on
+    # purpose, and each one's first clause names the job only it has: --lite
+    # is speed, --mode is the perturbation budget, --acquisition is a ceiling
+    # on provenance and is not a speed control at all. Read together they
+    # answer "I want it faster — which do I pass?" in the first line of each.
+    lite: bool = typer.Option(
         False,
-        "--trace",
-        help="Opt-in traceability: persist the full profile artifact (raw "
-        "per-step top-K distributions — reconstructable content) so signals "
-        "can be recomputed or audited later without re-running the model. "
-        "Default off: compute-and-discard.",
-    ),
-    trace_dir: Optional[Path] = typer.Option(
-        None, "--trace-dir", help=TRACE_DIR_HELP
-    ),
-    charts: bool = typer.Option(False, "--charts", help=CHARTS_HELP),
-    diagnostics: bool = typer.Option(
-        False,
-        "--diagnostics",
-        help="Also run the two optional analysis stages — attention capture "
-        "and the semantic field. Neither produces a measurement in hif-v4; "
-        "their blocks ship in the --trace artifact as evidence. Off by "
-        "default because both cost extra compute.",
-    ),
-    application: Optional[str] = typer.Option(
-        None,
-        help="Application archetype (support-chatbot, rag-qa, coding-assistant, summarization, extraction, classification, agent-tool-use, document-understanding). "
-        "Labels the run and supplies the default --analysis-window; both are "
-        "recorded in the JSON record. It does not change how anything is "
-        "measured.",
+        "--lite",
+        rich_help_panel=PANEL_SCOPE,
+        help="Speed: skip every stage that costs an extra generation pass or "
+        "an embedding sweep. Their measurements come back absent, not zero.",
     ),
     mode: str = typer.Option(
         "fast",
-        help="fast: fewer perturbation variants. "
-        "audit: full perturbation set. "
-        "Input is always passed in full regardless of mode.",
-    ),
-    variant_io: bool = typer.Option(
-        False,
-        "--variant-io",
-        help="Include a `variant_io` block in the --json record: each "
-        "perturbation variant's input text and the continuation it elicited "
-        "(null where none was — synthesized-input tier, or a failure). "
-        "Opt-in because it adds model-generated content to every record; "
-        "outputs live in records, inputs stay immutable.",
+        rich_help_panel=PANEL_SCOPE,
+        help="Perturbation budget: fast = 2 paraphrase variants, audit = 5. "
+        "The prompt itself is always passed in full.",
     ),
     acquisition: str = typer.Option(
         "elicited-output",
         "--acquisition",
-        help="Ceiling on what this run may bring into existence. "
-        "observational: read the prompt as given and the one continuation the "
-        "run produces — nothing else is sent to the model and no new model "
-        "output exists afterwards. synthesized-input: additionally author "
-        "paraphrased prompts and teacher-force over them (the model still does "
-        "not generate). elicited-output (default): additionally let the model "
-        "generate variant continuations and trajectory branches. "
-        "Measurements above the ceiling are absent, not zero. "
-        "Run `hif schema` to see each measurement's acquisition tier.",
+        rich_help_panel=PANEL_SCOPE,
+        help="Ceiling on what the run may bring into existence — provenance, "
+        "not speed. observational: only the one call you asked for. "
+        "synthesized-input: + authored prompts, teacher-forced. "
+        "elicited-output: + model-generated variants and branches. Above the "
+        "ceiling, measurements are absent; `hif schema` gives each one's tier.",
     ),
-    lite: bool = typer.Option(
+    diagnostics: bool = typer.Option(
         False,
-        "--lite",
-        help="Skip every stage that costs an extra generation pass or an "
-        "embedding sweep: perturbation variants, trajectory branches, and "
-        "per-step candidate geometry. The entropy-side measurements are "
-        "unchanged; the ones those stages feed are omitted, not zeroed. "
-        "Overrides --mode and --config-file for the stages it disables.",
+        "--diagnostics",
+        rich_help_panel=PANEL_SCOPE,
+        help="Also run attention capture and the semantic field. Neither "
+        "produces a measurement; their blocks ship in the --trace artifact.",
+    ),
+    config_file: Optional[Path] = typer.Option(
+        None,
+        rich_help_panel=PANEL_SCOPE,
+        # `\[` is Rich's escape for a literal bracket: help text is Rich
+        # markup, and a bare [generation] is read as a style tag and swallowed.
+        # tools/gen_flags_doc.py drops the backslash for docs/FLAGS.md.
+        help="TOML run config; its tables mirror RunConfig (\\[generation], "
+        "\\[perturbation], \\[trajectory], \\[attention], \\[semantic_field], "
+        "...). Flags you pass explicitly win. Confirm with `hif config show`.",
+    ),
+    # -- What is reported: what comes back on stdout, and in what shape. -----
+    output_json: bool = typer.Option(
+        False, "--json",
+        rich_help_panel=PANEL_REPORT,
+        help="Print the record as JSON: derived measurements only, never the "
+        "raw per-step distributions.",
+    ),
+    metric: Optional[str] = typer.Option(
+        None,
+        rich_help_panel=PANEL_REPORT,
+        help="Print ONE measurement in its natural unit, then exit. Names and "
+        "units: `hif schema`.",
+    ),
+    units: bool = typer.Option(
+        False, "--units", rich_help_panel=PANEL_REPORT, help=UNITS_HELP
+    ),
+    variant_io: bool = typer.Option(
+        False,
+        "--variant-io",
+        rich_help_panel=PANEL_REPORT,
+        help="Add each perturbation variant's input text and the continuation "
+        "it elicited to the --json record (null where none was elicited).",
+    ),
+    entropy_percentile: Optional[float] = typer.Option(
+        None,
+        rich_help_panel=PANEL_REPORT,
+        help="Also report output_nucleus_entropy_bits: the entropy of the "
+        "smallest per-step prefix carrying this percent of the output "
+        "distribution's mass (e.g. 95), renormalized. Needs a full-logprob "
+        "backend (`hif models`).",
+    ),
+    verbose: bool = typer.Option(
+        False, "--verbose", "-v",
+        rich_help_panel=PANEL_REPORT,
+        help="Also show model input/output text, perturbation variants, full "
+        "numeric stats, and internal logging.",
+    ),
+    # -- Files written: nothing reaches the disk unless one of these is set. -
+    output_dir: Optional[Path] = typer.Option(
+        None,
+        rich_help_panel=PANEL_FILES,
+        help="Write the technical and public Markdown reports here, and the "
+        "--charts plots.",
+    ),
+    charts: bool = typer.Option(
+        False, "--charts", rich_help_panel=PANEL_FILES, help=CHARTS_HELP
+    ),
+    trace: bool = typer.Option(
+        False,
+        "--trace",
+        rich_help_panel=PANEL_FILES,
+        help="Persist the full profile artifact — raw per-step top-K "
+        "distributions, reconstructable content — so measurements can be "
+        "recomputed later without re-running the model.",
+    ),
+    trace_dir: Optional[Path] = typer.Option(
+        None, "--trace-dir", rich_help_panel=PANEL_FILES, help=TRACE_DIR_HELP
+    ),
+    # -- Labels: recorded with the run, read by nothing. ---------------------
+    regime: str = typer.Option(
+        "ordinary_conversation",
+        rich_help_panel=PANEL_LABELS,
+        help=REGIME_LABEL_HELP,
+    ),
+    application: Optional[str] = typer.Option(
+        None,
+        rich_help_panel=PANEL_LABELS,
+        help="Application archetype recorded with the run: support-chatbot, "
+        "rag-qa, coding-assistant, summarization, extraction, classification, "
+        "agent-tool-use, document-understanding. It supplies the default "
+        "--analysis-window and changes no measurement.",
     ),
     analysis_window: Optional[str] = typer.Option(
         None,
@@ -172,42 +301,32 @@ def profile(
         # <str> metavar would hide the shape that matters. Say what you may
         # actually type.
         metavar="<int|adaptive>",
-        help="Maximum output tokens to analyze (does not truncate inference). "
-        "Integer or 'adaptive' (default: adaptive = analyze all output).",
+        rich_help_panel=PANEL_LABELS,
+        # It sits under Labels, not under Scope, because that is all it is:
+        # the value is validated, recorded in the record's extras, and read by
+        # no stage. The old help ("Maximum output tokens to analyze") named a
+        # cap nothing enforces.
+        help="The intended analysis window, recorded with the run: an integer "
+        "or 'adaptive'. It truncates nothing and no measurement reads it.",
     ),
-    metric: Optional[str] = typer.Option(
-        None,
-        help="Print ONE measurement, in its natural unit, and exit. "
-        "Run `hif schema` for the full list with unit definitions.",
-    ),
-    verbose: bool = typer.Option(
-        False, "--verbose", "-v",
-        help="Show model input/output text, perturbation variants, full numeric stats, "
-        "effective-config notes, and full internal logging (pipeline + HTTP chatter)",
-    ),
-    output_json: bool = typer.Option(False, "--json", help="Output machine-readable JSON profile"),
-    units: bool = typer.Option(False, "--units", help=UNITS_HELP),
-    truncate: Optional[int] = typer.Option(
-        None,
-        "--truncate",
-        help="Truncate input to N tokens before analysis. Results reflect truncated context only.",
-    ),
+    # -- Input-side recovery: the expert path, last. -------------------------
     surrogate: bool = typer.Option(
         False,
         "--surrogate",
-        help="Recover the input-side measurements (input_entropy_shift_bits, "
-        "input_entropy_std_bits, prompt_surprisal_excess_bits) on backends "
-        "that cannot teacher-force (ollama, openai, gemini, "
-        "anthropic) by teacher-forcing a small local proxy model over the "
-        "prompt+output — the same technique the study harness uses. Ignored when the "
-        "target backend already teacher-forces (hf/tlens). Implied by "
-        "--surrogate-model, so passing that alone is enough.",
+        rich_help_panel=PANEL_SURROGATE,
+        help="Recover the input-side measurements on backends that cannot "
+        "teacher-force — score text they did not generate (ollama, openai, "
+        "anthropic, gemini; see `hif models`). A small local proxy model is "
+        "teacher-forced instead, so those numbers describe the proxy, not "
+        "your model. Ignored on hf/tlens.",
     ),
     surrogate_model: Optional[str] = typer.Option(
         None,
         "--surrogate-model",
-        help="Open-weight HF model id used for --surrogate (default: Llama 3.2 1B, "
-        "ungated mirror). Passing this flag implies --surrogate — you don't need both.",
+        rich_help_panel=PANEL_SURROGATE,
+        help="Open-weight HF model id to use as that proxy (default: Llama "
+        "3.2 1B, ungated mirror). Passing it implies --surrogate; "
+        "`hif models --surrogates` lists candidates.",
     ),
 ) -> None:
     """Run the full hif pipeline on a single (model, prompt) pair."""

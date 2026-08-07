@@ -15,6 +15,7 @@ from typing import Optional
 
 import typer
 from rich.console import Console
+from typer.core import TyperCommand
 
 app = typer.Typer(
     name="hif",
@@ -247,17 +248,75 @@ def _main(
 
 
 # ---------------------------------------------------------------------------
+# Help panels
+# ---------------------------------------------------------------------------
+#
+# `profile` takes twenty-five options and `batch` twenty. In one flat list,
+# ordered by whatever order the parameters happened to be declared in, the
+# reader has to hold all twenty-five in their head to find the two that answer
+# their question — and an expert knob like --surrogate reads as no more
+# specialised than --json, because nothing on the page says otherwise.
+#
+# Rich groups options into panels, one per `rich_help_panel` value, in the
+# order the panels are first mentioned. So these constants are both the titles
+# and the running order, and the DECLARATION ORDER of the parameters in
+# profile.py and batch.py is now a reading order: what you are running, how
+# much it does, what comes back, what lands on disk, what is merely labelled,
+# and last the expert recovery path most runs never touch.
+#
+# The names are shared rather than typed per command, because two commands
+# that group the same flags under titles differing by a word teach the reader
+# that the grouping is decorative.
+PANEL_MODEL = "Model and generation"
+PANEL_SCOPE = "Scope of the run"
+PANEL_REPORT = "What is reported"
+PANEL_FILES = "Files written (nothing by default)"
+PANEL_LABELS = "Labels recorded with the run"
+PANEL_SURROGATE = "Input-side recovery (expert)"
+PANEL_ROWS = "Rows to profile"
+PANEL_HELP = "Help"
+
+
+class PanelledCommand(TyperCommand):
+    """A command whose `--help` line does not head its own help page.
+
+    Rich prints the DEFAULT panel first — the one titled "Options", which is
+    where every parameter with no `rich_help_panel` lands. Put every real
+    option in a panel and click's own `--help` is the only thing left in it,
+    so the page opens with a box containing one line about itself, and the
+    reader meets the tool's least interesting flag first.
+
+    The help option is click's, built on demand rather than declared, so the
+    panel is stamped on it where it is handed over. Any title other than
+    "Options" is enough to move it: non-default panels render in the order
+    their options appear, and click appends `--help` last.
+    """
+
+    def get_help_option(self, ctx):
+        option = super().get_help_option(ctx)
+        if option is not None and getattr(option, "rich_help_panel", None) is None:
+            option.rich_help_panel = PANEL_HELP
+        return option
+
+
+# ---------------------------------------------------------------------------
 # Option help shared by more than one command
 # ---------------------------------------------------------------------------
 #
 # These strings were identical copies on two or three commands. A help string
 # that describes one behaviour has to say the same thing everywhere, and three
 # copies is three chances for it not to.
+#
+# Every one of them leads with what you get for passing the flag. The reason a
+# default is the default, the design pressure behind an opt-in, and the history
+# of a name are all real — and they belong in the module docstring or the
+# generated reference, where a reader has room to read them, not in a column
+# forty characters wide that someone is scanning for one answer.
 
 UNITS_HELP = (
-    "Include a per-measurement units block in each record. Constant per "
-    "signal_set_version and identical on every record, so off by default; "
-    "`hif schema` prints the same information without running a model."
+    "Add a per-measurement units block to each record. Constant per "
+    "signal_set_version, so off by default; `hif schema` prints the same "
+    "information without running a model."
 )
 
 TRACE_DIR_HELP = (
@@ -266,7 +325,8 @@ TRACE_DIR_HELP = (
 )
 
 CHARTS_HELP = (
-    "Generate plots + the combined dashboard locally (off by default)."
+    "One interactive Plotly HTML per signal, plus an index.html dashboard. "
+    "Needs --output-dir."
 )
 
 # --regime is a recorded label, not a switch: nothing validates it and no
@@ -278,7 +338,7 @@ CHARTS_HELP = (
 from hif.prompts.regimes import REGIMES as _REGIMES  # noqa: E402
 
 REGIME_LABEL_HELP = (
-    "A free-form label recorded with the run — any string is accepted, it "
-    "changes no measurement, and nothing is compared against it. The built-in "
-    "suite's regimes: " + ", ".join(r.name for r in _REGIMES) + "."
+    "A free-form label recorded with the run — any string, compared against "
+    "nothing, changing no measurement. The built-in suite's regimes: "
+    + ", ".join(r.name for r in _REGIMES) + "."
 )
