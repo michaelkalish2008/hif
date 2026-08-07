@@ -119,8 +119,16 @@ DOCTOR_CHECKS = [
 
 
 def _clean(text: str) -> str:
-    """Collapse help text to one line and escape the table delimiter."""
-    return re.sub(r"\s+", " ", (text or "").strip()).replace("|", "\\|")
+    """Collapse help text to one line, drop Rich escapes, and escape the
+    table delimiter.
+
+    `\\[` is Rich's escape for a literal bracket: in the terminal, help text
+    is Rich markup, and a bare `[generation]` is read as a style tag and
+    swallowed. Markdown has no such tag syntax, so the backslash is the
+    terminal's concern and is dropped here rather than leaking into the doc.
+    """
+    text = re.sub(r"\s+", " ", (text or "").strip())
+    return text.replace("\\[", "[").replace("|", "\\|")
 
 
 def _offered_backends(help_text: str) -> list[str]:

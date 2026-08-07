@@ -12,6 +12,7 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from hif.cli._app import (
     CHARTS_HELP,
+    REGIME_LABEL_HELP,
     TRACE_DIR_HELP,
     UNITS_HELP,
     app,
@@ -68,7 +69,9 @@ def profile(
     ctx: typer.Context,
     model_name: str = typer.Argument(..., help="Model name (e.g. gpt2)"),
     prompt: str = typer.Argument(..., help="Prompt text"),
-    regime: str = typer.Option("ordinary_conversation", help="Prompt regime"),
+    regime: str = typer.Option(
+        "ordinary_conversation", help="Prompt regime. " + REGIME_LABEL_HELP
+    ),
     backend: str = typer.Option(
         "hf",
         help="Model backend: hf | tlens | ollama | openai | anthropic | gemini",
@@ -92,9 +95,12 @@ def profile(
     ),
     config_file: Optional[Path] = typer.Option(
         None,
-        help="TOML run config (tables mirror RunConfig: [generation], "
-        "[perturbation], [trajectory], [attention], [semantic_field], ...). "
-        "CLI flags you pass explicitly override the file.",
+        # `\[` is Rich's escape for a literal bracket: help text is Rich
+        # markup, and a bare [generation] is read as a style tag and swallowed.
+        # tools/gen_flags_doc.py drops the backslash for docs/FLAGS.md.
+        help="TOML run config (tables mirror RunConfig: \\[generation], "
+        "\\[perturbation], \\[trajectory], \\[attention], \\[semantic_field], "
+        "...). CLI flags you pass explicitly override the file.",
     ),
     trace: bool = typer.Option(
         False,
@@ -162,6 +168,10 @@ def profile(
     ),
     analysis_window: Optional[str] = typer.Option(
         None,
+        # The parameter is a str because it admits two shapes; the default
+        # <str> metavar would hide the shape that matters. Say what you may
+        # actually type.
+        metavar="<int|adaptive>",
         help="Maximum output tokens to analyze (does not truncate inference). "
         "Integer or 'adaptive' (default: adaptive = analyze all output).",
     ),

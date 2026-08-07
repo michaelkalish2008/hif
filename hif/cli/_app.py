@@ -166,8 +166,24 @@ def _display_path(path: Path) -> str:
         return str(path)
 
 
+def _is_help_invocation() -> bool:
+    """Whether this process was invoked to print help, not to run anything.
+
+    The callback fires before the subcommand parses its own --help, so without
+    this check the dotenv line is the first line of every help screen. Click
+    has not seen the subcommand's arguments yet at callback time, so the
+    command line itself is consulted — everything before a literal `--`, which
+    is where an option spelled `--help` stops being one.
+    """
+    argv = sys.argv[1:]
+    if "--" in argv:
+        argv = argv[: argv.index("--")]
+    return any(arg in ("--help", "-h") for arg in argv)
+
+
 @app.callback()
 def _main(
+    ctx: typer.Context,
     env_file: Optional[Path] = typer.Option(
         None,
         "--env-file",
@@ -184,6 +200,13 @@ def _main(
     # configure_logging(verbose=True) to restore full internal chatter.
     configure_logging(verbose=False)
 
+    # A help invocation runs no model and needs no credentials, so nothing is
+    # loaded at all — not merely printed quietly. Loading while help renders
+    # would put a stale HIF_ENV_FILE one `--help` away from silently entering
+    # the environment of a shell that only asked what a flag means.
+    if _is_help_invocation():
+        return
+
     # Credentials are resolved here and nowhere else, so every command sees the
     # same environment. `doctor` predicting a run that a later, separate load
     # would have changed is worse than no preflight at all.
@@ -192,13 +215,30 @@ def _main(
     # --env-file / HIF_ENV_FILE, then discovery. A value that is already
     # exported is a deliberate override and survives all of this.
     if env_file is not None:
+        # Name the trigger. An --env-file typed on this command line and an
+        # HIF_ENV_FILE inherited from the shell are corrected in different
+        # places, and the line exists for the person wondering why it fired.
+        #
+        # Compared by member NAME, not enum identity: typer vendors click
+        # (typer._click), so the ParameterSource this context returns is a
+        # different enum class from the standalone `click` package's — equal
+        # names, disjoint members, and an `==` against the importable one is
+        # always False.
+        source = ctx.get_parameter_source("env_file")
+        trigger = (
+            "HIF_ENV_FILE"
+            if source is not None and source.name == "ENVIRONMENT"
+            else "--env-file"
+        )
         if not env_file.is_file():
-            console.print(f"[red]--env-file: no such file: {env_file}[/red]")
+            console.print(f"[red]{trigger}: no such file: {env_file}[/red]")
             raise typer.Exit(2)
         n = load_env_file(env_file)
         # Names only. The whole point of the file is that the values do not
         # get printed.
-        console.print(f"[dim]Loaded {n} variable(s) from {env_file}[/dim]")
+        console.print(
+            f"[dim]Loaded {n} variable(s) from {env_file} ({trigger})[/dim]"
+        )
     for discovered in discover_env_files():
         # Silent: this runs on every command, and a line of chatter per
         # invocation is how a tool teaches people to stop reading stderr.
@@ -227,4 +267,18 @@ TRACE_DIR_HELP = (
 
 CHARTS_HELP = (
     "Generate plots + the combined dashboard locally (off by default)."
+)
+
+# --regime is a recorded label, not a switch: nothing validates it and no
+# measurement changes because of it. The built-in suite's vocabulary is worth
+# listing anyway — it is the only set of regime names anything else in the
+# tool knows (--sample-set, docs/PROMPT_SUITE.md) — so it is read from the
+# module that defines it. A hand-typed copy here is exactly the drift a
+# generated flag reference exists to prevent.
+from hif.prompts.regimes import REGIMES as _REGIMES  # noqa: E402
+
+REGIME_LABEL_HELP = (
+    "A free-form label recorded with the run — any string is accepted, it "
+    "changes no measurement, and nothing is compared against it. The built-in "
+    "suite's regimes: " + ", ".join(r.name for r in _REGIMES) + "."
 )

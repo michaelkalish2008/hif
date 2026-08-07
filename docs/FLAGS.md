@@ -18,7 +18,7 @@ Profile many prompts against one loaded model.
 | flag | meaning |
 | --- | --- |
 | `--backend` | Model backend: `hf`, `tlens`, `ollama`, `openai`, `anthropic`, `gemini` — see [Backends](#backends) *(default: `hf`)* |
-| `--regime` | Default prompt regime (a per-row "regime" key overrides it). *(default: `batch`)* |
+| `--regime` | Default prompt regime (a per-row "regime" key overrides it). A free-form label recorded with the run — any string is accepted, it changes no measurement, and nothing is compared against it. The built-in suite's regimes: ordinary_conversation, healthcare_advice, legal_compliance, literary_continuation, ambiguous_moral, technical_explanation, adversarial_unstable, poetic_metaphorical. *(default: `batch`)* |
 | `--seed` | Random seed *(default: `42`)* |
 | `--max-new-tokens` | Maximum new tokens to generate *(default: `64`)* |
 | `--top-k` | Top-K candidates per step *(default: `50`)* |
@@ -111,7 +111,7 @@ Run the full hif pipeline on a single (model, prompt) pair.
 
 | flag | meaning |
 | --- | --- |
-| `--regime` | Prompt regime *(default: `ordinary_conversation`)* |
+| `--regime` | Prompt regime. A free-form label recorded with the run — any string is accepted, it changes no measurement, and nothing is compared against it. The built-in suite's regimes: ordinary_conversation, healthcare_advice, legal_compliance, literary_continuation, ambiguous_moral, technical_explanation, adversarial_unstable, poetic_metaphorical. *(default: `ordinary_conversation`)* |
 | `--backend` | Model backend: `hf`, `tlens`, `ollama`, `openai`, `anthropic`, `gemini` — see [Backends](#backends) *(default: `hf`)* |
 | `--seed` | Random seed *(default: `42`)* |
 | `--output-dir` | Write derived reports (technical + public markdown, --charts plots) here. Default: nothing is written to disk — results print to the terminal only (privacy-first compute-and-discard). |

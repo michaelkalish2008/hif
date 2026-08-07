@@ -79,7 +79,11 @@ def _emit_toml(data: dict, *, only_keys: dict | None = None) -> str:
 @config_app.command("show")
 def config_show(
     ctx: typer.Context,
-    model_name: str = typer.Argument("gpt2", help="Model name (affects [model] only)"),
+    # `\[` is Rich's markup escape — a bare [model] is swallowed as a style
+    # tag. tools/gen_flags_doc.py drops the backslash for docs/FLAGS.md.
+    model_name: str = typer.Argument(
+        "gpt2", help="Model name (affects \\[model] only)"
+    ),
     backend: str = typer.Option("hf", help="Model backend"),
     config_file: Optional[Path] = typer.Option(
         None, help="TOML run config to resolve (same file `hif profile` takes)."

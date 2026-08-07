@@ -9,6 +9,7 @@ from typing import Optional
 import typer
 
 from hif.cli._app import (
+    REGIME_LABEL_HELP,
     TRACE_DIR_HELP,
     UNITS_HELP,
     _emit_json_line,
@@ -97,7 +98,9 @@ def batch(
         help="Model backend: hf | tlens | ollama | openai | anthropic | gemini",
     ),
     regime: str = typer.Option(
-        "batch", help="Default prompt regime (a per-row \"regime\" key overrides it)."
+        "batch",
+        help="Default prompt regime (a per-row \"regime\" key overrides it). "
+        + REGIME_LABEL_HELP,
     ),
     seed: int = typer.Option(42, help="Random seed"),
     max_new_tokens: int = typer.Option(64, help="Maximum new tokens to generate"),
