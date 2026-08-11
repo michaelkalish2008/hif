@@ -503,5 +503,3 @@ between two different measurements wearing one name.
 ## See also
 
 - [`MEASUREMENTS.md`](MEASUREMENTS.md) — what each measurement is, in its unit
-- [`ARCHITECTURE.md`](ARCHITECTURE.md) — where in the pipeline each stage runs
-- [`PROMPT_SUITE.md`](PROMPT_SUITE.md) — the regimes, and why they are unlabeled

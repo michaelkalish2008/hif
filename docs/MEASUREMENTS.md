@@ -149,7 +149,7 @@ still intersects over the six rows both carry. It is off unless
 `--entropy-percentile` is passed, so a run that does not ask for it is
 byte-identical to a v4 run.
 
-**hif-v4 cut the set from sixteen rows to these six**, each removal argued
+**The set is six rows**, each admitted
 against the project's own 120-profile corpus — the evidence is recorded row by
 row in the `SIGNAL_SET_VERSION` history (`hif/profile/registry.py`) and the
 criteria are now conditions 3–6 of the Significance Gate above. The pipeline
@@ -159,42 +159,6 @@ still ship in the artifact as evidence; the set is the claims.
 Each row has exactly one name, and it names the quantity in the terms the quantity is computed in. Rows carried a second, coined name until `hif-v3.3` — "Stability", "Sensitivity", "Wager ▲", "Entropy ●", "Shift ◆", "Veer ◈", "Spread ■", "Horizon", "Exposure ◇", "Continuity" — and the coined one is the one that went wrong: "Stability" sat on `input_entropy_std_bits`, a standard deviation, where a *higher* number means *less* stable. A name that inverts the reading direction of its own number is worse than no name. The quantities here have accepted names already — Shannon entropy, Jensen-Shannon divergence, Pearson r, cosine similarity, surprisal — so the key and the name now say the same thing at two registers, and no glossary sits between a reader and a number. Chart glyphs are a display concern and live in `hif/viz/registry.py`.
 
 The Subject column reads `declared` → `under surrogate`: the first value holds when the target's own machinery produced the quantity, the second when the surrogate named by the row's `surrogate_group` stood in. A single value means the subject does not change. See [Subject](#subject--whose-behaviour-the-number-describes).
-
-### Retired in hif-v4
-
-If you have a record, a script, or a chart that names a key not in the table
-above, it is one of these. The key is the only string you have to go on, so
-they are listed by key.
-
-| Retired key | What it measured | Why it went | Read instead |
-|---|---|---|---|
-| `io_correlation_r` | Pearson r between the per-position input entropy series and the per-step output entropy series | Condition 3: half its computation came from a surrogate reading the prompt, the other half from the target, so it was never cleanly about either. On a run with no output steps it published a measured 0.0 correlation against a fabricated series. | `input_entropy_std_bits` and `output_entropy_bits` separately |
-| `output_step_jsd_bits` | Jensen-Shannon divergence between consecutive output distributions | Condition 4: at the default `max_new_tokens` its typical values were inside its own sampling noise | `perturbation_jsd_bits` (a divergence with a controlled comparison) |
-| `output_step_topk_overlap_fraction` | Fraction of top-k tokens shared between consecutive output steps | Condition 2: it moved with `output_step_jsd_bits` and disclosed nothing that row did not | `perturbation_jsd_bits` |
-| `output_entropy_step_delta_bits` | Mean absolute step-to-step change in output entropy | Condition 2: a first difference of `output_entropy_bits`, not an independent quantity | `output_entropy_bits`, plus its per-step trace |
-| `candidate_cluster_entropy_bits` | Entropy over the cluster assignment of each step's candidate cloud | Condition 5: `[cluster] min_cluster_size` and `method` moved it as much as the model did — a configured number reported as a measured one | the per-step `metrics.semantic[].cluster_count` and `.cluster_entropy` fields, recorded by default (off under `--lite`), quoted with the `[cluster]` settings |
-| `counterfactual_exposure_fraction` | Fraction of steps where a probabilistically accessible alternative diverged in meaning | Condition 5: two thresholds (`min_prob`, `distance_threshold`) were embedded in the fraction | the `exposure` block, recorded by default (off under `--lite`), quoted with both thresholds |
-| `semantic_centroid_veer_cosine` | Per-step displacement of the probability-weighted candidate-cloud centroid | Condition 6: absent from most of the corpus, because the stage that produces it is off by default | the `semantic_field` block under `--diagnostics` |
-| `branch_pairwise_cosine_similarity` | Mean pairwise cosine similarity across resampled continuations | Condition 5: it read the sampling temperature at least as much as the model | the `trajectory.branch_field` block, recorded on any backend that can teacher-force, quoted with `[generation] temperature` |
-| `attention_entropy_input_bits` | Entropy of an analysis encoder's attention rows over the prompt | Condition 3: bit-identical across all fifteen corpus models — a fixed encoder reading the prompt is not a measurement of any target | the `attention_capture` block under `--diagnostics` |
-| `attention_entropy_output_bits` | Entropy of an analysis encoder's attention rows over the generated text | Condition 3: same encoder, and what target-dependence it had came from text length | the `attention_capture` block under `--diagnostics` |
-
-Every stage named in the last column still runs and still records its block —
-the cut removed claims, not evidence. What changed is that a configured or
-target-independent quantity no longer appears in `measurements` as though it
-were a reading of the model.
-
-Note what each block costs. Only `semantic_field` and `attention_capture` are
-behind `--diagnostics`; `exposure` and the per-step semantic metrics are on by
-default and leave under `--lite`, and `trajectory` runs on any backend that can
-teacher-force. So three of the four surviving blocks need no flag at all —
-passing `--diagnostics` to reach them buys the two stages you did not ask for.
-
-`hif compare` refuses a v3-vs-v4 pair outright rather than intersecting over
-the survivors: a removal is a major version break, and intersecting would
-silently read "we no longer claim this" as "both runs measured this".
-
----
 
 ### `input_entropy_shift_bits`
 
@@ -246,7 +210,7 @@ perturbation_jsd_bits = mean_v [ mean_j [ JSD(P_baseline,j ‖ P_variant,j) ] ]
 JSD(P ‖ Q) = ½ KL(P ‖ M) + ½ KL(Q ‖ M),  M = ½(P + Q),  logs base 2
 ```
 
-**Unit and range.** Bits. Genuinely bounded to `[0, 1]` by definition in log base 2 — that bound is a property of JSD, not a rescaling. It is reported as measured, no longer inverted into an "Output Stability" score.
+**Unit and range.** Bits. Genuinely bounded to `[0, 1]` by definition in log base 2 — that bound is a property of JSD, not a rescaling. It is reported as measured.
 
 **Perturbation generators.** Default `["synonym", "tone", "reorder"]` with `n_variants = 2` each. `substitution` and `ambiguity` are implemented and selectable; LLM-backed paraphrasing is opt-in and requires an explicit endpoint.
 
@@ -297,7 +261,7 @@ When `sᵢ > H(Pᵢ)` the actual token was more surprising than the distribution
 
 **Worked example.** At position `i`: `H(Pᵢ) = 2.90 bits`. The actual token sits at rank 5 with probability 2.7%, so `sᵢ = −log₂(0.027) ≈ 5.2 bits`. Excess = 5.2 − 2.90 = 2.3 bits. A position whose actual token was the model's top-1 contributes 0.
 
-**Unit and range.** Bits, `[0, ∞)`. Unbounded above. There is no `/ 5.0` ceiling and no normalised variant: the linear clamp that used to produce `normalized_surprise = min(Surprise / 5.0, 1.0)` existed only to make this number sit alongside six other `[0, 1]` scores, and those scores are gone.
+**Unit and range.** Bits, `[0, ∞)`. Unbounded above, and reported unscaled.
 
 **Absent when** no teacher-forced positions exist. Computed by `hif/hourglass/input_side.py::mean_surprisal_excess`.
 
@@ -323,7 +287,6 @@ Both traces here have a chart in the viz registry (`hif/viz/registry.py`, `kind=
 |-------|--------------------------|---------------|----------|
 | Prompt surprisal excess | Surprisal excess over entropy, per prompt position | `prompt_surprisal_excess_bits` | Teacher forcing (open-weight, or `--surrogate`) |
 | Output entropy | Output distribution entropy, per generation step | `output_entropy_bits` | All models with top-k logprobs |
-
 
 
 ---
@@ -665,11 +628,7 @@ Four fields, each computed independently from whatever evidence exists and set t
 | `perturbation_jsd_bits` | bits | `mean(mean_js_divergence)` over variants |
 | `input_output_correlation` | dimensionless | Pearson `r` between the shift and JSD per-variant series |
 
-`n_perturbations` records how many variants contributed. (Two documented-dead optional fields, `temperature_robustness` and `prompt_order_robustness`, were removed in profile schema 0.10.0 — nothing in the pipeline ever populated them.)
-
 These are the quantities that surface as `input_entropy_shift_bits`, `input_entropy_std_bits`, and `perturbation_jsd_bits` in Part 1 — see there for ranges and absent-vs-zero semantics.
-
-**History (kept deliberately visible).** This module used to report `input_stability = 1 − mean|Δ volatility|` and `output_stability = 1 − mean JSD`. Both were wrong in the same three ways: they saturated (pinning at exactly 1.0 and destroying resolution in the regime that mattered), the input one divided by `log₂(vocab_size)` so tokenizer metadata leaked into a number presented as behaviour, and `1 − x` hid the measurement behind a score. They are replaced by the measured quantities themselves.
 
 ---
 
@@ -705,9 +664,7 @@ Zero vectors return `1.0`; an empty generation returns `0.0`.
 
 **Expected range.** [0, 2] by definition. Low: the output stays in the semantic neighbourhood of the prompt. High: the output sits far from the prompt's representational space.
 
-**Named for what it measures.** This was called "Semantic Drift". It is a distance between two embeddings from a single run — it is not evidence that a model drifted, and the rename is deliberate.
-
-**No equilibrium flag.** `CenterDiagnostics` used to carry a `"rigid" | "balanced" | "unstable"` classification of output entropy against `0.1` and `0.9 × log₂(vocab_size)`. That bucketed behaviour by a property of the tokenizer: the thresholds derive from vocabulary size, output entropy was computed over a top-K distribution bounded by `log₂(K)`, "unstable" was unreachable under normal generation, and every reference run returned `"balanced"`. It is gone, along with the rest of the level machinery.
+**Named for what it measures.** It is a distance between two embeddings from a single run, not evidence that a model drifted over time.
 
 ---
 
@@ -765,7 +722,5 @@ There is no covariance-aware drift, no Mahalanobis translation, and no cross-run
 | `similarity_trend_slope` | OLS slope of per-step input/output cosine similarity across the generation. Signed and unrounded; positive means the output grew more similar to the input as it went on. Not thresholded. |
 | `surrogate_model_name` | Set when the input-side measurements were computed by teacher-forcing a `--surrogate` proxy over the prompt instead of the target model. `None` when they came from the target directly. |
 | `output_distribution_surrogate_name` | Set when the target backend's own per-step distribution was degenerate (selected token only) and a surrogate was teacher-forced over prompt + continuation to recover a real output entropy reading instead of a trivial `0.0` over a one-entry "distribution". Independent of the field above. |
-
-**Why the levels are gone.** `generate_findings()` used to bucket measurements into low/medium/high against a threshold table and emit a one-sentence verdict. Assigning a level is an inference that requires a null distribution this project never established, and the decision rule built on those levels measured a **~43% false-positive rate on pairs of runs known to be identical**. What a run measured lives in `hif.profile.measure.measurements()`, in natural units; what it means is the reader's call.
 
 The two surrogate names are reported rather than hidden because a measurement computed through a proxy describes the proxy reading the target's text — not the target's own computation. The CLI stars such measurements in its table, and `signals_record()` emits both names under `surrogate`.
