@@ -348,7 +348,7 @@ Known limitations, stated plainly:
 - [`docs/CONFIG.md`](docs/CONFIG.md) — every config key and what it moves; how a run config is assembled and how to verify it applied
 - [`docs/PROMPT_SUITE.md`](docs/PROMPT_SUITE.md) — the prompt regimes; an unlabeled dataset, not a benchmark
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — model roles, module layout, data flow
-- [`docs/PHILOSOPHY.md`](docs/PHILOSOPHY.md) — why read behaviour distributionally at all
+- [`docs/READING.md`](docs/READING.md) — what a number is about; why the attention layer is a reading and not a measurement, on open and closed models alike
 
 Profiles generated with this tool are published and explorable at
 [ai-interpretability.com](https://ai-interpretability.com).

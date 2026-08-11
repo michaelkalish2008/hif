@@ -35,8 +35,8 @@ DOCS = {
     Path("docs/CONFIG.md"): "CONFIG.md",
     Path("docs/FLAGS.md"): "FLAGS.md",
     Path("docs/MEASUREMENTS.md"): "MEASUREMENTS.md",
-    Path("docs/PHILOSOPHY.md"): "PHILOSOPHY.md",
     Path("docs/PROMPT_SUITE.md"): "PROMPT_SUITE.md",
+    Path("docs/READING.md"): "READING.md",
 }
 
 # Repository-relative links have no meaning once the file is served by the
@@ -48,7 +48,7 @@ LINK_REWRITES = {
     "](docs/CONFIG.md)": "](/writing#config)",
     "](docs/PROMPT_SUITE.md)": "](/writing#prompt-suite)",
     "](docs/ARCHITECTURE.md)": "](/writing#architecture)",
-    "](docs/PHILOSOPHY.md)": "](/writing#philosophy)",
+    "](docs/READING.md)": "](/writing#reading)",
     "](CONTRIBUTING.md)": "](https://github.com/michaelkalish2008/hif/blob/main/CONTRIBUTING.md)",
     "](AGENTS.md)": "](https://github.com/michaelkalish2008/hif/blob/main/AGENTS.md)",
     # Sibling links inside docs/ — these files reference each other without the
@@ -57,8 +57,10 @@ LINK_REWRITES = {
     "](CONFIG.md)": "](/writing#config)",
     "](ARCHITECTURE.md)": "](/writing#architecture)",
     "](PROMPT_SUITE.md)": "](/writing#prompt-suite)",
-    "](PHILOSOPHY.md)": "](/writing#philosophy)",
+    "](READING.md)": "](/writing#reading)",
     "](../CONTRIBUTING.md)": "](https://github.com/michaelkalish2008/hif/blob/main/CONTRIBUTING.md)",
+    # docs/ files linking up to the repo README, which the site renders at /cli.
+    "](../README.md)": "](/cli)",
 }
 
 
