@@ -18,11 +18,10 @@ from hif.cli._app import (
 @app.command()
 def render(
     profile_json: Path = typer.Argument(..., help="Path to profile JSON"),
-    public: bool = typer.Option(False, help="Produce public-facing summary instead of technical"),
     output: Optional[Path] = typer.Option(None, help="Output path (default: alongside JSON)"),
 ) -> None:
     """Load an existing profile from JSON and re-render Markdown."""
-    from hif.profile.render_markdown import render_public, render_technical
+    from hif.profile.render_markdown import render_technical
     from hif.profile.schema import BehavioralRangeProfile
 
     if not profile_json.exists():
@@ -31,16 +30,12 @@ def render(
 
     p = BehavioralRangeProfile.model_validate_json(profile_json.read_text())
 
-    suffix = "_public.md" if public else "_technical.md"
     if output is None:
         output = profile_json.with_suffix("").with_name(
-            profile_json.stem + suffix
+            profile_json.stem + "_technical.md"
         )
 
-    if public:
-        render_public(p, output)
-    else:
-        render_technical(p, output)
+    render_technical(p, output)
 
     console.print(f"[green]Rendered to:[/green] {output}")
 

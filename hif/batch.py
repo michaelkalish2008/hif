@@ -20,8 +20,9 @@ when present they replace the configured generator pipeline for that row
 The whole file is validated up front — a malformed line is a caller error
 (WorkloadError), surfaced before any model is loaded.
 
-Privacy contract: same as the engine — compute-and-discard by default;
-per-row trace artifacts are written only when the run opted in (--trace).
+Same as the engine: nothing is written implicitly, and per-row trace artifacts
+are written only when the run opted in (--trace). A workload is the one place
+where that default earns its keep on volume alone — one artifact per row.
 """
 
 from __future__ import annotations

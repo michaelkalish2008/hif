@@ -713,7 +713,7 @@ Zero vectors return `1.0`; an empty generation returns `0.0`.
 
 ## Part 4 — Perturbation-Field Descriptors
 
-Where Part 1 compresses a run to its run-level scalars and Part 3 exposes the per-step components, Part 4 characterizes the model's behavior as a **region** rather than a point. All are derived scalars, computed from distributions/embeddings held only transiently (compute-and-discard): a top-k distribution *with token identity* is reconstructable content, so by default it never reaches an artifact. The one sanctioned exception is `config.traceability.enabled`, which persists the raw member traces on the profile so these descriptors can be recomputed without re-running models.
+Where Part 1 compresses a run to its run-level scalars and Part 3 exposes the per-step components, Part 4 characterizes the model's behavior as a **region** rather than a point. All are derived scalars, computed from distributions/embeddings held only transiently (compute-and-discard): a descriptor is a claim, and the raw distribution it was read from does not belong in the same block. `config.traceability.enabled` persists the raw member traces on the profile — alongside the descriptors, not inside them — so these can be recomputed without re-running models.
 
 ### Perturbation Field
 

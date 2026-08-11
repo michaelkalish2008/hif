@@ -203,7 +203,7 @@ hif/
     signals.py             # MEASUREMENT_REGISTRY (triple + subject), measurements(),
                            # prompt_measurements(), signals_record()
     render_json.py         # render_json() → profile.json
-    render_markdown.py     # render_technical(), render_public() → Markdown
+    render_markdown.py     # render_technical() → Markdown
 
   prompts/
     regimes.py             # REGIMES list, Regime dataclass, the regime definitions
@@ -280,7 +280,7 @@ The full pipeline, as orchestrated by `build_profile()` in `hif/profile/builder.
     - **11d.** Within-generation semantic field (`config.semantic_field.enabled`, off by default; set by `--diagnostics`) → `SemanticFieldReading`.
 12. **Profile assembly** — `BehavioralRangeProfile` constructed from all of the above plus `ModelIdentity` and `PromptRecord` metadata, and the effective embedder recorded into the persisted config. Raw traces are attached only under the traceability opt-in.
 13. **Measurement extraction** — `hif/profile/measure.py::measurements()` reduces the profile to the flat measurement dict, splitting off the prompt-only quantities by subject; `signals_record()` wraps both with provenance for `--json`, `suite`, and `batch`.
-14. **Rendering (optional)** — `render_json()` writes the full profile as JSON; `render_technical()` and `render_public()` write Markdown reports. Nothing is written unless an output directory is requested — the privacy-first default writes nothing.
+14. **Rendering (optional)** — `--output-dir` writes both the Markdown report (`render_technical()`) and the full profile as JSON (`render_json()`); the report is an excerpt of the JSON, and only the JSON can be read back by `hif render`. `--trace` is a separate axis: it adds the raw perturbation-variant and trajectory-branch traces to that artifact. Nothing is written unless one of them is requested — a run that was not asked for files leaves none.
 15. **Charts (optional)** — `generate_signal_plots()` renders the registry's signal charts plus a combined dashboard index.
 
 `SessionEngine` (`hif/engine.py`) wraps steps 1–13 for the load-once/profile-many callers (`hif profile`, `hif batch`); it never writes an artifact implicitly.
@@ -297,8 +297,9 @@ authority for them.
   radii, cluster counts, per-step cosine displacements — never a
   distribution, an embedding, or token identities. The raw variant/branch
   traces they are computed from are compute-and-discard
-  (`hif/metrics/field.py`'s privacy invariant); persisting them is the
-  explicit `traceability` opt-in.
+  (`hif/metrics/field.py` — a descriptor is a claim, and raw data sitting in
+  the same model invites reading the input as a result); persisting them is
+  the explicit `traceability` opt-in.
 - **Basis consistency.** The distribution basis used for field members must
   match the basis of the other output-side metrics. On a selected-only
   backend the raw traces are point masses and the field would collapse to a

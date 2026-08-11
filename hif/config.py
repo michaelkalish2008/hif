@@ -181,13 +181,13 @@ class TraceabilityConfig(BaseModel):
 
     Compute-and-discard is the DEFAULT: perturbation-variant output traces and
     trajectory-branch traces are held only transiently while sensitivity and
-    field descriptors are derived, then dropped (see hif/metrics/field.py's
-    privacy invariant). Setting ``enabled=True`` is the sanctioned exception:
-    the profile artifact additionally captures those raw traces (per-step top-K
-    with token identity — reconstructable content) so field descriptors,
-    JS-centroids, translation, and branch fields can be recomputed from the
-    artifact without re-running models. Only enable where the artifact's
-    storage location is trusted with prompt/continuation-level content.
+    field descriptors are derived, then dropped (see hif/metrics/field.py).
+    Setting ``enabled=True`` keeps them: the profile artifact additionally
+    captures those raw traces, so field descriptors, JS-centroids,
+    translation, and branch fields can be recomputed from the artifact without
+    re-running models. The cost is size — the variant traces scale with the
+    variant count — not exposure; the baseline trace is in the artifact
+    regardless.
     """
     enabled: bool = False
 

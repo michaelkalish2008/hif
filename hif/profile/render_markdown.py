@@ -1,4 +1,12 @@
-"""Markdown rendering for BehavioralRangeProfile artifacts (full and public-facing variants)."""
+"""Markdown rendering for BehavioralRangeProfile artifacts.
+
+One report, not two. There was also a `render_public()` — a plain-English
+subset of the same measurement table — written alongside the technical report
+on every `--output-dir` run. It was dropped: a second rendering of the same
+numbers is a second place for them to disagree, and the reader who wants the
+values without the diagnostics is better served by the JSON artifact
+(`--trace`), which is the whole profile rather than a lossy excerpt of it.
+"""
 
 from __future__ import annotations
 
@@ -39,6 +47,36 @@ def _cell(text: str) -> str:
     escape tools/gen_flags_doc.py applies to help text, for the same reason.
     """
     return (text or "").replace("|", "\\|")
+
+
+def _step_tokens(profile) -> "list[str] | None":
+    """The token each per-step metric row is about — or None when unknowable.
+
+    The per-step tables are computed over builder.py step 6b's basis: the
+    target's own trace normally, but the SURROGATE's steps when the target
+    exposed no usable distribution and --surrogate recovered one by
+    teacher-forcing the proxy over the continuation. That recovery is "in the
+    surrogate's own tokenization" (hif/hourglass/output_side.py) — differently
+    segmented, so row *i* is not the target's token *i*, and the artifact
+    stores only `output_side` (the target's trace), never the recovered basis.
+    Labelling those rows from `output_side.steps` would put the wrong token
+    beside every number, so we say we cannot label them instead.
+    """
+    if profile.findings.output_distribution_surrogate_name is not None:
+        return None
+    return [s.selected_token_str for s in profile.output_side.steps]
+
+
+def _token_cell(tokens: "list[str] | None", i: int) -> str:
+    """One token as a table cell: repr'd, so whitespace and newlines are visible.
+
+    A generated token is routinely " the" or "\\n"; printed bare, the column
+    reads as empty or breaks the row. repr() makes the leading space and the
+    escape visible, and _cell() handles a token that is literally "|".
+    """
+    if tokens is None or i >= len(tokens):
+        return ""
+    return f"`{_cell(repr(tokens[i]))}`"
 
 
 # ---------------------------------------------------------------------------
@@ -199,13 +237,22 @@ def render_technical(profile: BehavioralRangeProfile, output_path: Path) -> None
     # Distribution metrics table (per step, truncated to 10 steps for readability)
     a("## Distribution Metrics (per output step)")
     a("")
-    a("| Step | Entropy (bits) | Logit margin | Top-K mass | Eff. support | Tail weight |")
-    a("|---|---|---|---|---|---|")
+    tokens = _step_tokens(profile)
+    a("| Token | Step | Entropy (bits) | Logit margin | Top-K mass | Eff. support | Tail weight |")
+    a("|---|---|---|---|---|---|---|")
     for i, dm in enumerate(profile.metrics.distribution[:10]):
-        a(f"| {i} | {dm.entropy_bits:.3f} | {dm.logit_margin:.3f} | {dm.topk_cumulative_mass:.3f} | {dm.effective_support_size:.1f} | {dm.tail_weight:.3f} |")
+        a(f"| {_token_cell(tokens, i)} | {i} | {dm.entropy_bits:.3f} | {dm.logit_margin:.3f} | {dm.topk_cumulative_mass:.3f} | {dm.effective_support_size:.1f} | {dm.tail_weight:.3f} |")
     if len(profile.metrics.distribution) > 10:
-        a(f"| ... | ({len(profile.metrics.distribution) - 10} more steps) | | | | |")
+        a(f"| | ... | ({len(profile.metrics.distribution) - 10} more steps) | | | | |")
     a("")
+    if tokens is None:
+        a(f"Tokens are not shown: these rows were read off `"
+          f"{profile.findings.output_distribution_surrogate_name}` teacher-forced "
+          "over the target's continuation, in the surrogate's own tokenization. "
+          "Row *i* is the surrogate's position *i*, which is not "
+          f"`{profile.model.name}`'s token *i*, and the artifact does not carry "
+          "the surrogate's segmentation to label it with.")
+        a("")
 
     # Semantic metrics table
     a("## Semantic Metrics (per output step)")
@@ -266,56 +313,9 @@ def render_technical(profile: BehavioralRangeProfile, output_path: Path) -> None
         a(profile.notes)
         a("")
 
-    output_path.write_text("\n".join(lines))
-
-
-# ---------------------------------------------------------------------------
-# Public summary (non-technical)
-# ---------------------------------------------------------------------------
-
-
-def render_public(profile: BehavioralRangeProfile, output_path: Path) -> None:
-    """Write a plain-English summary of what was measured.
-
-    Deliberately contains no level, no adjective, and no interpretation of
-    whether a value is good or bad — the previous version mapped each metric to
-    a low/medium/high paragraph, which read as a judgement the instrument
-    cannot support.
-    """
-    output_path = Path(output_path)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-
-    f = profile.findings
-    vals = measurements(profile)
-    lines: list[str] = []
-    a = lines.append
-
-    a(f"# Behavioural measurements — {profile.model.name}")
-    a("")
-    a(f"**Prompt:** {profile.prompt.text}")
-    a(f"**Regime:** {profile.prompt.regime}")
-    a("")
-    a("---")
-    a("")
-    a("## What was measured")
-    a("")
-    a("| Measurement | Value | Unit |")
-    a("|---|---|---|")
-    for m in MEASUREMENT_REGISTRY:
-        v = vals.get(m.key)
-        shown = "absent" if v is None else f"{v:.6g}"
-        a(f"| {_cell(m.name)} | {shown} | {_cell(m.unit)} |")
-    a("")
-    a("Absent means this run produced no evidence for that quantity — the")
-    a("backend could not teacher-force, or an optional analysis stage did not")
-    a("run. It does not mean zero.")
-    a("")
-    if f.surrogate_model_name is not None:
-        a(f"Input-side measurements were computed by teacher-forcing the "
-          f"surrogate model `{f.surrogate_model_name}` over the prompt. They "
-          f"describe the surrogate reading {profile.model.name}'s text, not "
-          f"{profile.model.name} itself.")
-        a("")
+    # The one paragraph the dropped public summary was carrying that this
+    # report was not. It is the scope of every number above, so it outlives
+    # the file it used to live in.
     a("## What this is not")
     a("")
     a("These numbers describe what the model did on one prompt at one moment.")
@@ -332,12 +332,10 @@ def render_public(profile: BehavioralRangeProfile, output_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def render_markdown(profile, path: Path, public: bool = False) -> None:
+def render_markdown(profile, path: Path) -> None:
     """Render a BehavioralRangeProfile to a structured Markdown report.
 
-    Dispatches to render_public() or render_technical() based on the `public` flag.
+    Kept as the historical entry point. It took a `public` flag selecting the
+    plain-English variant; there is one report now, so it takes none.
     """
-    if public:
-        render_public(profile, path)
-    else:
-        render_technical(profile, path)
+    render_technical(profile, path)

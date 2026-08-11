@@ -381,17 +381,19 @@ readings on long prompts describe only the portion that fit.
 
 | table | key | default | effect |
 | --- | --- | --- | --- |
-| `[traceability]` | `enabled` | `false` | Persist raw per-step top-K traces into the artifact |
-| `[output]` | `output_dir` | `outputs` | Only consulted when `--output-dir` asks for reports |
+| `[traceability]` | `enabled` | `false` | Add the raw variant and branch traces to the artifact |
+| `[output]` | `output_dir` | `outputs` | Only consulted when `--output-dir` asks for files |
 
 Compute-and-discard is the default: variant and branch traces are held only long
 enough to derive field descriptors, then dropped. `traceability.enabled = true`
-is the sanctioned exception — it captures per-step top-K **with token identity**,
-which is reconstructable content. Enable it only where the artifact's storage is
-trusted with prompt- and continuation-level text.
+keeps them, so those descriptors can be recomputed from the artifact without
+re-running models. The cost is size, and it scales with the variant count.
 
-Nothing is written to disk unless you ask. `--output-dir` opts into reports and
-charts; `--trace` opts into the artifact.
+Nothing is written to disk unless you ask. `--output-dir` opts into the run's
+files — the technical report, the profile JSON, and the `--charts` plots.
+`--trace` is a second axis on top of that, not a stricter version of it: the
+baseline per-step top-K is on `output_side.steps` and lands in the JSON either
+way, so what `--trace` adds is the variant and branch traces.
 
 ---
 

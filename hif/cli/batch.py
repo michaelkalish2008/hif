@@ -243,8 +243,8 @@ def batch(
         False,
         "--trace",
         rich_help_panel=PANEL_FILES,
-        help="Persist each row's full profile artifact — raw per-step top-K "
-        "distributions, reconstructable content — for later recomputation.",
+        help="Persist each row's full profile artifact, with the raw variant "
+        "and branch traces included, for later recomputation.",
     ),
     trace_dir: Optional[Path] = typer.Option(
         None, "--trace-dir", rich_help_panel=PANEL_FILES, help=TRACE_DIR_HELP

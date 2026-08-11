@@ -23,10 +23,11 @@ step-to-step change in the distribution's *semantic location* in embedding space
 (geometric). `center.semantic_drift` gives only the prompt→output endpoint; Veer
 is the per-step trace.
 
-Privacy invariant: compute-and-discard. Candidate embeddings and the per-step
-centroids live only in this call's stack frame; only the scalar per-step traces
-(cosine distances) are returned. No embedding, centroid, or token identity is
-persisted. Sample-only, scoring-time-only; do not import from a request path.
+Compute-and-discard: candidate embeddings and the per-step centroids live only
+in this call's stack frame; only the scalar per-step traces (cosine distances)
+are returned. What this module publishes is a measurement, so no embedding or
+centroid rides along with it — the raw material belongs on the trace, not in a
+reading (see hif/metrics/field.py).
 """
 
 from __future__ import annotations

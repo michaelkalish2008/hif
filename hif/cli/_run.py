@@ -145,13 +145,17 @@ def _run_single_profile(
 ) -> "tuple[BehavioralRangeProfile, Optional[Path]]":
     """Core pipeline: build the profile in memory, return (profile, trace_path).
 
-    Privacy-first default: NOTHING is written to disk. `output_dir` opts into
-    the derived reports (markdown, charts); `trace` opts into persisting the
-    full profile artifact (raw per-step top-K distributions) for
-    traceability/reconstruction — trace_path is None unless it did.
+    Nothing is written implicitly — not as a data-handling rule, but because a
+    measurement run should not litter the working directory. `output_dir` opts
+    into the artifacts of a run: the technical report, the profile JSON, and
+    the `--charts` plots. `trace` additionally captures the raw perturbation-
+    variant and trajectory-branch traces INSIDE that artifact, so field
+    descriptors can be recomputed without re-running the models —
+    trace_path is None unless it did.
     """
     from hif.engine import SessionEngine
-    from hif.profile.render_markdown import render_public, render_technical
+    from hif.profile.render_json import render_json
+    from hif.profile.render_markdown import render_technical
 
     config = _resolve_run_config(
         model_name, backend, max_new_tokens, top_k, seed, output_dir,
@@ -206,7 +210,18 @@ def _run_single_profile(
     if output_dir is not None:
         output_dir.mkdir(parents=True, exist_ok=True)
         render_technical(profile, output_dir / f"profile_{h}_technical.md")
-        render_public(profile, output_dir / f"profile_{h}_public.md")
+        # The JSON is the artifact the report is an excerpt of: every per-step
+        # record, and the only form `hif render` can read back. It used to be
+        # withheld unless --trace, on the reasoning that per-step top-K with
+        # token identity should not reach disk by default. That reasoning came
+        # from the hosted deployment (archived), where the text belonged to
+        # someone other than the operator; a researcher profiling prompts they
+        # wrote, on their own machine, is not disclosing anything to
+        # themselves. --trace still means something — it adds the variant and
+        # branch traces — so skip this copy when it already wrote the same
+        # bytes rather than emit the artifact twice.
+        if trace_path is None:
+            render_json(profile, output_dir / f"profile_{h}.json")
 
     if charts and output_dir is not None:
         from hif.viz import generate_signal_plots

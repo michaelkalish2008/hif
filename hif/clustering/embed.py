@@ -50,21 +50,44 @@ class EmbeddingModel:
                 "Install it with: pip install sentence-transformers"
             ) from exc
 
+        def _load(name: str, **kwargs):
+            """Load `name`, preferring the copy already in the local HF cache.
+
+            `SentenceTransformer(repo_id)` revalidates against huggingface.co
+            on every construction — a HEAD per file — so a machine that is
+            offline, or on a network that cannot resolve the host, spends five
+            retries and then dies, for an encoder sitting in
+            ~/.cache/huggingface the whole time. The encoder is a fixed local
+            dependency of the measurement, not something a profiling run
+            should be fetching, so ask for the cached copy first and reach the
+            network only when there is not one.
+            """
+            try:
+                return SentenceTransformer(name, local_files_only=True, **kwargs)
+            except TypeError:
+                # sentence-transformers predating `local_files_only`. Let the
+                # caller's own TypeError handling see an unsupported kwarg.
+                return SentenceTransformer(name, **kwargs)
+            except Exception as exc:  # noqa: BLE001
+                logger.debug(
+                    "No local copy of %r (%s); falling back to a hub fetch.",
+                    name, exc,
+                )
+                return SentenceTransformer(name, **kwargs)
+
         primary = self._config.model_name
         try:
             if self._config.matryoshka_dim is not None:
                 # Pass truncate_dim for Matryoshka if supported (sentence-transformers >= 3.x).
                 try:
-                    model = SentenceTransformer(
-                        primary, truncate_dim=self._config.matryoshka_dim
-                    )
+                    model = _load(primary, truncate_dim=self._config.matryoshka_dim)
                     dim = self._config.matryoshka_dim
                 except TypeError:
                     # Older sentence-transformers without truncate_dim support.
-                    model = SentenceTransformer(primary)
+                    model = _load(primary)
                     dim = self._config.matryoshka_dim  # will slice manually in encode
             else:
-                model = SentenceTransformer(primary)
+                model = _load(primary)
                 # renamed in newer sentence-transformers; support both
                 get_dim = getattr(model, "get_embedding_dimension", None) or (
                     model.get_sentence_embedding_dimension
@@ -89,7 +112,7 @@ class EmbeddingModel:
                 exc,
                 fallback,
             )
-            self._model = SentenceTransformer(fallback)
+            self._model = _load(fallback)
             self._model_name = fallback
             self._embedding_dim = _FALLBACK_DIM
             logger.debug("Loaded fallback embedding model: %s (dim=%d)", fallback, _FALLBACK_DIM)

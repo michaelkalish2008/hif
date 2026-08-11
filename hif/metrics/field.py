@@ -7,26 +7,29 @@ answers "what is the *shape* of the neighbourhood the model occupies under a
 family of content-preserving perturbations?" — the centroid of that family and
 the geometry of the cloud around it.
 
-Privacy invariant (hard requirement — read before extending)
-------------------------------------------------------------
+Emit scalars, not distributions (hard requirement — read before extending)
+--------------------------------------------------------------------------
 Every value this module emits is a derived scalar. Compute-and-discard is the
 DEFAULT: the per-step token distributions this module consumes are held only in
 the caller's stack frame for the duration of the computation and are then
-dropped — the same discipline the sensitivity path already follows. A top-k
-distribution *with token identity* is reconstructable content, so by default it
-must never reach an artifact, the ledger, or a sidecar. Do NOT add a field here
-that stores a distribution, a centroid, or a token id — this module itself
-NEVER stores distributions.
+dropped — the same discipline the sensitivity path already follows. Do NOT add
+a field here that stores a distribution, a centroid, or a token id — this
+module itself NEVER stores distributions.
 
-The single sanctioned exception is the traceability opt-in
-(``TraceabilityConfig.enabled`` on RunConfig): when the operator explicitly
-enables it, the builder persists the raw member traces on the PROFILE artifact
-(``BehavioralRangeProfile.raw_traces`` — never in the field models emitted
-here) so field descriptors, JS-centroids, translation, and branch fields can be
-reconstructed from the artifact without re-running models. This module must
-never be imported from a hosted request path (the companion platform repo
-enforces this on its side); it is a scoring-time-only, sample-only
-computation.
+This was written as a privacy invariant, for the hosted deployment where the
+text being profiled belonged to someone other than the operator. That
+deployment is archived, and hif is an instrument a researcher points at their
+own prompts, so the data-handling half of the argument is gone. The rule
+stays, on the half that was always the stronger one: a field descriptor is a
+CLAIM, and a stored raw distribution sitting in the same model invites reading
+the input as though it were a result. Keep the two apart — measurements here,
+raw data on the trace.
+
+Raw member traces have one home, and it is the traceability opt-in
+(``TraceabilityConfig.enabled`` on RunConfig): when enabled, the builder
+persists them on the PROFILE artifact (``BehavioralRangeProfile.raw_traces`` —
+never in the field models emitted here) so field descriptors, JS-centroids,
+translation, and branch fields can be recomputed without re-running models.
 """
 
 from __future__ import annotations

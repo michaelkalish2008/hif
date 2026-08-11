@@ -96,9 +96,9 @@ class RawTraces(BaseModel):
     Compute-and-discard remains the default: this container exists so that
     field descriptors, JS-centroids, translation, and branch fields are
     retroactively recomputable from the artifact without re-running models.
-    A top-k distribution with token identity is reconstructable content —
-    this block must never be populated unless TraceabilityConfig.enabled was
-    explicitly set (see hif/metrics/field.py's privacy invariant).
+    It must never be populated unless TraceabilityConfig.enabled was
+    explicitly set — a run that did not ask to keep the raw traces should not
+    be handed an artifact whose size says it did.
     """
 
     # One entry per successfully-traced perturbation variant, across all

@@ -6,10 +6,12 @@ local daemon (`hif serve`). Model, embedder, teacher-forcing surrogate,
 and analyzer weights are loaded exactly once per engine instance; each
 `profile_one` call then pays inference cost only.
 
-Privacy contract: the engine follows the profile pipeline's compute-and-
-discard default. Persisting artifacts is the caller's explicit act via
-`write_trace` (gated on RunConfig.traceability / the --trace flag) — the
-engine never writes anything implicitly.
+The engine never writes anything implicitly: persisting an artifact is the
+caller's explicit act via `write_trace`. It follows the pipeline's compute-
+and-discard default for the raw variant and branch traces, which is now an
+artifact-size decision rather than a data-handling one — see
+`hif/metrics/field.py` for what compute-and-discard still buys and what it no
+longer has to claim.
 """
 
 from __future__ import annotations
@@ -142,10 +144,12 @@ class SessionEngine:
                     trace_dir: Path) -> Path:
         """Persist the full profile artifact for traceability/accountability.
 
-        Only call when the run opted in (RunConfig.traceability.enabled /
-        --trace): the artifact contains raw per-step top-K distributions —
-        reconstructable content the privacy-first default never writes.
-        Returns the artifact path (hash-addressed, content-stable).
+        Called when the run opted in (RunConfig.traceability.enabled /
+        --trace), which is what puts the raw variant and branch traces in the
+        artifact. The baseline per-step top-K is in the JSON either way — it
+        lives on `profile.output_side.steps`, so the flag was never the line
+        between "distributions on disk" and not, whatever the old wording
+        implied. Returns the artifact path (hash-addressed, content-stable).
         """
         from hif.profile.render_json import render_json
 

@@ -7,11 +7,16 @@ for one answer, is the worst place in the tool to defend a design decision.
 
 WHY THE EXPENSIVE THINGS ARE OFF BY DEFAULT
 
-Compute-and-discard is the default posture. `--output-dir` and `--trace` are
-the two opt-ins that put anything on disk, and `--trace` is the one that
-matters: the profile artifact holds raw per-step top-K distributions with
-token identity, which is reconstructable content, so it is written only where
-the destination is trusted with prompt- and continuation-level text.
+A run that was not asked for files leaves none, so `--output-dir` is the opt-in
+that puts anything on disk: the technical report, the profile JSON, and the
+`--charts` plots. `--trace` is a second axis, not a stricter version of the
+first — it adds the raw perturbation-variant and trajectory-branch traces to
+the artifact, which is what makes field descriptors recomputable without
+re-running the models, at a cost in size that scales with the variant count.
+(The BASELINE per-step top-K is on `output_side.steps` and therefore in the
+JSON either way; `--trace` has never been the line between distributions on
+disk and not.)
+
 `--variant-io` is the same decision one level down — it adds model-generated
 text to every record, so the record becomes the review surface for elicited
 output; inputs stay immutable, outputs live in records. `--diagnostics` runs
@@ -281,8 +286,8 @@ def profile(
     output_dir: Optional[Path] = typer.Option(
         None,
         rich_help_panel=PANEL_FILES,
-        help="Write the technical and public Markdown reports here, and the "
-        "--charts plots.",
+        help="Write the run's files here: the technical Markdown report, the "
+        "profile JSON, and the --charts plots.",
     ),
     charts: bool = typer.Option(
         False, "--charts", rich_help_panel=PANEL_FILES, help=CHARTS_HELP
@@ -291,9 +296,9 @@ def profile(
         False,
         "--trace",
         rich_help_panel=PANEL_FILES,
-        help="Persist the full profile artifact — raw per-step top-K "
-        "distributions, reconstructable content — so measurements can be "
-        "recomputed later without re-running the model.",
+        help="Add the raw perturbation-variant and trajectory-branch traces "
+        "to the profile artifact, so field descriptors can be recomputed "
+        "later without re-running the model.",
     ),
     trace_dir: Optional[Path] = typer.Option(
         None, "--trace-dir", rich_help_panel=PANEL_FILES, help=TRACE_DIR_HELP

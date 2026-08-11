@@ -6,7 +6,7 @@ import json
 import re
 
 from hif.profile.render_json import render_json
-from hif.profile.render_markdown import render_markdown, render_public, render_technical
+from hif.profile.render_markdown import render_markdown, render_technical
 from hif.profile.schema import BehavioralRangeProfile
 
 from profile_helpers import _make_profile
@@ -104,29 +104,11 @@ class TestRenderMarkdownCreatesFiles:
         assert out.exists()
         assert len(out.read_text()) > 100
 
-    def test_public_creates_nonempty_file(self, tmp_path):
-        profile = _make_profile()
-        out = tmp_path / "summary.md"
-        render_public(profile, out)
-        assert out.exists()
-        assert len(out.read_text()) > 50
-
     def test_technical_contains_model_name(self, tmp_path):
         profile = _make_profile()
         out = tmp_path / "report.md"
         render_technical(profile, out)
         assert "mock-model" in out.read_text()
-
-    def test_public_reports_measurements_with_units(self, tmp_path):
-        profile = _make_profile()
-        out = tmp_path / "summary.md"
-        render_public(profile, out)
-        content = out.read_text()
-        assert profile.model.name in content
-        assert "What was measured" in content
-        # Every measurement row carries its unit — no bare numbers.
-        assert "| Measurement | Value | Unit |" in content
-        assert "bits" in content
 
     def test_technical_tables_are_rectangular(self, tmp_path):
         profile = _make_profile()
@@ -134,19 +116,14 @@ class TestRenderMarkdownCreatesFiles:
         render_technical(profile, out)
         assert _table_rows_are_rectangular(out.read_text()) == []
 
-    def test_public_tables_are_rectangular(self, tmp_path):
+    def test_technical_renders_no_levels_or_verdict(self, tmp_path):
+        """The dropped public summary used to map each metric to a
+        low/medium/high paragraph. That is a judgement the instrument cannot
+        support, and it must not come back — nor may the scope paragraph it
+        was carrying be lost with it."""
         profile = _make_profile()
-        out = tmp_path / "summary.md"
-        render_public(profile, out)
-        assert _table_rows_are_rectangular(out.read_text()) == []
-
-    def test_public_renders_no_levels_or_verdict(self, tmp_path):
-        """The public summary used to map each metric to a low/medium/high
-        paragraph. That is a judgement the instrument cannot support, and it
-        must not come back."""
-        profile = _make_profile()
-        out = tmp_path / "summary.md"
-        render_public(profile, out)
+        out = tmp_path / "report.md"
+        render_technical(profile, out)
         content = out.read_text()
         for banned in ("LOW", "MEDIUM", "HIGH"):
             assert banned not in content
@@ -155,13 +132,7 @@ class TestRenderMarkdownCreatesFiles:
     def test_render_markdown_shim_technical(self, tmp_path):
         profile = _make_profile()
         out = tmp_path / "tech.md"
-        render_markdown(profile, out, public=False)
-        assert out.exists()
-
-    def test_render_markdown_shim_public(self, tmp_path):
-        profile = _make_profile()
-        out = tmp_path / "pub.md"
-        render_markdown(profile, out, public=True)
+        render_markdown(profile, out)
         assert out.exists()
 
     def test_creates_parent_dirs(self, tmp_path):
@@ -169,3 +140,40 @@ class TestRenderMarkdownCreatesFiles:
         out = tmp_path / "nested" / "dir" / "report.md"
         render_technical(profile, out)
         assert out.exists()
+
+
+class TestDistributionTableTokenColumn:
+    """The per-step numbers are about a token; the table has to name it."""
+
+    def test_token_column_labels_each_step(self, tmp_path):
+        profile = _make_profile()
+        out = tmp_path / "report.md"
+        render_technical(profile, out)
+        content = out.read_text()
+        assert (
+            "| Token | Step | Entropy (bits) | Logit margin | Top-K mass | "
+            "Eff. support | Tail weight |"
+        ) in content
+        tok = profile.output_side.steps[0].selected_token_str
+        assert f"| `{tok!r}` | 0 |" in content
+
+    def test_token_withheld_when_rows_are_the_surrogates_segmentation(self, tmp_path):
+        """Under output-distribution recovery the rows are the surrogate's
+        positions in the surrogate's own tokenization, so the target's token
+        *i* is not row *i*'s token. Better an empty column than a wrong one."""
+        profile = _make_profile()
+        profile.findings.output_distribution_surrogate_name = "gpt2"
+        out = tmp_path / "report.md"
+        render_technical(profile, out)
+        content = out.read_text()
+        tok = profile.output_side.steps[0].selected_token_str
+        assert f"`{tok!r}`" not in content
+        assert "Tokens are not shown" in content
+
+    def test_token_cell_survives_a_pipe_token(self, tmp_path):
+        """A model that emits `|` must not turn one row into two columns."""
+        profile = _make_profile()
+        profile.output_side.steps[0].selected_token_str = "|"
+        out = tmp_path / "report.md"
+        render_technical(profile, out)
+        assert _table_rows_are_rectangular(out.read_text()) == []

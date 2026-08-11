@@ -136,9 +136,11 @@ def signals_record(
 
     This is what `--json` prints for a single profile run and what each JSONL
     line of `hif batch` contains. Derived values only — no raw distributions,
-    no token alternatives. The model's generated output TEXT is included (it's
-    the response the caller already has); reconstructable distribution data is
-    not, unless the run traced (then trace_path points at the artifact).
+    no token alternatives: a record is a line in a stream, read row by row
+    across a workload, and per-step distributions would bury the readings it
+    exists to carry. Those live on the artifact, which `trace_path` points at.
+    The model's generated output TEXT is included — it's the response the
+    caller already has.
 
     Round-trip rule: every value here is the same number the terminal table
     displays, sourced from the same function.

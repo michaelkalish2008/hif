@@ -324,7 +324,7 @@ def _raw_traces(
     """Opt-in raw-trace capture (schema 0.7.0), or None — the default.
 
     None is absence, not an empty capture: with traceability off the transient
-    variant traces fall out of scope and nothing reconstructable is persisted.
+    variant traces fall out of scope and there is nothing left to persist.
     Branch traces reuse the trajectory's own Branch records.
     """
     if not config.traceability.enabled:
@@ -482,9 +482,9 @@ def build_profile(
     all_sensitivity_metrics: list[SensitivityMetrics] = []
     perturbed_input_analyses: list[InputSideAnalysis] = []
     # Transient perturbation-field members: (generator, variant output trace).
-    # Held only long enough to derive the field descriptors below, then discarded
-    # — the raw variant distributions are never persisted (field.py privacy
-    # invariant: top-k with token identity is reconstructable content).
+    # Held only long enough to derive the field descriptors below, then
+    # discarded — the raw variant distributions reach the artifact only under
+    # the traceability opt-in (field.py: measurements and raw data stay apart).
     field_variant_traces: list[tuple[str, OutputSideTrace]] = []
     # Opt-in raw-trace capture (config.traceability.enabled): retain references
     # to the SAME transient variant traces (no recomputation) so the artifact

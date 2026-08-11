@@ -15,11 +15,10 @@ Absence is the load-bearing rule here. A quantity the run produced no evidence
 for is OMITTED, never pinned to 0.0 or 1.0, and never emitted under a caveat
 flag when what it actually measured was something else.
 
-Privacy note: everything returned here is a derived scalar. Nothing in this
-module reads or emits raw token distributions — records built from these
-values are safe under the compute-and-discard default. Raw-artifact
-persistence is a separate, explicit opt-in (TraceabilityConfig / --trace)
-handled by the engine, never here.
+Everything returned here is a derived scalar. Nothing in this module reads or
+emits raw token distributions: a record is a set of readings, and the raw
+material they were read from lives on the artifact (TraceabilityConfig /
+--trace), written by the engine, never here.
 """
 
 from __future__ import annotations

@@ -197,9 +197,9 @@ def _make_run_config(
             seed=seed,
             entropy_percentile=entropy_percentile,
         ),
-        # output_dir=None means "write nothing" (privacy-first default); the
-        # OutputConfig still needs a placeholder path — nothing consults it
-        # unless the CLI explicitly writes reports/charts under --output-dir.
+        # output_dir=None means "write nothing" — a run that was not asked for
+        # files leaves none. The OutputConfig still needs a placeholder path;
+        # nothing consults it unless the CLI writes under --output-dir.
         output=OutputConfig(output_dir=output_dir or Path("outputs")),
         # Spread/Horizon (Instrument readings) come from an independent
         # DistilBERT text analyzer — backend-agnostic, so it's worth the
