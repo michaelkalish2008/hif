@@ -40,7 +40,7 @@ research question lives. For that, fork it:
 ```bash
 hif batch --sample-set all --export-workload suite.jsonl   # 40 rows, no model
 $EDITOR suite.jsonl                                        # add prompts, add `variants`
-hif batch suite.jsonl gpt2
+hif batch suite.jsonl Qwen/Qwen3-0.6B-Base
 ```
 
 ## How a config is assembled
@@ -62,7 +62,7 @@ arguments and are never read from the file — but `[model] base_url`, `api_key`
 only way to point an `openai`-backend arm at an OpenAI-compatible endpoint.
 
 ```bash
-hif profile gpt2 "Explain why the sky appears blue." --config-file run.toml --json
+hif profile Qwen/Qwen3-0.6B-Base "Explain why the sky appears blue." --config-file run.toml --json
 ```
 
 ### The authoring loop
@@ -71,7 +71,7 @@ hif profile gpt2 "Explain why the sky appears blue." --config-file run.toml --js
 hif config init                                # write run.toml, every key at its default
 $EDITOR run.toml                               # your diff from this file IS the condition
 hif config show --config-file run.toml --diff  # confirm what will actually run
-hif profile gpt2 "..." --config-file run.toml --json
+hif profile Qwen/Qwen3-0.6B-Base "..." --config-file run.toml --json
 ```
 
 Three guarantees hold across that loop:
@@ -137,11 +137,11 @@ Two ways to use the same file:
 
 ```bash
 # batch: rows are profiled directly, each row's variants replace the generators
-hif batch variants.jsonl gpt2
+hif batch variants.jsonl Qwen/Qwen3-0.6B-Base
 
 # single run: the config points at the file; rows are matched to the prompt
 # by EXACT string equality on `text`
-hif profile gpt2 "Explain why the sky appears blue." --config-file run.toml
+hif profile Qwen/Qwen3-0.6B-Base "Explain why the sky appears blue." --config-file run.toml
 ```
 
 ```toml
@@ -313,7 +313,7 @@ HF) — which is why the mirror only fires when the file actually set it.
 
 | key | default | effect |
 | --- | --- | --- |
-| `name` / `backend` | `"gpt2"` / `"hf"` | **Ignored from the file** — always the CLI arguments |
+| `name` / `backend` | `"Qwen/Qwen3-0.6B-Base"` / `"hf"` | **Ignored from the file** — always the CLI arguments |
 | `base_url` | `null` | OpenAI-compatible endpoint (Mistral, DeepSeek, Grok, vLLM) |
 | `api_key` | `null` | Overrides the environment variable |
 | `device` | `"auto"` | `auto` / `cpu` / `cuda` / `mps` |
@@ -409,7 +409,7 @@ what the run is *permitted to produce*, not how much work it does.
 | `elicited-output` *(default)* | Additionally lets the model generate variant continuations and trajectory branches. | `perturbation_jsd_bits`, `io_cosine_similarity` |
 
 ```bash
-hif profile gpt2 "Explain why the sky appears blue." --acquisition observational --json
+hif profile Qwen/Qwen3-0.6B-Base "Explain why the sky appears blue." --acquisition observational --json
 ```
 
 The tiers are strictly nested, and the surviving values are **identical** across
@@ -489,7 +489,7 @@ revision = "607a30d783dfa663caf39e06633721c8d4cfcd7e"   # pin the weights
 ```
 
 ```bash
-hif profile gpt2 "Explain why the sky appears blue." \
+hif profile Qwen/Qwen3-0.6B-Base "Explain why the sky appears blue." \
   --config-file run.toml --json --verbose
 ```
 

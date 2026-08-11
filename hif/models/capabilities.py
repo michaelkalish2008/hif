@@ -173,8 +173,9 @@ BACKENDS: dict[str, BackendInfo] = {
         deps="torch, transformers (base install)",
         setup="none (HF_TOKEN only for gated repos); weights auto-download",
         teacher_forcing=True, logprobs="full",
-        example_models=["gpt2", "distilgpt2", "gpt2-medium",
-                        "EleutherAI/pythia-160m", "EleutherAI/gpt-neo-125M"],
+        example_models=["Qwen/Qwen3-0.6B-Base", "Qwen/Qwen2.5-0.5B",
+                        "HuggingFaceTB/SmolLM2-135M", "gpt2",
+                        "EleutherAI/pythia-160m"],
         notes="Full fidelity — every measurement. Best for a complete profile.",
     ),
     "tlens": BackendInfo(
@@ -232,6 +233,7 @@ BACKENDS: dict[str, BackendInfo] = {
 # `unsloth/Llama-3.2-1B` is the default (see _load_surrogate in cli.py).
 SURROGATE_CANDIDATES: list[str] = [
     "unsloth/Llama-3.2-1B",
+    "Qwen/Qwen3-0.6B-Base",
     "gpt2",
     "distilgpt2",
     "gpt2-medium",
@@ -280,7 +282,7 @@ def metric_support(
             f"'{metric}' is read off trajectory branches — rollouts the target "
             f"generates from its own context, which requires teacher forcing "
             f"the '{backend}' backend cannot do.\n"
-            f"  Fix: use an open-weight model, e.g. `--backend hf` with `gpt2`. "
+            f"  Fix: use an open-weight model, e.g. `--backend hf` with `Qwen/Qwen3-0.6B-Base`. "
             f"--surrogate does NOT recover this one: a proxy's rollouts would "
             f"be the proxy's behaviour, not a reading of the target's."
         )
@@ -305,7 +307,7 @@ def metric_support(
             f"'{metric}' is an input-side measurement — it requires teacher "
             f"forcing, which the '{backend}' backend cannot do (hosted APIs and "
             f"Ollama never expose per-token input logits).\n"
-            f"  Fix: use an open-weight model, e.g. `--backend hf` with `gpt2`; "
+            f"  Fix: use an open-weight model, e.g. `--backend hf` with `Qwen/Qwen3-0.6B-Base`; "
             f"pass --surrogate to teacher-force a small local proxy instead; or "
             f"pick an output-side measurement."
         )

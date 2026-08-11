@@ -71,7 +71,7 @@ Measurements above the ceiling are absent, not zero. Each row's tier is in
 Tables mirror the run config; full reference in [`docs/CONFIG.md`](docs/CONFIG.md).
 
 ```bash
-hif profile gpt2 "Explain why the sky appears blue." --config-file run.toml --json
+hif profile Qwen/Qwen3-0.6B-Base "Explain why the sky appears blue." --config-file run.toml --json
 ```
 
 Key knobs: `[perturbation] generators` and `n_variants` (behind three of the

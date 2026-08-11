@@ -149,24 +149,24 @@ from hif.profile.registry import (
 
 @app.command(cls=PanelledCommand)
 @examples(
-    'hif profile gpt2 "Why is the sky blue?"',
+    'hif profile Qwen/Qwen3-0.6B-Base "Why is the sky blue?"',
     "measure one prompt; prints to the terminal and writes nothing",
 
-    'hif profile gpt2 "Why is the sky blue?" --output-dir out --charts',
+    'hif profile Qwen/Qwen3-0.6B-Base "Why is the sky blue?" --output-dir out --charts',
     "same run, plus Markdown reports and one Plotly chart per signal under out/",
 
-    'hif profile gpt2 "Why is the sky blue?" --metric output_entropy_bits',
+    'hif profile Qwen/Qwen3-0.6B-Base "Why is the sky blue?" --metric output_entropy_bits',
     "print one number and exit — the form to use inside a script",
 
-    'hif profile gpt2 "Why is the sky blue?" --lite --json',
+    'hif profile Qwen/Qwen3-0.6B-Base "Why is the sky blue?" --lite --json',
     "the fast subset, as a JSON record; skipped stages come back absent, not zero",
 
-    'hif profile gpt2 "Why is the sky blue?" --entropy-percentile 95 --top-k 2000 --lite',
+    'hif profile Qwen/Qwen3-0.6B-Base "Why is the sky blue?" --entropy-percentile 95 --top-k 2000 --lite',
     "add output_nucleus_entropy_bits; the wide --top-k is what it needs, not the --lite",
 )
 def profile(
     ctx: typer.Context,
-    model_name: str = typer.Argument(..., help="Model name (e.g. gpt2)"),
+    model_name: str = typer.Argument(..., help="Model name (e.g. Qwen/Qwen3-0.6B-Base)"),
     prompt: str = typer.Argument(..., help="Prompt text"),
     # -- Model and generation: what you are running, and how it generates. ---
     backend: str = typer.Option(

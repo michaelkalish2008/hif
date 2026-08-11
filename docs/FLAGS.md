@@ -13,7 +13,7 @@ Profile many prompts against one loaded model.
 | argument | meaning |
 | --- | --- |
 | `workload` | Workload JSONL file: one {"query_id", "text"[, "regime", "variants"]} row per line. Omit it when using --sample-set. |
-| `model_name` | Model name (e.g. gpt2) |
+| `model_name` | Model name (e.g. Qwen/Qwen3-0.6B-Base) |
 
 | flag | meaning |
 | --- | --- |
@@ -42,16 +42,16 @@ Profile many prompts against one loaded model.
 
 ```bash
 # the built-in suite: 8 regimes x 5 prompts, one record per row on stdout
-hif batch --sample-set all gpt2
+hif batch --sample-set all Qwen/Qwen3-0.6B-Base
 
 # your own rows; records stream to stdout and mirror to out/records.jsonl
-hif batch workload.jsonl gpt2 --output-dir out
+hif batch workload.jsonl Qwen/Qwen3-0.6B-Base --output-dir out
 
 # write the suite's rows as a file to edit and run back — no model is loaded
-hif batch --sample-set all --export-workload suite.jsonl gpt2
+hif batch --sample-set all --export-workload suite.jsonl Qwen/Qwen3-0.6B-Base
 
 # a quick shape-check of a new workload before committing to the full run
-hif batch workload.jsonl gpt2 --lite --limit 5
+hif batch workload.jsonl Qwen/Qwen3-0.6B-Base --lite --limit 5
 ```
 
 ## `hif compare`
@@ -72,7 +72,7 @@ Report the per-measurement difference between two profiles.
 
 ```bash
 # first make the artifacts: compare reads --trace profiles, NOT --json records
-hif profile gpt2 "..." --trace --trace-dir tr
+hif profile Qwen/Qwen3-0.6B-Base "..." --trace --trace-dir tr
 
 # per-measurement difference between the two, as a table
 hif compare tr/profile_<a>.json tr/profile_<b>.json
@@ -148,7 +148,7 @@ Run the full hif pipeline on a single (model, prompt) pair.
 
 | argument | meaning |
 | --- | --- |
-| `model_name` | Model name (e.g. gpt2) |
+| `model_name` | Model name (e.g. Qwen/Qwen3-0.6B-Base) |
 | `prompt` | Prompt text |
 
 | flag | meaning |
@@ -182,19 +182,19 @@ Run the full hif pipeline on a single (model, prompt) pair.
 
 ```bash
 # measure one prompt; prints to the terminal and writes nothing
-hif profile gpt2 "Why is the sky blue?"
+hif profile Qwen/Qwen3-0.6B-Base "Why is the sky blue?"
 
 # same run, plus Markdown reports and one Plotly chart per signal under out/
-hif profile gpt2 "Why is the sky blue?" --output-dir out --charts
+hif profile Qwen/Qwen3-0.6B-Base "Why is the sky blue?" --output-dir out --charts
 
 # print one number and exit — the form to use inside a script
-hif profile gpt2 "Why is the sky blue?" --metric output_entropy_bits
+hif profile Qwen/Qwen3-0.6B-Base "Why is the sky blue?" --metric output_entropy_bits
 
 # the fast subset, as a JSON record; skipped stages come back absent, not zero
-hif profile gpt2 "Why is the sky blue?" --lite --json
+hif profile Qwen/Qwen3-0.6B-Base "Why is the sky blue?" --lite --json
 
 # add output_nucleus_entropy_bits; the wide --top-k is what it needs, not the --lite
-hif profile gpt2 "Why is the sky blue?" --entropy-percentile 95 --top-k 2000 --lite
+hif profile Qwen/Qwen3-0.6B-Base "Why is the sky blue?" --entropy-percentile 95 --top-k 2000 --lite
 ```
 
 ## `hif render`

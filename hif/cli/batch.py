@@ -116,16 +116,16 @@ def _open_records_file(output_dir: Optional[Path]):
 
 @app.command(cls=PanelledCommand)
 @examples(
-    "hif batch --sample-set all gpt2",
+    "hif batch --sample-set all Qwen/Qwen3-0.6B-Base",
     "the built-in suite: 8 regimes x 5 prompts, one record per row on stdout",
 
-    "hif batch workload.jsonl gpt2 --output-dir out",
+    "hif batch workload.jsonl Qwen/Qwen3-0.6B-Base --output-dir out",
     "your own rows; records stream to stdout and mirror to out/records.jsonl",
 
-    "hif batch --sample-set all --export-workload suite.jsonl gpt2",
+    "hif batch --sample-set all --export-workload suite.jsonl Qwen/Qwen3-0.6B-Base",
     "write the suite's rows as a file to edit and run back — no model is loaded",
 
-    "hif batch workload.jsonl gpt2 --lite --limit 5",
+    "hif batch workload.jsonl Qwen/Qwen3-0.6B-Base --lite --limit 5",
     "a quick shape-check of a new workload before committing to the full run",
 )
 def batch(
@@ -135,7 +135,7 @@ def batch(
         help="Workload JSONL file: one {\"query_id\", \"text\"[, \"regime\", "
         "\"variants\"]} row per line. Omit it when using --sample-set.",
     ),
-    model_name: Optional[str] = typer.Argument(None, help="Model name (e.g. gpt2)"),
+    model_name: Optional[str] = typer.Argument(None, help="Model name (e.g. Qwen/Qwen3-0.6B-Base)"),
     # -- Rows to profile: where the workload comes from. --------------------
     sample_set: Optional[str] = typer.Option(
         None,
@@ -275,8 +275,8 @@ def batch(
     (pipe-safe; all progress/logs go to stderr). Row failures emit an error
     record and the run continues.
 
-        hif batch workload.jsonl gpt2
-        hif batch --sample-set all gpt2
+        hif batch workload.jsonl Qwen/Qwen3-0.6B-Base
+        hif batch --sample-set all Qwen/Qwen3-0.6B-Base
         hif batch --sample-set all --export-workload suite.jsonl   # fork it
     """
     from hif import batch as batch_mod
@@ -302,12 +302,12 @@ def batch(
         raise typer.Exit(3)
     # --export-workload writes rows and exits; everything else needs a model.
     if model_name is None and export_workload is None:
-        err_console.print("[red]Missing argument: model name (e.g. gpt2).[/red]")
+        err_console.print("[red]Missing argument: model name (e.g. Qwen/Qwen3-0.6B-Base).[/red]")
         raise typer.Exit(3)
 
     # Backend validation FIRST — cheap, and an unknown backend should fail
     # fast (exit 3) before any model load.
-    backend = _resolve_backend(model_name or "gpt2", backend)
+    backend = _resolve_backend(model_name or "Qwen/Qwen3-0.6B-Base", backend)
     from hif.models.factory import KNOWN_BACKENDS
     if backend not in KNOWN_BACKENDS:
         err_console.print(

@@ -33,7 +33,7 @@ from hif.profile.registry import MEASUREMENT_KEYS, MEASUREMENT_UNITS
 
 @app.command(cls=PanelledCommand)
 @examples(
-    'hif profile gpt2 "..." --trace --trace-dir tr',
+    'hif profile Qwen/Qwen3-0.6B-Base "..." --trace --trace-dir tr',
     "first make the artifacts: compare reads --trace profiles, NOT --json records",
 
     "hif compare tr/profile_<a>.json tr/profile_<b>.json",

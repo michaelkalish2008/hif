@@ -116,7 +116,7 @@ def doctor() -> None:
         console.print(f"  {name:11s} {status}")
 
     console.print("\n[dim]The full measurement set needs an open-weight backend: "
-                  "`hif profile gpt2 \"hello\" --backend hf`. "
+                  "`hif profile Qwen/Qwen3-0.6B-Base \"hello\" --backend hf`. "
                   "Run `hif models` for the full capability matrix.[/dim]\n")
 
 

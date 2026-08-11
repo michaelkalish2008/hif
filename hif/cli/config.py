@@ -82,7 +82,7 @@ def config_show(
     # `\[` is Rich's markup escape — a bare [model] is swallowed as a style
     # tag. tools/gen_flags_doc.py drops the backslash for docs/FLAGS.md.
     model_name: str = typer.Argument(
-        "gpt2", help="Model name (affects \\[model] only)"
+        "Qwen/Qwen3-0.6B-Base", help="Model name (affects \\[model] only)"
     ),
     backend: str = typer.Option("hf", help="Model backend"),
     config_file: Optional[Path] = typer.Option(

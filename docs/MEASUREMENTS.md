@@ -87,7 +87,7 @@ The prompt-only quantities are not worthless — "how surprising is this prompt 
 
 | | subject | value |
 |---|---|---|
-| `gpt2` on `hf` | `target-distribution` | moves with the model |
+| `Qwen/Qwen3-0.6B-Base` on `hf` | `target-distribution` | moves with the model |
 | `gpt-4.1` with `--surrogate` | `prompt-only` | identical to every other hosted model on the same prompt |
 
 Under the surrogate the number is the reference model reading the prompt, so it is bit-identical across targets — which is exactly what a quantity that cannot see the target looks like, and why it is reported in `prompt_measurements` rather than `measurements`.

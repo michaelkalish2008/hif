@@ -9,27 +9,30 @@ threshold. A number is in bits, or cosine distance, or Pearson *r*, or a fractio
 of steps, and it says which.
 
 ```bash
-hif profile gpt2 "Explain why the sky appears blue." --json
+hif profile Qwen/Qwen3-0.6B-Base "Explain why the sky appears blue." --json
 ```
 
 ```json
 {
   "schema_version": "record-v6",
-  "model": "gpt2",
+  "model": "Qwen/Qwen3-0.6B-Base",
   "backend": "hf",
   "regime": "ordinary_conversation",
   "measurements": {
-    "input_entropy_shift_bits": 0.5453,
-    "input_entropy_std_bits": 0.4759,
-    "perturbation_jsd_bits": 0.5999,
-    "io_cosine_similarity": 0.2054,
-    "prompt_surprisal_excess_bits": 0.6556,
-    "output_entropy_bits": 2.526
+    "input_entropy_shift_bits": 1.0976,
+    "input_entropy_std_bits": 1.6626,
+    "perturbation_jsd_bits": 0.7389,
+    "io_cosine_similarity": 0.476,
+    "prompt_surprisal_excess_bits": 0.6434,
+    "output_entropy_bits": 2.1664
   }
 }
 ```
 
-Real output, rounded for width — `gpt2` on CPU, no API key, no network.
+Real output, rounded for width — `Qwen/Qwen3-0.6B-Base` on CPU, no API key, no
+network. The `-Base` matters: hif continues the prompt as a raw causal LM and
+applies no chat template, so an instruct-tuned checkpoint would answer a
+different question than the one you typed.
 
 ## Four of those numbers are comparisons, and you control the comparison
 
@@ -141,19 +144,19 @@ where your own question lives. Fork it:
 ```bash
 hif batch --sample-set all --export-workload suite.jsonl   # 40 rows, no model
 $EDITOR suite.jsonl                                        # add prompts, add `variants`
-hif batch suite.jsonl gpt2
+hif batch suite.jsonl Qwen/Qwen3-0.6B-Base
 ```
 
 A workload run streams one record per row. Two prompts, `--lite`, trimmed to
 the measurements for width:
 
 ```bash
-hif batch workload.jsonl gpt2 --lite 2>/dev/null | jq -c
+hif batch workload.jsonl Qwen/Qwen3-0.6B-Base --lite 2>/dev/null | jq -c
 ```
 
 ```json
-{"query_id": "sky", "model": "gpt2", "measurements": {"prompt_surprisal_excess_bits": 0.6556, "output_entropy_bits": 2.526}}
-{"query_id": "greet", "model": "gpt2", "measurements": {"prompt_surprisal_excess_bits": 2.6787, "output_entropy_bits": 2.7612}}
+{"query_id": "sky", "model": "Qwen/Qwen3-0.6B-Base", "measurements": {"prompt_surprisal_excess_bits": 0.6434, "output_entropy_bits": 2.1664}}
+{"query_id": "greet", "model": "Qwen/Qwen3-0.6B-Base", "measurements": {"prompt_surprisal_excess_bits": 0.0043, "output_entropy_bits": 2.7329}}
 ```
 
 Note what is *absent*: `--lite` skipped the perturbation stage, so the four
@@ -166,7 +169,7 @@ happen — the departures from the defaults are the experimental condition:
 
 ```
 # resolved run config — departures from defaults only
-# gpt2 (hf) · mode=fast · --config-file run.toml
+# Qwen/Qwen3-0.6B-Base (hf) · mode=fast · --config-file run.toml
 
 [perturbation]
 n_variants = 4
@@ -182,7 +185,7 @@ JSONL, one record per prompt. Progress, warnings, and errors go to stderr, so
 this works:
 
 ```bash
-hif batch workload.jsonl gpt2 2>/dev/null | jq '.measurements.output_entropy_bits'
+hif batch workload.jsonl Qwen/Qwen3-0.6B-Base 2>/dev/null | jq '.measurements.output_entropy_bits'
 ```
 
 A failed row is still a record — it carries an `error` key instead of
@@ -213,7 +216,7 @@ renders one interactive Plotly HTML per signal plus an `index.html` dashboard
 that embeds them, grouped into **Aggregate views** and **Per-step views**:
 
 ```bash
-hif profile gpt2 "Explain why the sky appears blue." \
+hif profile Qwen/Qwen3-0.6B-Base "Explain why the sky appears blue." \
   --charts --output-dir out
 ```
 
@@ -266,7 +269,8 @@ backend, exactly which measurements it can and cannot produce:
 hf  (local-open)  teacher-forcing: yes  ·  logprobs: full
   deps:  torch, transformers (base install)
   setup: none (HF_TOKEN only for gated repos); weights auto-download
-  models: gpt2, distilgpt2, gpt2-medium, EleutherAI/pythia-160m, …
+  models: Qwen/Qwen3-0.6B-Base, Qwen/Qwen2.5-0.5B, HuggingFaceTB/SmolLM2-135M,
+    gpt2, EleutherAI/pythia-160m
   Full fidelity — every measurement. Best for a complete profile.
   ✓ signals: input_entropy_shift_bits, input_entropy_std_bits,
     io_cosine_similarity, output_entropy_bits, perturbation_jsd_bits,
@@ -304,11 +308,11 @@ Ask it for a single number and it hands back the number, its unit, and whose
 behaviour it is about — and stops there:
 
 ```bash
-hif profile gpt2 "Explain why the sky appears blue." --metric output_entropy_bits
+hif profile Qwen/Qwen3-0.6B-Base "Explain why the sky appears blue." --metric output_entropy_bits
 ```
 
 ```
-output_entropy_bits = 2.47248
+output_entropy_bits = 2.16637
 bits — mean Shannon entropy of the per-step top-K output distribution. A
 lower bound on full-vocabulary entropy when the distribution is truncated.
 subject: target-distribution
@@ -316,8 +320,8 @@ subject: target-distribution
 
 There is no grade attached, because there is no scale to grade against: nothing
 is normalised to `[0,1]`, inverted into a score, or compared against a
-threshold. 2.47 bits is roughly the uncertainty of a uniform choice among five
-or six tokens, which is checkable; `0.31` on some index would not be.
+threshold. 2.17 bits is roughly the uncertainty of a uniform choice among four
+or five tokens, which is checkable; `0.31` on some index would not be.
 
 Interpretation is the researcher's, and it belongs in the work that cites this
 tool rather than in the tool. That division is the point: a number you can check

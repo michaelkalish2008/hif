@@ -7,7 +7,7 @@ from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 
 class ModelConfig(BaseModel):
-    name: str = "gpt2"
+    name: str = "Qwen/Qwen3-0.6B-Base"
     backend: str = "hf"  # "hf" | "tlens" | "ollama" | "openai" | "anthropic" | "gemini"
     device: str = "auto"  # "auto" | "cpu" | "cuda" | "mps"
     dtype: str = "float32"
