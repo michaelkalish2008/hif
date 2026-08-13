@@ -298,11 +298,17 @@ Definition, Unit and range, Absent-when. No counts, anywhere.
 
 ## Editing documentation
 
-The [ai-interpretability](https://github.com/michaelkalish2008/ai-interpretability)
-site does not describe hif in its own words. Its home page and Docs tab render
-copies of `README.md` and `docs/*.md` from this repo, because the site once
-carried four rival copies of the measurement reference and no two of them
-agreed on a formula. A copy is only safe while it really is a copy:
+The [ai-interpretability.com](https://ai-interpretability.com) site does not
+describe hif in its own words. Its CLI page renders copies of `README.md` and
+`docs/FLAGS.md` from this repo, because the site once carried four rival copies
+of the measurement reference and no two of them agreed on a formula.
+
+The reference docs are deliberately not among them — they live here, and the
+README links out to them. Publishing them on the site as well put ~20k words on
+a page nobody read and gave every fact two homes to drift between. The site's
+repository is private; only what it serves is public.
+
+A copy is only safe while it really is a copy:
 
 ```bash
 python3 tools/sync_docs.py            # write the site's copies
