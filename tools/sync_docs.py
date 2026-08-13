@@ -31,8 +31,12 @@ import argparse
 import sys
 from pathlib import Path
 
+from site_paths import site_docs
+
 REPO = Path(__file__).resolve().parent.parent
-DEFAULT_SITE_DOCS = REPO.parent / "ai-interpretability" / "public" / "docs"
+# Not `REPO.parent / …` — that is a sibling worktree, not a sibling repo, when
+# this runs from one. See tools/site_paths.py.
+DEFAULT_SITE_DOCS = site_docs()
 
 # source (relative to this repo) → destination filename
 DOCS = {

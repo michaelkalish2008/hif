@@ -58,10 +58,14 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 
+from site_paths import site_data  # noqa: E402
+
 from hif.cli._compat import _signal_set_family  # noqa: E402
 from hif.profile.registry import MEASUREMENT_BY_KEY, SIGNAL_SET_VERSION  # noqa: E402
 
-DEFAULT_CORPUS = REPO.parent / "ai-interpretability" / "public" / "data"
+# Not `REPO.parent / …` — see tools/site_paths.py; that path is a sibling
+# worktree, not the site, whenever this runs from one.
+DEFAULT_CORPUS = site_data()
 PUBLISHED_BASE = "https://ai-interpretability.com/data"
 MANIFEST_NAME = "manifest.json"
 TIMEOUT = 30

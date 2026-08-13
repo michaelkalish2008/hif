@@ -41,8 +41,12 @@ import subprocess
 import sys
 from pathlib import Path
 
+from site_paths import site_repo
+
 REPO = Path(__file__).resolve().parent.parent
-DEFAULT_SITE = REPO.parent / "ai-interpretability"
+# Not `REPO.parent / …` — see tools/site_paths.py for why that misses in a
+# git worktree, and misses quietly.
+DEFAULT_SITE = site_repo()
 REL_OUT = Path("src/lib/measurements.ts")
 REL_READINGS = Path("src/lib/measurement-readings.json")
 
