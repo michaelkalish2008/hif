@@ -407,6 +407,25 @@ class Measurement:
                     (`semantic_steps`), which these never read. This is the
                     one capability fact not implied by the other fields;
                     hif/models/capabilities.py derives its gate from it.
+    needs_generated_output
+                    True when the quantity reads the CONTINUATION the target
+                    produced. A run where the target generated nothing has no
+                    continuation to read, so the value is reported ABSENT —
+                    never computed against the empty string, and never averaged
+                    over the perturbation variants alone.
+
+                    This is a different fact from `needs_distribution_pair`,
+                    and the difference is exactly the case that went wrong:
+                    `io_cosine_similarity` reads output TEXT, not
+                    distributions, so it is correctly present on a
+                    selected-only backend (Anthropic, gpt-5) that returns real
+                    words and no logprobs. The distribution gate therefore
+                    cannot cover it — and on a gpt-5 run that returned zero
+                    tokens it published 0.17, a mean over sixteen (input,
+                    output) pairs whose first output was `""` and whose other
+                    fifteen were the paraphrase variants' continuations. A
+                    measurement keyed to this run's output, computed entirely
+                    from output this run did not produce.
     """
 
     key: str
@@ -421,6 +440,7 @@ class Measurement:
     surrogate_group: str = ""
     subject_under_surrogate: Optional[str] = None
     needs_distribution_pair: bool = False
+    needs_generated_output: bool = False
 
 
 MEASUREMENT_REGISTRY: tuple[Measurement, ...] = (
@@ -508,6 +528,8 @@ MEASUREMENT_REGISTRY: tuple[Measurement, ...] = (
         surrogate_group="",
         needs_distribution_pair=True,  # JSD(baseline, variant) — see the
         # ABSENCE note above.
+        needs_generated_output=True,  # the baseline side of every pair is the
+        # target's own continuation.
     ),
     Measurement(
         key="io_cosine_similarity",
@@ -528,6 +550,13 @@ MEASUREMENT_REGISTRY: tuple[Measurement, ...] = (
         # path touches it.
         subject=SUBJECT_TARGET_OUTPUT_TEXT,
         acquisition=ACQUISITION_ELICITED_OUTPUT,
+        # The pair set is {baseline} ∪ {variants}, and only the baseline half
+        # is this run's own output. When the target generates nothing the
+        # baseline pair is (prompt, "") — an embedding of the empty string,
+        # which is a real vector and therefore a real-looking cosine — and the
+        # remaining fifteen pairs describe the paraphrases. Absent, not
+        # averaged.
+        needs_generated_output=True,
     ),
     Measurement(
         key="prompt_surprisal_excess_bits",
@@ -565,6 +594,8 @@ MEASUREMENT_REGISTRY: tuple[Measurement, ...] = (
         subject=SUBJECT_TARGET_DISTRIBUTION,
         subject_under_surrogate=SUBJECT_TARGET_OUTPUT_TEXT,
         surrogate_group="output",
+        needs_generated_output=True,  # one entropy per generated step; no
+        # steps, no series.
     ),
     Measurement(
         key="output_nucleus_entropy_bits",
@@ -588,6 +619,7 @@ MEASUREMENT_REGISTRY: tuple[Measurement, ...] = (
         subject=SUBJECT_TARGET_DISTRIBUTION,
         subject_under_surrogate=SUBJECT_TARGET_OUTPUT_TEXT,
         surrogate_group="output",
+        needs_generated_output=True,
     ),
 )
 

@@ -32,14 +32,32 @@ def generate(profile, output_path: Path, formats: list[str] = ["html"]) -> dict[
     if reason:
         return save_fig(na_figure(LABEL, reason), output_path, formats)
 
-    sens = profile.metrics.sensitivity
+    # Only the variants that aligned steps. A variant with no divergence is
+    # not a variant with zero divergence, and a bar at zero is the second
+    # reading — drawn beside real bars it is the strongest claim on the chart.
+    sens = [s for s in profile.metrics.sensitivity if s.mean_js_divergence is not None]
+    if not sens:
+        return save_fig(
+            na_figure(
+                LABEL,
+                "No perturbation variant produced output steps aligned with the "
+                "baseline, so there is no divergence to plot.",
+            ),
+            output_path, formats,
+        )
     gens = [s.perturbation_generator for s in sens]
     jsd = [s.mean_js_divergence for s in sens]
-    mean = float(np.mean(jsd)) if jsd else 0.0
+    mean = float(np.mean(jsd))
+
+    def _n(v, spec: str) -> str:
+        return "absent" if v is None else format(v, spec)
 
     hover = [
-        f"{g}<br>Mean JSD: {j:.4f}<br>Mean KL: {s.mean_kl_divergence:.4f}<br>"
-        f"Δ entropy: {s.output_entropy_delta:+.3f} bits"
+        f"{g}<br>Mean JSD: {j:.4f}<br>"
+        f"Mean KL: {_n(s.mean_kl_divergence, '.4f')}"
+        + (f" ({s.n_undefined_kl_steps} steps undefined)" if s.n_undefined_kl_steps else "")
+        + f"<br>Δ entropy: {_n(s.output_entropy_delta, '+.3f')} bits"
+        + f"<br>Aligned over {s.n_steps_aligned} steps"
         for g, j, s in zip(gens, jsd, sens)
     ]
 

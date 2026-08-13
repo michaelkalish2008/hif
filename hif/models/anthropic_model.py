@@ -186,6 +186,20 @@ class AnthropicModel(Model):
                 )],
             ))
 
+        # Why it stopped, as the API says it ("end_turn", "max_tokens",
+        # "stop_sequence", "refusal"). Recorded on every call, and load-bearing
+        # on the empty one: the scan above returns "" when the response carries
+        # no TextBlock at all, which an extended-thinking model can produce by
+        # spending max_tokens inside a ThinkingBlock. That yields zero steps,
+        # and zero steps with no reason is an absence a reader has to guess at.
+        stop_reason = getattr(response, "stop_reason", None)
+        if not steps:
+            logger.warning(
+                "%s returned no text (stop_reason=%s). Every output-side "
+                "measurement is absent for this run.",
+                self.name, stop_reason or "not reported",
+            )
+
         return GenerationResult(
             input_ids=input_ids,
             generated_ids=output_tokens,
@@ -193,4 +207,5 @@ class AnthropicModel(Model):
             model_name=self.name,
             top_k=1,
             seed=seed,
+            stop_reason=stop_reason,
         )

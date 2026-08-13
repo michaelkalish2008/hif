@@ -105,11 +105,18 @@ class TestMeanIoCosine:
 
 
 class TestSimilarityTrend:
-    def test_none_returns_zero(self):
-        assert _similarity_trend(None) == pytest.approx(0.0)
+    # These two asserted 0.0 until the empty-generation pass. A slope is a line
+    # fitted through the per-step series, and fewer than two points does not
+    # underdetermine the line — it leaves it undefined. The 0.0 reached the
+    # published corpus as `findings.similarity_trend_slope` on two gpt-5
+    # profiles with no output steps at all, reading as "the output neither
+    # converged nor diverged" about an output that was never produced. See
+    # tests/unit/test_empty_generation.py.
+    def test_none_is_absent(self):
+        assert _similarity_trend(None) is None
 
-    def test_single_step_returns_zero(self):
-        assert _similarity_trend([_semantic_metric(0.3)]) == pytest.approx(0.0)
+    def test_single_step_is_absent(self):
+        assert _similarity_trend([_semantic_metric(0.3)]) is None
 
     def test_converging_trend_is_positive(self):
         # distances decrease → similarities increase → positive slope
@@ -174,11 +181,11 @@ class TestComputeSimilarityMetrics:
         assert result.io_sim == pytest.approx(0.0)
         assert result.io_ratio == pytest.approx(0.0)
 
-    def test_no_semantic_metrics_trend_is_zero(self):
+    def test_no_semantic_metrics_trend_is_absent(self):
         v = np.array([[1.0, 0.0]] * 4, dtype=np.float32)
         embedder = _make_fake_embedder(np.vstack([v, v]))
         result = compute_similarity_metrics(["a","b"], ["x","y"], None, embedder)
-        assert result.trend == pytest.approx(0.0)
+        assert result.trend is None
 
     def test_io_ratio_greater_than_one_when_outputs_cluster_more(self):
         # Inputs moderately spread; outputs all identical → output_sim > input_sim → ratio > 1

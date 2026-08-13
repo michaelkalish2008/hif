@@ -488,9 +488,21 @@ class TestMeanNucleusStabilityInSensitivityMetrics:
         result = compute_sensitivity_metrics(base, pert, "b", "tone")
         assert 0.0 <= result.mean_nucleus_stability_p90 <= 1.0
 
-    def test_empty_steps_stability_defaults_to_one(self):
-        """Zero steps → mean_nucleus_stability_p90 defaults to 1.0 (no instability observed)."""
-        base = _make_trace([], prompt="p", mean_entropy=0.0)
-        pert = _make_trace([], prompt="p2", mean_entropy=0.0)
+    def test_empty_steps_stability_is_absent(self):
+        """Zero steps → every mean is absent, not a constant.
+
+        This asserted 1.0 — "no instability observed" — which is the top of
+        the range and reads as perfect nucleus agreement rather than as no
+        comparison having been made. Same for the divergences at 0.0: those
+        reached `stability.py`, whose own docstring promises "Never a fake 0.0
+        and never a fake 1.0", and were averaged into the run's perturbation
+        response as though the model had answered identically.
+        """
+        base = _make_trace([], prompt="p", mean_entropy=None)
+        pert = _make_trace([], prompt="p2", mean_entropy=None)
         result = compute_sensitivity_metrics(base, pert, "p2", "synonym")
-        assert result.mean_nucleus_stability_p90 == pytest.approx(1.0, abs=1e-10)
+        assert result.mean_nucleus_stability_p90 is None
+        assert result.mean_js_divergence is None
+        assert result.mean_kl_divergence is None
+        assert result.mean_entropy_delta is None
+        assert result.n_steps_aligned == 0

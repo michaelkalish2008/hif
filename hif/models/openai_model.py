@@ -320,6 +320,9 @@ class OpenAIModel(Model):
             model_name=self.name,
             top_k=effective_k,
             seed=seed,
+            stop_reason=self._stop_reason(
+                response.choices[0], response, empty=not steps
+            ),
         )
 
     def _generate_no_logprobs(
@@ -360,7 +363,8 @@ class OpenAIModel(Model):
                 max_tokens=budget,
             )
 
-        content = response.choices[0].message.content or ""
+        choice = response.choices[0]
+        content = choice.message.content or ""
         token_strs = content.split()  # word-level approximation
         steps: list[StepRecord] = []
         for step_idx, tok_str in enumerate(token_strs):
@@ -378,4 +382,63 @@ class OpenAIModel(Model):
             model_name=self.name,
             top_k=1,  # signals degenerate to compute_instrument_summary
             seed=seed,
+            stop_reason=self._stop_reason(choice, response, empty=not steps),
         )
+
+    def _stop_reason(self, choice, response, *, empty: bool) -> "str | None":
+        """Why this generation ended, in terms the record can state.
+
+        The empty case is the one this exists for. `message.content` was read
+        as `content or ""`, so a response that carried no visible text became
+        zero steps with nothing recorded about why — and two gpt-5 profiles in
+        the published corpus have `output_side.steps = []` with no reason
+        anywhere in the artifact. Three different facts produce that shape:
+
+          refusal          the model declined; the API says so in
+                           `message.refusal`, a field we never read.
+          content_filter   the provider blocked it; `finish_reason` says so.
+          length           the completion budget ran out. On a reasoning model
+                           this is the trap the budget below was sized to
+                           avoid and does not always avoid: reasoning tokens
+                           are billed against `max_completion_tokens`, so a
+                           model can spend the entire allowance thinking and
+                           return `finish_reason="length"` with empty content.
+                           The reasoning-token count is reported in
+                           `usage.completion_tokens_details`, which makes this
+                           case distinguishable from a truncated answer rather
+                           than a guess — so we record it.
+
+        Best-effort throughout: a provider that omits any of these fields
+        yields None for that part, and None means "not reported", never
+        "nothing happened".
+        """
+        finish = getattr(choice, "finish_reason", None)
+        refusal = getattr(getattr(choice, "message", None), "refusal", None)
+        if refusal:
+            return f"refusal: {refusal}"
+
+        reasoning_tokens = None
+        try:
+            details = response.usage.completion_tokens_details
+            reasoning_tokens = getattr(details, "reasoning_tokens", None)
+        except Exception:  # noqa: BLE001 — usage accounting is optional
+            reasoning_tokens = None
+
+        if empty and finish == "length" and reasoning_tokens:
+            logger.warning(
+                "%s returned no visible content: the completion budget was "
+                "exhausted by %d reasoning tokens. Raise max_new_tokens (the "
+                "budget is 20x it, min 2000) or lower the model's reasoning "
+                "effort.",
+                self.name, reasoning_tokens,
+            )
+            return (
+                f"length: completion budget exhausted by {reasoning_tokens} "
+                "reasoning tokens before any visible output"
+            )
+        if empty:
+            logger.warning(
+                "%s returned no visible content (finish_reason=%s).",
+                self.name, finish or "not reported",
+            )
+        return finish

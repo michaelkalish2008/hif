@@ -56,12 +56,21 @@ from hif.perturbation.base import PerturbationGenerator, PerturbationResult
 TIER_FULL = "full"                    # [F]  open weights: teacher forcing, real top-K
 TIER_TRUNCATED = "truncated"          # [T-k] hosted API: top-K logprobs, no teacher forcing
 TIER_SELECTED_ONLY = "selected-only"  # [P]  hosted API: the selected token and nothing else
+# Not an access tier — an OUTCOME. The call succeeded and the response carried
+# no visible content, so the run has zero output steps. gpt-5 did this on two
+# of eight prompt regimes (reasoning tokens consumed the whole completion
+# budget; hif/models/openai_model.py::_generate_no_logprobs), and the resulting
+# profiles published `io_cosine_similarity` computed over the perturbation
+# variants alone. Kept beside the tiers because it enters the pipeline at the
+# same seam and every absence rule has to survive it.
+TIER_NO_OUTPUT = "no-output"
 
 # Which backend name in hif/models/capabilities.py each tier stands for.
 TIER_BACKEND = {
     TIER_FULL: "hf",
     TIER_TRUNCATED: "openai",
     TIER_SELECTED_ONLY: "anthropic",
+    TIER_NO_OUTPUT: "openai",
 }
 
 
@@ -191,6 +200,17 @@ class MockBackend(Model):
         prompt_key = ",".join(str(i) for i in input_ids)
         steps: list[StepRecord] = []
         generated: list[int] = []
+        if self.tier == TIER_NO_OUTPUT:
+            # A successful call that returned nothing. No exception to catch,
+            # no partial trace to salvage — the run simply has no output side.
+            return GenerationResult(
+                input_ids=input_ids,
+                generated_ids=[],
+                steps=[],
+                model_name=self.name,
+                top_k=top_k,
+                seed=seed,
+            )
         for step in range(max_new_tokens):
             ids, probs = self._step_candidates(prompt_key, step, top_k)
             entries = [

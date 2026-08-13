@@ -31,6 +31,39 @@ from hif.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
+
+def _enum_name(value) -> "str | None":
+    """A google-genai enum as a plain string, or None.
+
+    These fields come back as enum members (`FinishReason.MAX_TOKENS`) on some
+    client versions and bare strings on others. The record wants one shape.
+    """
+    if value is None:
+        return None
+    return str(getattr(value, "name", value))
+
+
+def _finish_reason(candidate) -> "str | None":
+    """Why this candidate stopped, as the API reports it.
+
+    None means the field was absent, never "it stopped cleanly" — the same
+    None-is-not-asked rule the rest of the provenance block follows.
+    """
+    return _enum_name(getattr(candidate, "finish_reason", None))
+
+
+def _block_reason(response) -> "str | None":
+    """Why the request produced no candidate at all.
+
+    The two early returns below build a GenerationResult with zero steps, and
+    zero steps with no reason is exactly the absence this pass exists to
+    remove: the reader cannot tell a safety block from an empty body.
+    """
+    feedback = getattr(response, "prompt_feedback", None)
+    reason = _enum_name(getattr(feedback, "block_reason", None))
+    return f"blocked: {reason}" if reason else "no candidate returned"
+
+
 _CONTEXT_MAP: dict[str, int] = {
     "gemini-3.5-flash": 1_048_576,
     "gemini-3.1-flash": 1_048_576,
@@ -300,9 +333,12 @@ class GeminiModel(Model):
     ) -> GenerationResult:
         candidate = response.candidates[0] if response.candidates else None
         if candidate is None:
+            # No candidate at all: blocked before generation, or an empty
+            # body. `prompt_feedback.block_reason` is where the API says which.
             return GenerationResult(
                 input_ids=input_ids, generated_ids=[], steps=[],
                 model_name=self.name, top_k=effective_k, seed=seed,
+                stop_reason=_block_reason(response),
             )
 
         logprobs_result = getattr(candidate, "logprobs_result", None)
@@ -353,6 +389,7 @@ class GeminiModel(Model):
             model_name=self.name,
             top_k=effective_k,
             seed=seed,
+            stop_reason=_finish_reason(candidate),
         )
 
     def _parse_text_only_response(
@@ -367,6 +404,7 @@ class GeminiModel(Model):
             return GenerationResult(
                 input_ids=input_ids, generated_ids=[], steps=[],
                 model_name=self.name, top_k=1, seed=seed,
+                stop_reason=_block_reason(response),
             )
 
         # Extract text — parts list or .text convenience attribute
@@ -402,4 +440,5 @@ class GeminiModel(Model):
             model_name=self.name,
             top_k=1,
             seed=seed,
+            stop_reason=_finish_reason(candidate),
         )

@@ -26,12 +26,20 @@ logger = get_logger(__name__)
 
 class CenterDiagnostics(BaseModel):
     input_mean_entropy: float        # from InputSideAnalysis
-    output_mean_entropy: float       # from OutputSideTrace (re-computed from top-K probs)
+    # From OutputSideTrace (re-computed from top-K probs). None when there are
+    # no steps to average — see mean_step_entropy in output_side.py.
+    output_mean_entropy: Optional[float] = None
     entropy_ratio: Optional[float] = None  # output / input (both bits); None for API models without input-side data
     # Cosine distance between the prompt embedding and the generated-text
     # embedding. Bounded to [0, 2] by definition. Named for what it measures:
     # it is a distance between two embeddings, not evidence of drift.
-    prompt_output_cosine_distance: float
+    #
+    # None when the run generated no text. This was 0.0 — the MINIMUM of the
+    # range, which on a distance reads as "the output is semantically
+    # identical to the prompt". Of all the zeros an empty generation used to
+    # produce, this is the one that says the most and is the least true: it
+    # reported perfect anchoring for a model that returned nothing.
+    prompt_output_cosine_distance: Optional[float] = None
 
 
 # ---------------------------------------------------------------------------
@@ -50,7 +58,7 @@ def _cosine_distance(a: np.ndarray, b: np.ndarray) -> float:
     return 1.0 - cos_sim
 
 
-def _output_mean_entropy(output_trace: OutputSideTrace) -> float:
+def _output_mean_entropy(output_trace: OutputSideTrace) -> Optional[float]:
     """Re-compute mean entropy from normalized top-K probs in each StepRecord."""
     step_entropies: list[float] = []
     for step in output_trace.steps:
@@ -61,7 +69,7 @@ def _output_mean_entropy(output_trace: OutputSideTrace) -> float:
         probs = np.clip(probs, 1e-10, 1.0)
         h = float(-np.sum(probs * np.log2(probs)))
         step_entropies.append(h)
-    return float(np.mean(step_entropies)) if step_entropies else 0.0
+    return float(np.mean(step_entropies)) if step_entropies else None
 
 
 # ---------------------------------------------------------------------------
@@ -95,8 +103,11 @@ def compute_center_diagnostics(
     # 2. Output entropy (re-computed from top-K normalized distributions)
     output_mean_entropy = _output_mean_entropy(output_trace)
 
-    # 3. Entropy ratio
-    if input_mean_entropy > 0:
+    # 3. Entropy ratio — absent whenever either side is, since a ratio needs
+    # both terms and there is no defensible stand-in for a missing one.
+    if output_mean_entropy is None:
+        entropy_ratio = None
+    elif input_mean_entropy > 0:
         entropy_ratio = output_mean_entropy / input_mean_entropy
     else:
         entropy_ratio = float("inf") if output_mean_entropy > 0 else 1.0
@@ -120,14 +131,17 @@ def compute_center_diagnostics(
         output_emb = embedder.embed_single(generated_text)
         prompt_output_cosine_distance = _cosine_distance(prompt_emb, output_emb)
     else:
-        prompt_output_cosine_distance = 0.0
+        prompt_output_cosine_distance = None
+
+    def _fmt(v) -> str:
+        return "absent" if v is None else f"{v:.3f}"
 
     logger.debug(
-        "CenterDiagnostics: in_entropy=%.3f out_entropy=%.3f ratio=%.3f cos_dist=%.3f",
+        "CenterDiagnostics: in_entropy=%.3f out_entropy=%s ratio=%s cos_dist=%s",
         input_mean_entropy,
-        output_mean_entropy,
-        entropy_ratio,
-        prompt_output_cosine_distance,
+        _fmt(output_mean_entropy),
+        _fmt(entropy_ratio),
+        _fmt(prompt_output_cosine_distance),
     )
 
     return CenterDiagnostics(

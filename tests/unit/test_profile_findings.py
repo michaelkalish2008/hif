@@ -91,8 +91,18 @@ class TestFindingsSurface:
 
 
 class TestSimilarityTrendSlope:
-    def test_absent_similarity_gives_zero_slope(self):
-        assert _findings(similarity=None).similarity_trend_slope == 0.0
+    def test_absent_similarity_gives_absent_slope(self):
+        """Was 0.0 — the default that published a flat trend for a stage that
+        never ran. See tests/unit/test_empty_generation.py."""
+        assert _findings(similarity=None).similarity_trend_slope is None
+
+    def test_absent_trend_gives_absent_slope(self):
+        """The stage ran but had fewer than two steps to fit through."""
+        sim = SimilarityMetrics(
+            input_sim=0.8, output_sim=0.7, io_sim=0.6, io_ratio=0.875,
+            trend=None, n_pairs=2,
+        )
+        assert _findings(similarity=sim).similarity_trend_slope is None
 
     @pytest.mark.parametrize("trend", [-0.42, 0.0, 0.137])
     def test_slope_is_passed_through_signed_and_unrounded(self, trend):

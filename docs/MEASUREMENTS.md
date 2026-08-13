@@ -112,6 +112,16 @@ The input-side measurements (`input_entropy_shift_bits`, `input_entropy_std_bits
 
 Absent is never zero. A measurement the run produced no evidence for is omitted from `measurements`, because "no evidence" and "measured zero" are different statements. Absent also covers *measured something else*: a quantity whose subject on this backend is the prompt is omitted rather than emitted with a caveat.
 
+### The empty output side
+
+Access is not the only way an output-side measurement loses its evidence. A run can simply come back with **nothing generated** — `output_side.steps == []` — and that case has broken the absence rule more than once, because an empty series is the one input on which every aggregate still returns a number. `mean([])` guarded to `0.0`, a divergence over no steps, a slope through no points, a cosine against the embedding of `""`: each is arithmetic that completes, and none of them is a measurement.
+
+`io_correlation_r` was cut in hif-v4 for exactly this — on a run with no output steps it published a measured `0.0` correlation against a fabricated series. `output_distributions_unusable()` was then written so that "no steps" counts as unusable, which withholds every *distribution* row. It does not cover `io_cosine_similarity`, which reads output **text** and is therefore correctly present on a selected-only backend that returns real words and no logprobs — so on a run that returned no words either, nothing was watching. Two gpt-5 profiles shipped with the distribution rows correctly absent and `io_cosine_similarity` present, computed from the perturbation variants' continuations.
+
+The rule now has its own declaration. A registry row sets `needs_generated_output` when its value is read off the continuation the target produced, `measurements()` sweeps those rows out whenever the run has no steps, and the matching chart gate declines alongside it. `tests/unit/test_empty_generation.py` is the guard, at the gate and end-to-end through a backend that returns nothing.
+
+**An empty output side is stated, not merely implied.** `provenance.target_generated_no_output` records the fact and `provenance.generation_stop_reason` records why — a refusal, a content filter, or (the observed gpt-5 case) a reasoning model that spent its entire completion budget on hidden tokens and returned no visible content. Without the reason, a reader comparing eight regimes sees a sparser row rather than a run that never happened. `provenance.output_distribution_selected_only` stays `False` on these runs and that is correct: a run that returned nothing did not return point masses either.
+
 ### Why measure behaviour at all on closed models
 
 A reasonable objection: behavioural measurement of a closed model is of limited value. The substance of that objection is conceded. On a closed model there are no weights, no full logits, no attention, and no teacher forcing — the API response is the entire observable surface, so reading that surface is not the preferred method there, it is the only one that exists, and the `[T-k]` and `[P]` tiers are inventories of how little it exposes. This arrangement is a stopgap, and treated as one: every measurement becomes exact on open weights, and if providers expose more (full logprobs, attention, stable version identifiers), measurements should migrate up the access tiers and the proxy tier should shrink toward empty. The limitation lives in provider opacity, not in the method; nothing in the proxy tier substitutes for direct access, which is why a quantity the surface cannot support is reported absent rather than approximated.
@@ -234,9 +244,13 @@ over all `(input, output)` pairs: baseline plus one per perturbation variant.
 
 **Unit and range.** Dimensionless, bounded to `[−1, 1]` by definition. High: output stays in the semantic neighbourhood of its input. Low: output sits far from the prompt's representational space.
 
-**Companions (persisted on `metrics.similarity`, not in the measurement set).** `input_sim` and `output_sim` are the mean pairwise cosines *within* the input set and *within* the output set; `io_ratio = output_sim / input_sim` captures amplification vs. suppression (`> 1` = outputs converge more than inputs did; `< 1` = the model amplifies input variation). `trend` is the linear slope of per-step mean pairwise similarity across the output sequence, derived from `SemanticMetrics.mean_pairwise_distance`; it is surfaced separately as `findings.similarity_trend_slope`, signed and unrounded.
+**Companions (persisted on `metrics.similarity`, not in the measurement set).** `input_sim` and `output_sim` are the mean pairwise cosines *within* the input set and *within* the output set; `io_ratio = output_sim / input_sim` captures amplification vs. suppression (`> 1` = outputs converge more than inputs did; `< 1` = the model amplifies input variation). `trend` is the linear slope of per-step mean pairwise similarity across the output sequence, derived from `SemanticMetrics.mean_pairwise_distance`; it is surfaced separately as `findings.similarity_trend_slope`, signed and unrounded, and **`None` when the run has fewer than two steps to fit a line through** (it was `0.0`, which reported a flat trend for a generation that never happened).
 
-**Absent when** there are no perturbation variants — at least one variant alongside the baseline is required.
+**Absent when** there are no perturbation variants — at least one variant alongside the baseline is required — **or when the target generated nothing at all.**
+
+The second clause was missing, and the gap is in the published corpus. The pair set is `{baseline} ∪ {variants}`, and only the baseline half is the run's own output. When the target returns no tokens the baseline pair is `(prompt, "")` — the empty string embeds to a real vector, so the cosine is a real number rather than a zero — and the remaining pairs are the *paraphrases'* continuations. gpt-5 answered two of eight prompt regimes with zero tokens and both profiles published `io_cosine_similarity` (0.17 and 0.10): correct arithmetic over sixteen pairs, fifteen of which described text the record is not about.
+
+This row is deliberately exempt from the distribution gate that withholds `output_entropy_bits` and `perturbation_jsd_bits` — it reads output *text*, so it survives a selected-only backend by design — which is precisely why nothing above it caught the empty case. It is now gated on its own declaration (`needs_generated_output` in `MEASUREMENT_REGISTRY`), enforced in `measurements()` and guarded by `tests/unit/test_empty_generation.py`.
 
 **Encoder-dependent.** Comparable only between profiles computed with the same embedding model, which is recorded in `config.embedding.model_name`.
 
@@ -585,7 +599,9 @@ and KL(a ‖ b) = ∑ a_i · log₂(a_i / b_i)
 KL(p ‖ q) = ∑ p_i · log₂(p_i / q_i)
 ```
 
-**Expected range.** [0, ∞). Undefined (infinite) when the perturbed distribution places mass outside the baseline's support; the implementation clamps that case to a conventional `1e9` sentinel so the value round-trips through JSON, and the aggregate `mean_kl_divergence` averages only over finite steps. Use JSD as the primary quantity; KL provides directionality information.
+**Expected range.** [0, ∞). Undefined (infinite) when the perturbed distribution places mass outside the baseline's support. **That case is `null`**, and `mean_kl_divergence` averages the steps where KL is defined, reporting how many it left out as `n_undefined_kl_steps`. Use JSD as the primary quantity; KL provides directionality information.
+
+It was clamped to a `1e9` sentinel "so the value round-trips through JSON" — `null` round-trips perfectly well, and the clamp disarmed the guard immediately below it: the aggregate filtered its inputs with `math.isfinite`, and `1e9` is finite, so the filter written to drop undefined steps dropped none of them. 833 records across half the published corpus carried a mean near `9.65e8`, which the technical report rendered as `965517241.3793`. On a selected-only backend the real reading is starker and more useful: 56 of 58 steps undefined, and a mean of `0.0` over the 2 where the selected tokens agreed.
 
 ---
 
@@ -609,9 +625,19 @@ KL(p ‖ q) = ∑ p_i · log₂(p_i / q_i)
 nucleus_overlap_p90 = |baseline_nucleus_p90 ∩ perturbed_nucleus_p90| / |baseline_nucleus_p90|
 ```
 
-**Expected range.** [0, 1]; `1.0` means identical nuclei, and an empty baseline nucleus is defined as stable (`1.0`). Aggregated per variant as `mean_nucleus_stability_p90`.
+**Expected range.** [0, 1]; `1.0` means identical nuclei. An empty baseline nucleus is **`null`** — there is no set to take a fraction of. It was defined as stable (`1.0`), which is the top of the range and reads as perfect agreement rather than as no comparison having been made. Aggregated per variant as `mean_nucleus_stability_p90`, which is likewise `null` when no step could answer.
 
 **Why both.** JSD measures mass shift; nucleus overlap measures whether the *viable token set* changed. A small mass shuffle near the threshold can flip nucleus membership without moving JSD much, and the reverse also happens.
+
+---
+
+### Alignment — how much of the run each variant actually covers
+
+A variant is compared against the baseline over their **shared prefix**, `min(len(baseline), len(variant))` steps, recorded per variant as `n_steps_aligned`. It is routinely shorter than the baseline: 215 variants in the published corpus aligned over fewer steps than their baseline ran, the worst covering 6 of 64.
+
+**Every variant is weighted equally in `perturbation_jsd_bits` regardless of its coverage**, and that is the measurement's definition rather than an oversight — `mean_v [ mean_j [ JSD ] ]` takes the *variant* as the unit of observation, because the quantity is about how much each paraphrase moved the model. Weighting by steps instead would move 5 of the corpus's 96 published values, the largest by 0.064 bits. `n_steps_aligned` exists so a reader can see the difference the definition deliberately ignores.
+
+**A variant that aligned zero steps contributes nothing, not zero.** Its four means are `null` and it is excluded from the aggregate, with `metrics.stability.n_perturbations_aligned` recording how many variants actually contributed so the exclusion is not a silent reduction of *n*. This used to be `0.0` — indistinguishable from a paraphrase the model answered identically — and six variants of one corpus run aligned zero steps against a 603-step baseline. See [The empty output side](#the-empty-output-side).
 
 ---
 
@@ -660,7 +686,9 @@ entropy_ratio = output_mean_entropy / input_mean_entropy
 prompt_output_cosine_distance = 1 - cosine_similarity(embed(prompt), embed(generated_text))
 ```
 
-Zero vectors return `1.0`; an empty generation returns `0.0`.
+Zero vectors return `1.0`. **An empty generation returns `None`** — it returned `0.0`, which is the *minimum* of the range below and therefore reads, on a distance, as "the output is semantically identical to the prompt". That is the strongest possible anchoring claim, published about a model that produced no output. `output_mean_entropy` and `entropy_ratio` in the same block are `None` on the same runs, for the same reason.
+
+(This paragraph previously documented the `0.0`, which is also why the published `io_cosine_similarity = 0.17` did not look like a known empty-generation path: it is a different quantity. `io_cosine_similarity` embeds each *pair* including the variants; `prompt_output_cosine_distance` embeds this run's prompt against this run's generated text, and only the latter had an empty-generation branch at all.)
 
 **Expected range.** [0, 2] by definition. Low: the output stays in the semantic neighbourhood of the prompt. High: the output sits far from the prompt's representational space.
 

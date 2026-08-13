@@ -48,14 +48,18 @@ def _all_measured_values(p) -> dict[str, float]:
     m = p.metrics
     st = m.stability
 
+    steps = getattr(p.output_side, "steps", None) or []
+    # Did the target generate anything at all? Separate from every question
+    # about the QUALITY of what came back: a run with no continuation has no
+    # output-side evidence of any kind, whatever the backend can normally do.
+    no_generated_output = not steps
+
     # Did this backend return real distributions at generation time, or only
     # the selected token? The perturbation JSDs were computed from the RAW
     # baseline and variant traces (builder.py step 6, before any surrogate
     # recovery), and every one of those traces came off the same backend as
     # `output_side` — so this one check answers it for all of them.
-    selected_only = output_distributions_unusable(
-        getattr(p.output_side, "steps", None) or []
-    )
+    selected_only = output_distributions_unusable(steps)
     # Did the step-6b recovery rebuild a real candidate cloud from the target's
     # actual continuation? Without it, every "cloud" on a selected-only backend
     # is a single token, and every quantity read off the cloud answers a
@@ -79,9 +83,17 @@ def _all_measured_values(p) -> dict[str, float]:
             out["perturbation_jsd_bits"] = st.perturbation_jsd_bits
         elif m.sensitivity:
             # Fall back to the per-perturbation records when the aggregate is
-            # absent — same quantity, same unit.
-            js = [s.mean_js_divergence for s in m.sensitivity]
-            out["perturbation_jsd_bits"] = sum(js) / len(js)
+            # absent — same quantity, same unit, and the same exclusion. A
+            # variant that aligned no steps has no divergence to contribute;
+            # averaging its absence in as a zero here would reintroduce
+            # through the back door exactly what the aggregate now refuses.
+            js = [
+                s.mean_js_divergence
+                for s in m.sensitivity
+                if s.mean_js_divergence is not None
+            ]
+            if js:
+                out["perturbation_jsd_bits"] = sum(js) / len(js)
 
     # --- input/output anchoring
     if m.similarity is not None:
@@ -123,6 +135,25 @@ def _all_measured_values(p) -> dict[str, float]:
     if selected_only:
         for row in MEASUREMENT_REGISTRY:
             if row.needs_distribution_pair:
+                out.pop(row.key, None)
+
+    # The same enforcement for needs_generated_output, and the reason it is a
+    # SECOND sweep rather than another clause of the first: the two flags
+    # answer different questions, and one row proved it. `io_cosine_similarity`
+    # reads output TEXT, so it survives a selected-only backend by design and
+    # the sweep above deliberately leaves it alone — which meant nothing was
+    # left to catch it on a run that produced no text at all. gpt-5 published
+    # io_cosine_similarity = 0.17 for two prompt regimes it answered with zero
+    # tokens: the mean ran over sixteen (input, output) pairs of which fifteen
+    # were the perturbation variants' continuations, so the number was real
+    # arithmetic about the paraphrases, filed under the baseline's key.
+    #
+    # `output_distributions_unusable` already treats "no steps" as unusable,
+    # so the distribution rows were absent on those same runs. That is what
+    # made the survivor hard to see: the record looked correctly sparse.
+    if no_generated_output:
+        for row in MEASUREMENT_REGISTRY:
+            if row.needs_generated_output:
                 out.pop(row.key, None)
 
     return out

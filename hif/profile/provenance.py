@@ -88,6 +88,24 @@ class RunProvenance(BaseModel):
     # point masses. Drives the absence rules for the divergence rows, which no
     # surrogate recovers.
     output_distribution_selected_only: bool = False
+    # The target returned no output at all: zero generation steps, so every
+    # output-side measurement is absent for this run. Distinct from
+    # `output_distribution_selected_only`, which is about the QUALITY of steps
+    # that exist — and which reads False here, because a run that returned
+    # nothing did not return point masses either.
+    #
+    # It was that gap the empty gpt-5 runs fell through: two of eight regimes
+    # came back with `steps = []`, the distribution rows went correctly absent,
+    # and nothing in the artifact said the output side was empty rather than
+    # merely unusable. A reader comparing eight records saw a sparser row, not
+    # a run that never happened.
+    target_generated_no_output: bool = False
+    # Why generation ended, in the backend's own words ("stop", "length",
+    # "content_filter", a refusal message, or the reasoning-budget diagnosis
+    # openai_model.py assembles). None means the backend does not report one —
+    # not that it stopped cleanly. This is what makes the absence above a
+    # STATED absence, which is what the README promises.
+    generation_stop_reason: Optional[str] = None
     # Trajectory branches were actually rolled out (builder step 5). False when
     # the stage was skipped, which is when branch quantities must be absent
     # rather than computed over an empty branch list.

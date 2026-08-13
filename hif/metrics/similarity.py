@@ -16,6 +16,8 @@ Three complementary lenses:
 
 from __future__ import annotations
 
+from typing import Optional
+
 import numpy as np
 from pydantic import BaseModel
 
@@ -31,7 +33,11 @@ class SimilarityMetrics(BaseModel):
     output_sim: float   # mean pairwise cosine across all output embeddings
     io_sim: float       # mean cosine(input_i, output_i) per pair
     io_ratio: float     # output_sim / input_sim; None collapsed to 0.0 when input_sim == 0
-    trend: float        # linear slope of per-step similarity over output sequence
+    # Linear slope of per-step similarity over the output sequence. None when
+    # there are fewer than two steps to fit a line through — a slope over one
+    # point, or none, is not zero, it is undefined. Surfaced as
+    # findings.similarity_trend_slope.
+    trend: Optional[float]
     n_pairs: int        # number of (input, output) pairs used
 
 
@@ -68,15 +74,19 @@ def _mean_io_cosine(
     return float(np.mean(sims))
 
 
-def _similarity_trend(semantic_metrics: list[SemanticMetrics]) -> float:
+def _similarity_trend(semantic_metrics: list[SemanticMetrics]) -> float | None:
     """Linear slope of per-step mean pairwise cosine similarity over output steps.
 
     Converts existing mean_pairwise_distance → similarity (1 - distance), then
     fits a degree-1 polynomial.  Positive slope = converging, negative = diverging.
-    Returns 0.0 when fewer than 2 steps are available.
+
+    None when fewer than 2 steps are available. This returned 0.0, and a run
+    that generated nothing published that zero as `findings.similarity_trend_slope`
+    — "the output neither converged nor diverged" asserted about an output that
+    does not exist. A line through fewer than two points is undefined, not flat.
     """
     if not semantic_metrics or len(semantic_metrics) < 2:
-        return 0.0
+        return None
     per_step = np.array(
         [1.0 - sm.mean_pairwise_distance for sm in semantic_metrics],
         dtype=np.float64,
@@ -117,7 +127,7 @@ def compute_similarity_metrics(
             output_sim=0.0,
             io_sim=0.0,
             io_ratio=0.0,
-            trend=0.0,
+            trend=None,
             n_pairs=0,
         )
 
@@ -131,16 +141,16 @@ def compute_similarity_metrics(
     output_sim = _mean_pairwise_cosine(output_embs)
     io_sim = _mean_io_cosine(input_embs, output_embs)
     io_ratio = (output_sim / input_sim) if input_sim > 1e-6 else 0.0
-    trend = _similarity_trend(semantic_metrics) if semantic_metrics else 0.0
+    trend = _similarity_trend(semantic_metrics) if semantic_metrics else None
 
     logger.debug(
         "SimilarityMetrics: input_sim=%.3f output_sim=%.3f io_sim=%.3f "
-        "io_ratio=%.3f trend=%.5f n_pairs=%d",
+        "io_ratio=%.3f trend=%s n_pairs=%d",
         input_sim,
         output_sim,
         io_sim,
         io_ratio,
-        trend,
+        "absent" if trend is None else f"{trend:.5f}",
         n,
     )
 

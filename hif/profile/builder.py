@@ -89,11 +89,12 @@ def generate_findings(
     in hif/profile/schema.py for why, and hif.profile.measure.measurements()
     for the numbers themselves.
     """
-    similarity_trend_slope = (
-        float(metric_bundle.similarity.trend)
-        if metric_bundle.similarity is not None
-        else 0.0
-    )
+    # Absent when the similarity stage did not run at all, and absent when it
+    # ran but had fewer than two steps to fit a line through — the stage
+    # already reports the second case as None, so this only has to not
+    # manufacture a value for the first.
+    trend = getattr(metric_bundle.similarity, "trend", None)
+    similarity_trend_slope = None if trend is None else float(trend)
     return Findings(
         similarity_trend_slope=similarity_trend_slope,
         surrogate_model_name=surrogate_model_name,
@@ -365,6 +366,8 @@ def _run_provenance(
         output_distribution_selected_only=output_distribution_degenerate(
             output_trace.steps
         ),
+        target_generated_no_output=not output_trace.steps,
+        generation_stop_reason=output_trace.stop_reason,
         trajectory_analysis_ran=bool(trajectory.branches),
         chat_template_present=getattr(model, "chat_template_present", None),
     )

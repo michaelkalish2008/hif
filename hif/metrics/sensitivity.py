@@ -12,6 +12,7 @@ vocabulary logits at generation time.
 from __future__ import annotations
 
 import math
+from typing import Optional
 
 import numpy as np
 from pydantic import BaseModel
@@ -19,6 +20,9 @@ from scipy.special import rel_entr  # type: ignore[import]
 
 from hif.hourglass.output_side import OutputSideTrace
 from hif.models.base import StepRecord
+from hif.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -29,23 +33,67 @@ from hif.models.base import StepRecord
 class StepSensitivity(BaseModel):
     step: int
     js_divergence: float  # Jensen-Shannon divergence between baseline and perturbed top-K dists
-    kl_divergence: float  # KL(baseline || perturbed) — may be inf if support mismatch
+    # KL(baseline || perturbed) in bits. None when the perturbed distribution
+    # places no mass somewhere the baseline does — KL is genuinely infinite
+    # there, which is a fact about the pair and not a large number.
+    #
+    # This was clamped to a 1e9 sentinel "so the value round-trips through
+    # JSON". null round-trips through JSON perfectly well, and the clamp cost
+    # more than it bought: `compute_sensitivity_metrics` filters the steps it
+    # averages with `math.isfinite`, and 1e9 IS finite — so the guard written
+    # to exclude undefined steps excluded none of them, and
+    # `mean_kl_divergence` came out at 9.65e8 on 833 records across half the
+    # published corpus, rendered into the report table as 965517241.3793.
+    kl_divergence: Optional[float]
     entropy_delta: float  # perturbed_entropy - baseline_entropy
-    nucleus_overlap_p90: float  # set-based: |baseline_nucleus_p90 ∩ perturbed_nucleus_p90| / |baseline_nucleus_p90|
+    # Set-based: |baseline_nucleus_p90 ∩ perturbed_nucleus_p90| / |baseline_nucleus_p90|.
+    # None when the baseline nucleus is empty — there is no set to take a
+    # fraction of. This was 1.0 ("define as stable"), the maximum of the range,
+    # asserting perfect nucleus agreement from no nucleus at all.
+    nucleus_overlap_p90: Optional[float]
     baseline_topk_probs: list[float] = []   # ranked probabilities from baseline (desc), no token strings
     perturbed_topk_probs: list[float] = []  # ranked probabilities from perturbed variant (desc)
 
 
 class SensitivityMetrics(BaseModel):
+    """One paraphrase variant's divergence from the baseline, step by step.
+
+    Every mean here is over `step_sensitivities`, and every one of them is
+    None when that list is empty. It used to be a set of constants — 0.0 for
+    the divergences, 1.0 for nucleus stability — which is the fabricated-zero
+    pattern `io_correlation_r` was retired for, one layer below where anyone
+    was looking: `stability.py` declares "Never a fake 0.0 and never a fake
+    1.0" in its own docstring and enforces it faithfully at its own level,
+    while being handed fabrications from here.
+
+    A variant can produce no aligned steps for an ordinary reason — the
+    variant generated nothing, or the baseline did. Six variants of
+    `gpt5/legal_compliance` aligned zero steps against a 603-step baseline and
+    each contributed a measured 0.0 to the run's perturbation response.
+    """
+
     perturbation_generator: str
     perturbed_prompt: str
     original_prompt: str
     step_sensitivities: list[StepSensitivity]
-    mean_js_divergence: float
-    mean_kl_divergence: float  # averaged only over non-inf steps
-    mean_entropy_delta: float
-    output_entropy_delta: float  # scalar: mean perturbed entropy - mean baseline entropy
-    mean_nucleus_stability_p90: float  # mean nucleus_overlap_p90 across steps (1.0 = identical nuclei)
+    # How many steps the two traces actually shared. `len(step_sensitivities)`
+    # says the same thing, but only to a reader who knows to count — and the
+    # count is the difference between a mean over 64 steps and a mean over 6,
+    # which the aggregate weights identically. `PerturbationField` has carried
+    # `n_steps_aligned` for the same alignment since 0.4.0; the record that
+    # feeds the headline measurement did not.
+    n_steps_aligned: int = 0
+    # Steps whose KL was undefined (infinite) and therefore left out of
+    # `mean_kl_divergence`. Kept so a mean over 3 of 58 steps is visibly that.
+    n_undefined_kl_steps: int = 0
+    mean_js_divergence: Optional[float]
+    mean_kl_divergence: Optional[float]  # over the steps where KL is defined
+    mean_entropy_delta: Optional[float]
+    # Scalar: mean perturbed entropy - mean baseline entropy. None when either
+    # side has no steps to average, which is the one case where a difference of
+    # two means is not a difference of anything.
+    output_entropy_delta: Optional[float]
+    mean_nucleus_stability_p90: Optional[float]  # mean nucleus_overlap_p90 across steps
 
 
 # ---------------------------------------------------------------------------
@@ -238,12 +286,10 @@ def compute_step_sensitivity(
     kld = kl_divergence(base_probs, pert_probs)
     entropy_delta = _step_entropy(pert_probs) - _step_entropy(base_probs)
 
-    # Clamp inf to a large finite sentinel so the value round-trips through JSON.
-    # KL divergence is undefined (inf) when the perturbed distribution places mass
-    # outside the baseline support.  We record 1e9 as a conventional "very large" value.
-    _KL_INF_SENTINEL = 1e9
-    if not math.isfinite(kld):
-        kld = _KL_INF_SENTINEL
+    # Undefined, not enormous. KL is infinite when the perturbed distribution
+    # places no mass where the baseline does, which is a statement about the
+    # pair's supports; null carries it and a number does not.
+    kld_value: float | None = kld if math.isfinite(kld) else None
 
     # Nucleus stability: set-based complement to JSD.
     # JSD measures mass shift; nucleus overlap measures whether the *viable token set*
@@ -259,7 +305,10 @@ def compute_step_sensitivity(
     if base_nucleus:
         nucleus_overlap = float(len(base_nucleus & pert_nucleus) / len(base_nucleus))
     else:
-        nucleus_overlap = 1.0  # empty nucleus — define as stable
+        # No baseline nucleus, so no set to take a fraction of. This was 1.0
+        # — "define as stable" — which is the top of the range and reads as
+        # perfect agreement rather than as no comparison.
+        nucleus_overlap = None
 
     # Ranked probabilities (descending) for visualization — no token strings needed
     baseline_topk_probs = sorted([e.prob for e in baseline_step.topk], reverse=True)
@@ -268,7 +317,7 @@ def compute_step_sensitivity(
     return StepSensitivity(
         step=baseline_step.step,
         js_divergence=jsd,
-        kl_divergence=kld,
+        kl_divergence=kld_value,
         entropy_delta=entropy_delta,
         nucleus_overlap_p90=nucleus_overlap,
         baseline_topk_probs=baseline_topk_probs,
@@ -287,7 +336,17 @@ def compute_sensitivity_metrics(
     perturbed_prompt: str,
     generator_name: str,
 ) -> SensitivityMetrics:
-    """Compute sensitivity metrics between a baseline and perturbed output trace."""
+    """Compute sensitivity metrics between a baseline and perturbed output trace.
+
+    Alignment is the shared prefix — `min(len(baseline), len(variant))` — and
+    how long that prefix ran is recorded rather than left to be inferred. It is
+    routinely shorter than the baseline: 215 variants in the published corpus
+    aligned over fewer steps than their baseline ran, the worst covering 6 of
+    64. Each still contributes one equally-weighted number to the run's
+    perturbation response, which is a defensible reading of the measurement's
+    own definition (`mean_v [ mean_j [ JSD ] ]` — the variant is the unit of
+    observation) but only while a reader can see the difference.
+    """
     n_steps = min(len(baseline_trace.steps), len(perturbed_trace.steps))
 
     step_sensitivities: list[StepSensitivity] = []
@@ -295,29 +354,47 @@ def compute_sensitivity_metrics(
         ss = compute_step_sensitivity(baseline_trace.steps[i], perturbed_trace.steps[i])
         step_sensitivities.append(ss)
 
-    if step_sensitivities:
-        mean_js = float(np.mean([s.js_divergence for s in step_sensitivities]))
-        finite_kls = [s.kl_divergence for s in step_sensitivities if math.isfinite(s.kl_divergence)]
-        mean_kl = float(np.mean(finite_kls)) if finite_kls else 1e9
-        mean_entropy_delta = float(np.mean([s.entropy_delta for s in step_sensitivities]))
-        mean_nucleus_stability = float(np.mean([s.nucleus_overlap_p90 for s in step_sensitivities]))
-    else:
-        mean_js = 0.0
-        mean_kl = 0.0
-        mean_entropy_delta = 0.0
-        mean_nucleus_stability = 1.0
+    baseline_len = len(baseline_trace.steps)
+    if baseline_len and n_steps < baseline_len:
+        logger.debug(
+            "Variant %r aligned over %d of the baseline's %d steps (%.0f%%); its "
+            "means describe that prefix.",
+            perturbed_prompt, n_steps, baseline_len, 100 * n_steps / baseline_len,
+        )
 
-    output_entropy_delta = perturbed_trace.mean_step_entropy - baseline_trace.mean_step_entropy
+    def _mean(values: list) -> float | None:
+        """Mean of the defined values, or None when there are none.
+
+        The one rule this module got wrong. Every branch below used to fall
+        back to a constant, so "no steps to average" and "averaged to zero"
+        arrived downstream as the same number.
+        """
+        present = [v for v in values if v is not None]
+        return float(np.mean(present)) if present else None
+
+    kls = [s.kl_divergence for s in step_sensitivities]
+    mean_js = _mean([s.js_divergence for s in step_sensitivities])
+    mean_kl = _mean(kls)
+    mean_entropy_delta = _mean([s.entropy_delta for s in step_sensitivities])
+    mean_nucleus_stability = _mean([s.nucleus_overlap_p90 for s in step_sensitivities])
+
+    base_h = baseline_trace.mean_step_entropy
+    pert_h = perturbed_trace.mean_step_entropy
+    output_entropy_delta = (
+        float(pert_h - base_h) if base_h is not None and pert_h is not None else None
+    )
 
     return SensitivityMetrics(
         perturbation_generator=generator_name,
         perturbed_prompt=perturbed_prompt,
         original_prompt=baseline_trace.prompt_text,
         step_sensitivities=step_sensitivities,
+        n_steps_aligned=n_steps,
+        n_undefined_kl_steps=sum(1 for k in kls if k is None),
         mean_js_divergence=mean_js,
         mean_kl_divergence=mean_kl,
         mean_entropy_delta=mean_entropy_delta,
-        output_entropy_delta=float(output_entropy_delta),
+        output_entropy_delta=output_entropy_delta,
         mean_nucleus_stability_p90=mean_nucleus_stability,
     )
 

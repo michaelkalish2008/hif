@@ -50,6 +50,20 @@ class GenerationResult(BaseModel):
     model_name: str
     top_k: int
     seed: int
+    # Why generation ended, in the backend's own words where it says
+    # ("stop", "length", "content_filter", "refusal", …). None means the
+    # backend was not asked or does not report it — never "it stopped
+    # normally".
+    #
+    # This exists because `steps == []` is not self-explaining. A run can come
+    # back with no output because the model refused, because the provider
+    # errored into an empty body, or — the observed case — because a reasoning
+    # model spent its entire completion budget on hidden tokens and returned
+    # no visible content. Those are three different facts about the model, and
+    # a record that withholds every output-side measurement without saying
+    # which one applies leaves the reader to guess. See README § "absent from
+    # the record with a stated reason".
+    stop_reason: Optional[str] = None
 
 
 class Model(ABC):

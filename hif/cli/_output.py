@@ -130,9 +130,11 @@ def _print_measurements(p) -> None:
             "with one derived from the surrogate, so it is a claim about the "
             "pair rather than about the target alone.[/dim]"
         )
+    _slope = p.findings.similarity_trend_slope
     console.print(
-        f"[dim]Similarity trend slope: {p.findings.similarity_trend_slope:+.6g} "
-        "(per-step input/output cosine similarity, OLS slope).[/dim]"
+        "[dim]Similarity trend slope: "
+        + (f"{_slope:+.6g}" if _slope is not None else "absent (fewer than two output steps)")
+        + " (OLS slope of the per-step candidate-cloud similarity).[/dim]"
     )
     console.print(
         "[dim]No thresholds, levels, or verdicts: this instrument describes "
@@ -255,7 +257,7 @@ def _print_verbose_stats(p) -> None:
     table.add_row("center entropy_ratio (out/in)",
                   _fmt_optional(p.center.entropy_ratio))
     table.add_row("prompt/output cosine distance",
-                  f"{p.center.prompt_output_cosine_distance:.6g}")
+                  _fmt_optional(p.center.prompt_output_cosine_distance))
     table.add_row("input_tokens", str(len(p.input_side.prompt_token_ids)))
     table.add_row("output_tokens", str(len(p.output_side.generated_ids)))
 

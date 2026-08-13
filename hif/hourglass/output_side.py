@@ -1,5 +1,7 @@
 """Output-side analysis: collects and characterizes the model's generation trace."""
 
+from typing import Optional
+
 import numpy as np
 from pydantic import BaseModel
 
@@ -41,8 +43,22 @@ class OutputSideTrace(BaseModel):
     top_k: int
     max_new_tokens: int
     seed: int
-    mean_step_entropy: float     # mean Shannon entropy of the normalized top-K distribution across steps
-    # Note: entropy is computed over the truncated top-K distribution (truncated=True downstream)
+    # Mean Shannon entropy of the normalized top-K distribution across steps.
+    # Note: entropy is computed over the truncated top-K distribution
+    # (truncated=True downstream).
+    #
+    # None when there are no steps to average — the run generated nothing.
+    # This was 0.0, and 0.0 is a reading: it says the model was maximally
+    # certain at every step it took, which is the opposite of "it took none".
+    # Two gpt-5 regimes shipped that zero beside `steps = []`, which is the
+    # fabricated-zero pattern `io_correlation_r` was retired for.
+    mean_step_entropy: Optional[float]
+    # Why generation ended, as the backend reported it (GenerationResult.
+    # stop_reason). None on backends that do not report one, and on any
+    # profile written before the field existed. Read by `_run_provenance` so
+    # the record can state a reason for an empty output side rather than
+    # leaving `steps = []` to speak for itself.
+    stop_reason: Optional[str] = None
 
 
 def collect_output_trace(
@@ -111,7 +127,14 @@ def collect_output_trace(
         probs = np.array([entry.prob for entry in step.topk], dtype=np.float64)
         step_entropies.append(nucleus_entropy_bits(probs, p=0.95))
 
-    mean_step_entropy = float(np.mean(step_entropies)) if step_entropies else 0.0
+    mean_step_entropy = float(np.mean(step_entropies)) if step_entropies else None
+
+    if not steps:
+        logger.warning(
+            "%s returned no output for prompt %r (stop_reason=%s). Every "
+            "output-side measurement is absent for this run.",
+            result.model_name, prompt, result.stop_reason or "not reported",
+        )
 
     return OutputSideTrace(
         steps=steps,
@@ -123,6 +146,7 @@ def collect_output_trace(
         max_new_tokens=max_new_tokens,
         seed=result.seed,
         mean_step_entropy=mean_step_entropy,
+        stop_reason=result.stop_reason,
     )
 
 

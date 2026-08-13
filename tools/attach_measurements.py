@@ -41,7 +41,18 @@ def attach(path: Path) -> tuple[bool, str]:
         return False, f"cannot rehydrate: {type(exc).__name__}"
 
     raw["measurements"] = measurements(profile)
-    raw["prompt_measurements"] = prompt_measurements(profile)
+    # `measurements` stays `{}` when empty — a block saying this run published
+    # no measurement, which a zero-output run has to be able to say, and which
+    # the site's resolver needs present: absent, it falls back to deriving the
+    # value off `metrics.*`, where the withheld number is still sitting.
+    #
+    # `prompt_measurements` goes absent instead, following
+    # `measure.prompt_measurement_block` — an empty block there would assert
+    # that the run considered those quantities and found none, when in fact
+    # none was in play. Writing `{}` here put that assertion on 48 corpus
+    # files.
+    prompt_only = prompt_measurements(profile)
+    raw["prompt_measurements"] = prompt_only or None
 
     tmp = path.with_suffix(".json.partial")
     tmp.write_text(json.dumps(raw, separators=(",", ":")))

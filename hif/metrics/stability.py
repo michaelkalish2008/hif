@@ -24,6 +24,9 @@ from scipy.stats import pearsonr  # type: ignore[import]
 
 from hif.hourglass.input_side import InputSideAnalysis
 from hif.metrics.sensitivity import SensitivityMetrics
+from hif.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -61,6 +64,14 @@ class PerturbationResponse(BaseModel):
     # signed and un-clamped: the sign is the interesting part.
     input_output_correlation: float | None
     n_perturbations: int
+    # How many of those variants actually produced aligned output steps, and
+    # so contributed to `perturbation_jsd_bits`. Equal to `n_perturbations` on
+    # a healthy run. Lower when a variant (or the baseline) generated nothing:
+    # the divergence is then absent rather than zero, and the aggregate is a
+    # mean over fewer points than the variant count suggests. Without this the
+    # exclusion would be silent, which is the same kind of quiet narrowing the
+    # fabricated zeros were.
+    n_perturbations_aligned: int = 0
 
 
 # Backwards-compatible alias for the historical class name.
@@ -131,17 +142,36 @@ def compute_stability_metrics(
     if n_in >= 2:
         input_entropy_std_bits = float(np.std(entropy_shifts, ddof=1))
 
-    # Output-side response — only from real sensitivity results.
+    # Output-side response — only from real sensitivity results, and only from
+    # the variants that produced one.
+    #
+    # `mean_js_divergence` is None for a variant that aligned no steps against
+    # the baseline, which happens for ordinary reasons: the variant generated
+    # nothing, or the baseline did. It used to be 0.0, and a 0.0 is
+    # indistinguishable from a variant the model answered identically — so the
+    # mean below silently pulled toward zero once per unanswered paraphrase.
+    # The rule this docstring already states ("Never a fake 0.0") could not
+    # hold while its own inputs were fabricated.
     perturbation_jsd_bits: float | None = None
-    js_divergences: list[float] = [
-        sr.mean_js_divergence for sr in sensitivity_results
-    ]
-    if n_out > 0:
+    aligned = [sr for sr in sensitivity_results if sr.mean_js_divergence is not None]
+    js_divergences: list[float] = [sr.mean_js_divergence for sr in aligned]
+    n_aligned = len(aligned)
+    if n_aligned < n_out:
+        logger.debug(
+            "%d of %d perturbation variants produced no aligned output steps; "
+            "they are excluded from perturbation_jsd_bits rather than counted "
+            "as zero divergence.",
+            n_out - n_aligned, n_out,
+        )
+    if n_aligned > 0:
         perturbation_jsd_bits = float(np.mean(js_divergences))
 
     # Pearson correlation between input entropy shift and output JS divergence.
+    # Paired point-for-point, so the input side has to be restricted to the same
+    # variants — correlating 15 entropy shifts against 9 surviving divergences
+    # would pair each with the wrong partner.
     r: float | None = None
-    if n_in >= 2 and n_out == n_in:
+    if n_aligned == n_out and n_in >= 2 and n_out == n_in:
         corr_result = pearsonr(entropy_shifts, js_divergences)
         # scipy >= 1.9 returns a PearsonRResult object; older returns a tuple
         if hasattr(corr_result, "statistic"):
@@ -160,5 +190,6 @@ def compute_stability_metrics(
         perturbation_jsd_bits=perturbation_jsd_bits,
         input_output_correlation=r,
         n_perturbations=max(n_in, n_out),
+        n_perturbations_aligned=n_aligned,
     )
 

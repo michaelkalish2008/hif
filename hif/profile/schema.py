@@ -122,10 +122,21 @@ class Findings(BaseModel):
     reader's call.
     """
 
-    # Ordinary-least-squares slope of per-step input/output cosine similarity
-    # across the generation. Signed and unrounded: positive means the output
-    # grew more similar to the input as it went on. Not thresholded.
-    similarity_trend_slope: float = 0.0
+    # Ordinary-least-squares slope of the per-step mean pairwise cosine
+    # similarity of the candidate cloud, across the generation. Signed and
+    # unrounded: positive means the step's candidates grew more alike as
+    # generation went on. Not thresholded.
+    #
+    # (It is not "input/output" similarity — that is `io_cosine_similarity`,
+    # a different quantity. The series fitted here is
+    # `SemanticMetrics.mean_pairwise_distance`, inverted; docs/MEASUREMENTS.md
+    # § io_cosine_similarity has always described it correctly.)
+    #
+    # None when the run had fewer than two steps to fit a line through, which
+    # includes generating nothing at all. The default was 0.0, so two gpt-5
+    # profiles with `output_side.steps = []` published a flat trend for a
+    # generation that never happened.
+    similarity_trend_slope: Optional[float] = None
     # Set when the input-side measurements (input entropy shift, prompt
     # surprisal excess, I/O correlation) were computed by teacher-forcing a
     # --surrogate proxy model over the prompt instead of the target model
@@ -229,7 +240,7 @@ class BehavioralRangeProfile(BaseModel):
     #   SIGNAL_SET_VERSION, so records from that path were unversioned claims.
     #   A MAJOR removal for image profiles and a no-op for text profiles,
     #   which never carried the fields.
-    # 0.12.0 (current): added provenance.chat_template_present
+    # 0.12.0: added provenance.chat_template_present
     #   (Optional[bool], default None) — whether the target checkpoint's
     #   tokenizer declares a chat template, which hif does not apply on any
     #   backend. An instruct-tuned checkpoint therefore continues the prompt
@@ -238,7 +249,62 @@ class BehavioralRangeProfile(BaseModel):
     #   None ("not asked", never "no template"), so 0.11.0 profile JSON still
     #   validates unchanged. See hif/models/chat_template.py for why the field
     #   is the literal declaration and not a test for "instruct-tuned".
-    schema_version: str = "0.12.0"
+    # 0.13.0 (current): the empty-generation pass — what a run reports when the
+    #   target returned no output at all. Three fields become nullable and
+    #   three are added, all for the same reason: a run with zero output steps
+    #   was publishing measured-looking zeros.
+    #   - output_side.mean_step_entropy: float -> Optional[float]. Was 0.0 over
+    #     no steps, which reads as "certain at every step" about a run that
+    #     took none.
+    #   - metrics.sensitivity[].output_entropy_delta: float -> Optional[float],
+    #     following mean_step_entropy — a difference of two absent means.
+    #   - center.output_mean_entropy and center.entropy_ratio: float ->
+    #     Optional[float], same reason.
+    #   - center.prompt_output_cosine_distance: float -> Optional[float]. Was
+    #     0.0 — the MINIMUM of its [0, 2] range, which on a distance reads as
+    #     "output identical to the prompt". It reported perfect anchoring for
+    #     a model that returned nothing.
+    #   - findings.similarity_trend_slope: float (default 0.0) ->
+    #     Optional[float] (default None). A line fitted through fewer than two
+    #     points is undefined, not flat.
+    #   - output_side.stop_reason (Optional[str], default None) — why
+    #     generation ended, as the backend reported it.
+    #   - provenance.target_generated_no_output (bool, default False) and
+    #     provenance.generation_stop_reason (Optional[str], default None) —
+    #     so an empty output side is a stated fact with a stated reason rather
+    #     than an absence a reader has to notice.
+    #   A MAJOR change: 0.12.0 JSON still validates (widening a type and adding
+    #   defaulted fields both accept old data), but a consumer that read
+    #   `mean_step_entropy` or `similarity_trend_slope` as a float will now
+    #   meet None on exactly the runs where the old value was fiction.
+    # 0.14.0 (current): the same pass applied one layer down, to the
+    #   per-variant sensitivity records the perturbation response is built
+    #   from. `stability.py` promised "Never a fake 0.0 and never a fake 1.0"
+    #   and kept that promise at its own level while being handed constants
+    #   from below.
+    #   - metrics.sensitivity[].{mean_js_divergence, mean_kl_divergence,
+    #     mean_entropy_delta, mean_nucleus_stability_p90}: float -> Optional,
+    #     None when the variant aligned no steps against the baseline. Were
+    #     0.0/0.0/0.0/1.0.
+    #   - metrics.sensitivity[].step_sensitivities[].kl_divergence: float ->
+    #     Optional. Was clamped to a 1e9 sentinel, which `math.isfinite`
+    #     accepts — so the filter written to drop undefined steps dropped
+    #     none, and 833 records across half the corpus carry a mean near
+    #     9.65e8 that the report rendered as 965517241.3793.
+    #   - metrics.sensitivity[].step_sensitivities[].nucleus_overlap_p90:
+    #     float -> Optional. Was 1.0 on an empty nucleus.
+    #   - metrics.sensitivity[].n_steps_aligned (int, default 0) — the
+    #     shared-prefix length each row's means were taken over. Variants are
+    #     weighted equally in the aggregate regardless of it, which is the
+    #     measurement's own definition; this makes the difference visible.
+    #   - metrics.sensitivity[].n_undefined_kl_steps (int, default 0).
+    #   - metrics.stability.n_perturbations_aligned (int, default 0) — how
+    #     many variants actually contributed to perturbation_jsd_bits, so
+    #     dropping an absent one is not a silent narrowing of n.
+    #   A MAJOR change on the same terms as 0.13.0: old JSON still validates,
+    #   but a consumer reading any of these as a float now meets None where
+    #   the old value was invented.
+    schema_version: str = "0.14.0"
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     model: ModelIdentity
     prompt: PromptRecord

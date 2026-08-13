@@ -4,8 +4,8 @@ One report, not two. There was also a `render_public()` — a plain-English
 subset of the same measurement table — written alongside the technical report
 on every `--output-dir` run. It was dropped: a second rendering of the same
 numbers is a second place for them to disagree, and the reader who wants the
-values without the diagnostics is better served by the JSON artifact
-(`--trace`), which is the whole profile rather than a lossy excerpt of it.
+values without the diagnostics is better served by the JSON artifact every run
+writes, which is the whole profile rather than a lossy excerpt of it.
 """
 
 from __future__ import annotations
@@ -36,6 +36,18 @@ def _absent_reason(key: str, profile) -> str:
     ) is None:
         return f"absent (not requested — pass {flag})"
     return "absent (not measurable on this run)"
+
+
+def _num(value, spec: str = ".4f") -> str:
+    """A diagnostic cell: the number, or the word for its absence.
+
+    The diagnostic blocks below carry several quantities that are None on a
+    run that generated nothing (center entropies, the prompt/output distance,
+    the mean step entropy). Formatting None with `:.4f` raises, and defaulting
+    it to 0.0 is the fabrication this whole pass removes — so the report says
+    absent, the same word the measurement table uses.
+    """
+    return "absent" if value is None else format(value, spec)
 
 
 def _cell(text: str) -> str:
@@ -150,8 +162,11 @@ def render_technical(profile: BehavioralRangeProfile, output_path: Path) -> None
             f"{_cell(m.unit)} — {_cell(m.definition)} |"
         )
     a("")
-    a(f"Similarity trend slope: {profile.findings.similarity_trend_slope:+.6g} "
-      "(OLS slope of per-step input/output cosine similarity).")
+    _slope = profile.findings.similarity_trend_slope
+    a("Similarity trend slope: "
+      + (f"{_slope:+.6g}" if _slope is not None
+         else "absent (fewer than two output steps)")
+      + " (OLS slope of the per-step candidate-cloud similarity).")
     a("")
     if profile.findings.surrogate_model_name is not None:
         a(f"\\* computed via surrogate model `{profile.findings.surrogate_model_name}` "
@@ -186,9 +201,9 @@ def render_technical(profile: BehavioralRangeProfile, output_path: Path) -> None
     a("| Metric | Value |")
     a("|---|---|")
     a(f"| Input mean entropy | {profile.center.input_mean_entropy:.4f} |")
-    a(f"| Output mean entropy | {profile.center.output_mean_entropy:.4f} |")
-    a(f"| Entropy ratio (output/input, both bits) | {profile.center.entropy_ratio:.4f} |")
-    a(f"| Prompt/output cosine distance | {profile.center.prompt_output_cosine_distance:.4f} |")
+    a(f"| Output mean entropy | {_num(profile.center.output_mean_entropy)} |")
+    a(f"| Entropy ratio (output/input, both bits) | {_num(profile.center.entropy_ratio)} |")
+    a(f"| Prompt/output cosine distance | {_num(profile.center.prompt_output_cosine_distance)} |")
     a("")
 
     # Input-side summary
@@ -206,7 +221,7 @@ def render_technical(profile: BehavioralRangeProfile, output_path: Path) -> None
     a("")
     a("| Metric | Value |")
     a("|---|---|")
-    a(f"| Mean step entropy | {profile.output_side.mean_step_entropy:.4f} |")
+    a(f"| Mean step entropy | {_num(profile.output_side.mean_step_entropy)} |")
     a(f"| Generated tokens | {len(profile.output_side.generated_ids)} |")
     a(f"| Top-K | {profile.output_side.top_k} |")
     a("")
@@ -293,10 +308,21 @@ def render_technical(profile: BehavioralRangeProfile, output_path: Path) -> None
                 a(f"- {v}")
             a("")
             if rec.sensitivity:
-                a("| Variant | Mean JS | Mean KL | Entropy delta |")
-                a("|---|---|---|---|")
+                # `Steps` is the shared-prefix length each row's means were
+                # taken over. Without it every row reads as equally weighted,
+                # which is how a mean over 6 steps sat beside a mean over 64
+                # with nothing to tell them apart.
+                a("| Variant | Steps | Mean JS | Mean KL | Entropy delta |")
+                a("|---|---|---|---|---|")
                 for i, sens in enumerate(rec.sensitivity):
-                    a(f"| {i} | {sens.mean_js_divergence:.4f} | {sens.mean_kl_divergence:.4f} | {sens.mean_entropy_delta:.4f} |")
+                    kl = _num(sens.mean_kl_divergence)
+                    if sens.n_undefined_kl_steps:
+                        kl += f" ({sens.n_undefined_kl_steps} undefined)"
+                    a(
+                        f"| {i} | {sens.n_steps_aligned} | "
+                        f"{_num(sens.mean_js_divergence)} | {kl} | "
+                        f"{_num(sens.mean_entropy_delta)} |"
+                    )
                 a("")
 
     # Config
