@@ -325,3 +325,33 @@ git config core.hooksPath tools/hooks
 The check passes quietly when the site is not checked out — working on the CLI
 alone never requires it. The sync only writes the site's working tree;
 reviewing and committing there stays a deliberate act.
+
+### Lists of backends are generated, never typed
+
+The README's backend access-tier table comes out of
+`hif/models/capabilities.py`, the same registry `docs/FLAGS.md` § Backends is
+generated from, so adding or removing a backend means regenerating both —
+`python3 tools/regen_docs.py` does that and the sync in one pass. Alone:
+
+```bash
+python3 tools/gen_backend_tiers.py            # rewrite the block in README.md
+python3 tools/gen_backend_tiers.py --check    # exit 1 if it has drifted
+```
+
+The hook runs the check whenever `capabilities.py` or the README is staged —
+the registry is as much the gate as the doc, because this is a table that goes
+wrong when nobody touches it. It listed `deepseek`, which has never been a
+backend, while omitting `ollama`, which is one, and the site renders README.md
+and FLAGS.md on the same CLI page, so a stale copy does not merely go unread:
+it sits next to a generated one contradicting it.
+
+docs/MEASUREMENTS.md § Backend Access is the third view of the same fact. It
+keeps hand-written per-tier prose worth more than uniformity, so it is not
+generated; `tests/unit/test_docs_backends.py` instead locks its rows to exact
+per-tier membership, and asserts the README block has been regenerated.
+
+The tier tags (`[F]`, `[T-k]`, `[P]`) are the readable name for the `logprobs`
+field and are spelled the same way in docs/MEASUREMENTS.md, AGENTS.md and
+`tests/unit/mock_backends.py`. A backend whose `logprobs` value has no tier
+stops the generator rather than dropping out of a table that still reads as
+complete.

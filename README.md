@@ -257,15 +257,35 @@ both, up front:
 
 ## What you can measure depends on the backend
 
-| access | backends | what you get |
-|---|---|---|
-| `[F]` full | `hf`, `tlens` | full-vocabulary distributions, teacher forcing, attention — every measurement |
-| `[T-k]` truncated | `openai`, `gemini` (Vertex AI), `deepseek` | top-k logprobs only; entropy is a lower bound, no teacher forcing |
-| `[P]` proxy | `anthropic`, `gemini` (developer API), text-only APIs | output text only; distributional measurements unavailable |
+Access is a property of what the backend exposes, not of the model. The tiers
+are `hif/models/capabilities.py`'s `logprobs` field under a readable name, so
+the table is generated from that registry rather than kept beside it — run
+`python3 tools/regen_docs.py` after adding a backend.
+
+<!-- generated: backend access tiers — tools/gen_backend_tiers.py -->
+
+| access | backends | teacher forcing | what you get |
+|---|---|---|---|
+| `[F]` full | `hf`, `tlens` | yes | full-vocabulary distributions — every measurement |
+| `[T-k]` truncated | `ollama`, `openai`, `gemini` | no | top-k logprobs only; output entropy is a lower bound |
+| `[P]` proxy | `anthropic` | no | the selected token only; the entropy-shaped measurements degenerate and a divergence between distributions is absent outright |
+
+<!-- /generated: backend access tiers -->
 
 Gemini's tier is set by the endpoint, not the model: logprobs come back on Vertex
 AI and the developer API degenerates, so `gemini-2.5-pro` is `[T-k]` on one and
 `[P]` on the other. `hif models` reports what your credentials actually reach.
+
+`[P]` is not measurement-free. `anthropic` fully supports `io_cosine_similarity`,
+and `--surrogate` recovers the input-side rows and the entropies by reading text
+under teacher forcing. What nothing recovers there is `perturbation_jsd_bits`: a
+backend that returns one token returns no distribution to diverge from.
+
+Attention is absent from the table on purpose. It was never a backend
+capability — `hif/analysis/attention.py` runs its own encoder over *text*, and
+never touches the target's attention — and hif-v4 cut both attention rows from
+the measurement set, so what the stage records under `--diagnostics` is
+evidence rather than a measurement any tier can be said to support.
 
 Run `hif models` for the authoritative per-backend list — it names, per
 backend, exactly which measurements it can and cannot produce:

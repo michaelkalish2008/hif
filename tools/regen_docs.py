@@ -27,10 +27,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 SITE_DOCS = ROOT.parent / "ai-interpretability" / "public" / "docs"
 
-# (script, needs the site checked out). Order is dependency order: the two
+# (script, needs the site checked out). Order is dependency order: the
 # generators write files in this repo, and sync_docs copies them onward.
+# gen_backend_tiers writes into README.md, which sync_docs publishes, so it
+# has the same before-the-sync constraint gen_flags_doc has.
 STEPS: list[tuple[str, bool]] = [
     ("gen_flags_doc.py", False),
+    ("gen_backend_tiers.py", False),
     ("gen_site_measurements.py", True),
     ("sync_docs.py", True),
 ]
