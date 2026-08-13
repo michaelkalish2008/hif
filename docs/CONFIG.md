@@ -413,10 +413,14 @@ keeps them, so those descriptors can be recomputed from the artifact without
 re-running models. The cost is size, and it scales with the variant count.
 
 Nothing is written to disk unless you ask. `--output-dir` opts into the run's
-files — the technical report, the profile JSON, and the `--charts` plots.
-`--trace` is a second axis on top of that, not a stricter version of it: the
-baseline per-step top-K is on `output_side.steps` and lands in the JSON either
-way, so what `--trace` adds is the variant and branch traces.
+files — the technical report, the `--charts` plots, and the profile JSON, which
+goes to the trace dir (`<output-dir>/traces` by default, or wherever
+`--trace-dir` points).
+
+`--trace` is a second axis on top of that, not a stricter version of it. It
+decides what is **in** the JSON, never where the JSON lands: the baseline
+per-step top-K is on `output_side.steps` and is in the artifact either way, so
+what `--trace` adds is the variant and branch traces.
 
 ---
 

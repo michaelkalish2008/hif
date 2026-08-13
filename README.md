@@ -259,8 +259,12 @@ both, up front:
 | access | backends | what you get |
 |---|---|---|
 | `[F]` full | `hf`, `tlens` | full-vocabulary distributions, teacher forcing, attention — every measurement |
-| `[T-k]` truncated | `openai`, `gemini` (flash), `deepseek` | top-k logprobs only; entropy is a lower bound, no teacher forcing |
-| `[P]` proxy | `anthropic`, `gemini` (pro), text-only APIs | output text only; distributional measurements unavailable |
+| `[T-k]` truncated | `openai`, `gemini` (Vertex AI), `deepseek` | top-k logprobs only; entropy is a lower bound, no teacher forcing |
+| `[P]` proxy | `anthropic`, `gemini` (developer API), text-only APIs | output text only; distributional measurements unavailable |
+
+Gemini's tier is set by the endpoint, not the model: logprobs come back on Vertex
+AI and the developer API degenerates, so `gemini-2.5-pro` is `[T-k]` on one and
+`[P]` on the other. `hif models` reports what your credentials actually reach.
 
 Run `hif models` for the authoritative per-backend list — it names, per
 backend, exactly which measurements it can and cannot produce:

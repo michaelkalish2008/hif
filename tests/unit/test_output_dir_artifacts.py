@@ -6,7 +6,8 @@ belonged to the hosted deployment, where the text being profiled was not the
 operator's; it is archived, and a researcher profiling their own prompts on
 their own machine is not disclosing anything to themselves. So the artifact
 the report is an excerpt of — and the only form `hif render` reads back — now
-ships with the report.
+ships with the report, in the trace dir, whether or not `--trace` was passed:
+that flag decides the artifact's CONTENT, never its location.
 """
 
 from __future__ import annotations
@@ -28,11 +29,9 @@ class _FakeEngine:
     def profile_one(self, prompt, **kwargs):
         return _make_profile()
 
-    def write_trace(self, profile, *, prompt, seed, trace_dir):
-        path = Path(trace_dir) / "profile_trace.json"
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text("{}")
-        return path
+    # The real one: hash-addressed naming and real serialization are exactly
+    # what these tests are about, and only the model loading needs faking.
+    write_trace = hif.engine.SessionEngine.write_trace
 
 
 def _patch(monkeypatch):
@@ -56,27 +55,45 @@ def _run_with(monkeypatch, tmp_path, **kwargs):
     )
 
 
-def test_output_dir_writes_report_and_json(monkeypatch, tmp_path):
-    _run_with(monkeypatch, tmp_path)
+def _artifacts(root: Path) -> list[str]:
+    """Every file a run leaves: the report, and the JSON in the trace dir."""
+    return sorted(
+        [p.name for p in root.glob("*_technical.md")]
+        + [p.name for p in (root / "traces").glob("profile_*.json")]
+    )
 
-    reports = list(tmp_path.glob("*_technical.md"))
-    jsons = [p for p in tmp_path.glob("profile_*.json")]
-    assert len(reports) == 1, sorted(p.name for p in tmp_path.iterdir())
-    assert len(jsons) == 1, sorted(p.name for p in tmp_path.iterdir())
+
+def test_output_dir_writes_report_and_json(monkeypatch, tmp_path):
+    _, trace_path = _run_with(monkeypatch, tmp_path)
+
+    assert len(list(tmp_path.glob("*_technical.md"))) == 1
+    assert trace_path is not None and trace_path.exists()
+    assert trace_path.parent == tmp_path / "traces"
 
     # The JSON is the whole profile, not a summary of it: it round-trips.
-    data = json.loads(jsons[0].read_text())
+    data = json.loads(trace_path.read_text())
     assert data["model"]["name"] == "mock-model"
     assert data["output_side"]["steps"]
 
 
-def test_json_not_duplicated_when_trace_already_wrote_it(monkeypatch, tmp_path):
-    """--trace writes the same bytes to the trace dir. One artifact, not two."""
-    _, trace_path = _run_with(monkeypatch, tmp_path, trace=True)
+def test_trace_changes_the_artifact_not_its_location(monkeypatch, tmp_path):
+    """--trace decides what is IN the JSON, not where it lands.
 
-    assert trace_path is not None and trace_path.exists()
+    A file that moves between directories depending on an unrelated flag is a
+    file nobody can write a path to, so both runs put it in the trace dir.
+    """
+    _, without = _run_with(monkeypatch, tmp_path)
+    _, with_trace = _run_with(monkeypatch, tmp_path, trace=True)
+
+    assert without.parent == with_trace.parent == tmp_path / "traces"
     assert list(tmp_path.glob("profile_*.json")) == []
-    assert len(list(tmp_path.glob("*_technical.md"))) == 1
+
+
+def test_trace_dir_overrides_the_default(monkeypatch, tmp_path):
+    elsewhere = tmp_path / "somewhere" / "else"
+    _, trace_path = _run_with(monkeypatch, tmp_path, trace_dir=elsewhere)
+
+    assert trace_path.parent == elsewhere
 
 
 def test_lite_and_full_runs_do_not_overwrite_each_others_artifacts(
@@ -88,10 +105,10 @@ def test_lite_and_full_runs_do_not_overwrite_each_others_artifacts(
     invocation silently replaced the first one's report and JSON in place.
     """
     _run_with(monkeypatch, tmp_path)
-    full = sorted(p.name for p in tmp_path.iterdir())
+    full = _artifacts(tmp_path)
 
     _run_with(monkeypatch, tmp_path, lite=True)
-    both = sorted(p.name for p in tmp_path.iterdir())
+    both = _artifacts(tmp_path)
 
     assert len(full) == 2, full
     assert len(both) == 4, both
@@ -101,6 +118,7 @@ def test_lite_and_full_runs_do_not_overwrite_each_others_artifacts(
 def test_no_output_dir_writes_nothing(monkeypatch, tmp_path):
     """A run that was not asked for files leaves none."""
     _patch(monkeypatch)
+    monkeypatch.chdir(tmp_path)  # the no-output-dir trace default is ./traces
     _run._run_single_profile(
         model_name="mock-model",
         prompt="hello world",

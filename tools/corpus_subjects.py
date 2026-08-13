@@ -88,7 +88,7 @@ def main() -> int:
     print("-" * (width + 22 * len(present)))
     for model in order:
         n = n_profiles[model]
-        row = "".join(f"{tally[model][k] / n:>22.1f}" for k, _ in present)
+        row = "".join(f"{tally[model][k] / n:>22.2f}" for k, _ in present)
         print(f"{model:<{width}}{row}")
     print(f"\nper profile, averaged over the regimes each model was run on "
           f"({len(files)} profiles, {len(tally)} models)")

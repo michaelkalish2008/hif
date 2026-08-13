@@ -362,8 +362,8 @@ UNITS_HELP = (
 )
 
 TRACE_DIR_HELP = (
-    "Where --trace artifacts are written (default: <output-dir>/traces, "
-    "or ./traces when no --output-dir). Passing this implies --trace."
+    "Where the profile JSON is written (default: <output-dir>/traces, or "
+    "./traces when no --output-dir). Passing this implies --trace."
 )
 
 CHARTS_HELP = (

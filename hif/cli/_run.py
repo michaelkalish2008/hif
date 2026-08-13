@@ -147,14 +147,15 @@ def _run_single_profile(
 
     Nothing is written implicitly — not as a data-handling rule, but because a
     measurement run should not litter the working directory. `output_dir` opts
-    into the artifacts of a run: the technical report, the profile JSON, and
-    the `--charts` plots. `trace` additionally captures the raw perturbation-
-    variant and trajectory-branch traces INSIDE that artifact, so field
-    descriptors can be recomputed without re-running the models —
-    trace_path is None unless it did.
+    into the artifacts of a run: the technical report, the `--charts` plots,
+    and the profile JSON, which lands in the trace dir
+    (`<output_dir>/traces` by default). `trace` is the other opt-in, and it
+    decides what is in that JSON rather than whether it exists: it captures
+    the raw perturbation-variant and trajectory-branch traces so field
+    descriptors can be recomputed without re-running the models. trace_path is
+    the artifact's path, None only when neither opt-in was used.
     """
     from hif.engine import SessionEngine
-    from hif.profile.render_json import render_json
     from hif.profile.render_markdown import render_technical
 
     config = _resolve_run_config(
@@ -202,8 +203,21 @@ def _run_single_profile(
     # write different content and must not write it to the same path.
     h = _profile_hash(model_name, prompt, seed, config)
 
+    # The JSON artifact — every per-step record, and the only form `hif render`
+    # reads back — has ONE home, the trace dir, whether or not --trace was
+    # passed. --trace decides what is IN the artifact (it adds the raw variant
+    # and branch traces); it does not decide where the artifact lands, and a
+    # file that moves between directories depending on an unrelated flag is a
+    # file nobody can write a path to.
+    #
+    # It used to be withheld entirely without --trace, on the reasoning that
+    # per-step top-K with token identity should not reach disk by default.
+    # That reasoning came from the hosted deployment (archived), where the text
+    # belonged to someone other than the operator; a researcher profiling
+    # prompts they wrote, on their own machine, is not disclosing anything to
+    # themselves.
     trace_path: Optional[Path] = None
-    if trace:
+    if trace or output_dir is not None:
         resolved_trace_dir = trace_dir or (
             (output_dir / "traces") if output_dir else Path("traces")
         )
@@ -213,18 +227,6 @@ def _run_single_profile(
     if output_dir is not None:
         output_dir.mkdir(parents=True, exist_ok=True)
         render_technical(profile, output_dir / f"profile_{h}_technical.md")
-        # The JSON is the artifact the report is an excerpt of: every per-step
-        # record, and the only form `hif render` can read back. It used to be
-        # withheld unless --trace, on the reasoning that per-step top-K with
-        # token identity should not reach disk by default. That reasoning came
-        # from the hosted deployment (archived), where the text belonged to
-        # someone other than the operator; a researcher profiling prompts they
-        # wrote, on their own machine, is not disclosing anything to
-        # themselves. --trace still means something — it adds the variant and
-        # branch traces — so skip this copy when it already wrote the same
-        # bytes rather than emit the artifact twice.
-        if trace_path is None:
-            render_json(profile, output_dir / f"profile_{h}.json")
 
     if charts and output_dir is not None:
         from hif.viz import generate_signal_plots

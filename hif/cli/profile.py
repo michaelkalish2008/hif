@@ -8,14 +8,15 @@ for one answer, is the worst place in the tool to defend a design decision.
 WHY THE EXPENSIVE THINGS ARE OFF BY DEFAULT
 
 A run that was not asked for files leaves none, so `--output-dir` is the opt-in
-that puts anything on disk: the technical report, the profile JSON, and the
-`--charts` plots. `--trace` is a second axis, not a stricter version of the
-first — it adds the raw perturbation-variant and trajectory-branch traces to
-the artifact, which is what makes field descriptors recomputable without
-re-running the models, at a cost in size that scales with the variant count.
-(The BASELINE per-step top-K is on `output_side.steps` and therefore in the
-JSON either way; `--trace` has never been the line between distributions on
-disk and not.)
+that puts anything on disk: the technical report, the `--charts` plots, and the
+profile JSON — which goes to the trace dir (`<output-dir>/traces`, or
+`--trace-dir`), the artifact's one home whether or not `--trace` was passed.
+`--trace` is a second axis, not a stricter version of the first: it decides
+what is IN that JSON, adding the raw perturbation-variant and trajectory-branch
+traces, which is what makes field descriptors recomputable without re-running
+the models, at a cost in size that scales with the variant count. (The BASELINE
+per-step top-K is on `output_side.steps` and therefore in the JSON either way;
+`--trace` has never been the line between distributions on disk and not.)
 
 `--variant-io` is the same decision one level down — it adds model-generated
 text to every record, so the record becomes the review surface for elicited
@@ -287,7 +288,7 @@ def profile(
         None,
         rich_help_panel=PANEL_FILES,
         help="Write the run's files here: the technical Markdown report, the "
-        "profile JSON, and the --charts plots.",
+        "--charts plots, and the profile JSON (in <output-dir>/traces).",
     ),
     charts: bool = typer.Option(
         False, "--charts", rich_help_panel=PANEL_FILES, help=CHARTS_HELP
