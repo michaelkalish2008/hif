@@ -8,10 +8,16 @@ it has been regenerated. MEASUREMENTS.md's keeps hand-written per-tier prose
 that nothing can introspect, so its BACKEND NAMES are checked instead —
 membership is the part that drifted, and it is the part the registry owns.
 
-The README table listed `deepseek` (not a backend), omitted `ollama` (one
-that is), and split `gemini` across two tiers on a flash/pro distinction that
-is not a field on any row. All three are the kind of thing a reader cannot
-catch and a test can.
+The README table omitted `ollama`, which is a backend, and credited `[F]` with
+attention, which is not a backend capability at all — the kind of thing a
+reader cannot catch and a test can.
+
+What these tests deliberately do NOT assert is that every backend-shaped name
+in the README is a registry key. That table also named `deepseek`, which is
+not a `--backend` value but IS a supported target behind `--backend openai`
+with a `base_url`. A subset-of-BACKENDS check over the prose would fail on
+that sentence and pressure someone into deleting a true fact to make a test
+pass. The generated block is checked exactly; the prose around it is not.
 """
 
 from __future__ import annotations

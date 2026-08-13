@@ -276,6 +276,15 @@ Gemini's tier is set by the endpoint, not the model: logprobs come back on Verte
 AI and the developer API degenerates, so `gemini-2.5-pro` is `[T-k]` on one and
 `[P]` on the other. `hif models` reports what your credentials actually reach.
 
+**The table lists backends, not every model you can profile.** Any provider with
+an OpenAI-compatible API — DeepSeek, Mistral, Grok, a local vLLM — is reached
+through `--backend openai` with `[model] base_url` set, and inherits the
+`openai` row: `[T-k]`, no teacher forcing. DeepSeek is not missing from the
+table because it is unsupported; three DeepSeek families are in the published
+corpus. It is absent because it is not a `--backend` value, which is the only
+thing the registry knows how to name. See
+[docs/CONFIG.md](docs/CONFIG.md) § `[model]` for the endpoint and key.
+
 `[P]` is not measurement-free. `anthropic` fully supports `io_cosine_similarity`,
 and `--surrogate` recovers the input-side rows and the entropies by reading text
 under teacher forcing. What nothing recovers there is `perturbation_jsd_bits`: a

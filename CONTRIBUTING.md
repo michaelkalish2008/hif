@@ -340,10 +340,21 @@ python3 tools/gen_backend_tiers.py --check    # exit 1 if it has drifted
 
 The hook runs the check whenever `capabilities.py` or the README is staged —
 the registry is as much the gate as the doc, because this is a table that goes
-wrong when nobody touches it. It listed `deepseek`, which has never been a
-backend, while omitting `ollama`, which is one, and the site renders README.md
-and FLAGS.md on the same CLI page, so a stale copy does not merely go unread:
-it sits next to a generated one contradicting it.
+wrong when nobody touches it. It omitted `ollama`, which is a backend, and the
+site renders README.md and FLAGS.md on the same CLI page, so a stale copy does
+not merely go unread: it sits next to a generated one contradicting it.
+
+**Generating a list also deletes what the list cannot express, so check what
+you are dropping.** That table also carried a `deepseek` row, and the first
+pass removed it as fictional on the grounds that `deepseek` is not a key in
+`BACKENDS`. True, and beside the point: DeepSeek is profiled through
+`--backend openai` with a `base_url`, `hif/models/openai_model.py` carries
+DeepSeek-specific tokenizer, context and temperature handling, and the
+published corpus contains three DeepSeek families. The row was a real fact
+recorded in the only column the table had. It now lives as prose under the
+table, because a generator that emits registry keys is structurally unable to
+say it — which is a reason to write the fact down beside the generated block,
+not a reason to conclude it was never true.
 
 docs/MEASUREMENTS.md § Backend Access is the third view of the same fact. It
 keeps hand-written per-tier prose worth more than uniformity, so it is not

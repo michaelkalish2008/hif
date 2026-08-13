@@ -7,11 +7,27 @@ Run: python3 tools/gen_backend_tiers.py            # write the block
 The table lives between markers in README.md and is REPLACED wholesale, for
 the same reason docs/FLAGS.md § Backends is generated from this same registry:
 a hand-kept list of backends agrees with `hif/models/capabilities.py` on the
-day it is typed and drifts silently afterwards. This one had drifted three
-ways at once — it listed `deepseek`, which is not a backend and never was; it
-omitted `ollama`, which is; and it credited the `[F]` tier with "attention",
-which no backend has ever been asked to expose (`hif/analysis/attention.py`
-runs its own encoder over text, and hif-v4 cut both attention rows besides).
+day it is typed and drifts silently afterwards. This one omitted `ollama`,
+which is a backend, and credited the `[F]` tier with "attention", which no
+backend has ever been asked to expose (`hif/analysis/attention.py` runs its
+own encoder over text, and hif-v4 cut both attention rows besides).
+
+What this generator CANNOT say
+------------------------------
+It emits registry keys, so it can only name things the registry names. The
+table it replaced also listed `deepseek`, and the first pass deleted that row
+as an invention because `deepseek` is not a key in `BACKENDS`. It is not — and
+DeepSeek is still a supported target, profiled through `--backend openai` with
+`[model] base_url`, with its own tokenizer, context and temperature handling
+in `hif/models/openai_model.py` and three families in the published corpus.
+The hand-written row was recording a true fact in the only column it had.
+
+The lesson is not that the table should be hand-written again. It is that
+replacing prose with a projection of a registry silently drops whatever the
+registry cannot express, and the dropped thing looks exactly like a bug being
+fixed. Anything in that category — OpenAI-compatible endpoints, gemini's
+Vertex/developer split — belongs in prose BESIDE this block, where the README
+now keeps both.
 
 The two tables are not redundant, and neither can drift from the other because
 neither is typed. FLAGS.md's is per-backend and answers "what do I get from
