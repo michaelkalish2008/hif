@@ -412,15 +412,74 @@ enough to derive field descriptors, then dropped. `traceability.enabled = true`
 keeps them, so those descriptors can be recomputed from the artifact without
 re-running models. The cost is size, and it scales with the variant count.
 
-Nothing is written to disk unless you ask. `--output-dir` opts into the run's
-files — the technical report, the `--charts` plots, and the profile JSON, which
-goes to the trace dir (`<output-dir>/traces` by default, or wherever
-`--trace-dir` points).
+Every run writes its profile JSON, to `--trace-dir` when given and otherwise to
+a `traces/` directory — under `--output-dir` when there is one, in the working
+directory when there is not, reused if it exists and created if it does not.
+It is the result: the report is an excerpt of it, and `hif render` reads
+nothing else.
+
+`--output-dir` opts into the DERIVED files, the ones regenerable from that
+JSON — the technical report and the `--charts` plots.
 
 `--trace` is a second axis on top of that, not a stricter version of it. It
 decides what is **in** the JSON, never where the JSON lands: the baseline
 per-step top-K is on `output_side.steps` and is in the artifact either way, so
 what `--trace` adds is the variant and branch traces.
+
+### What a run leaves on disk
+
+```
+<output-dir>/
+  profile_<hash>_technical.md      # render_technical() — derived, regenerable
+  traces/
+    profile_<hash>.json            # render_json() — the artifact
+  plots/<hash>/                    # --charts only
+```
+
+Without `--output-dir` only the `traces/` line exists, relative to the working
+directory. `<hash>` is `profile_hash(model, prompt, seed, config)` — it carries
+the stage budget, so a `--lite` run and a full run of the same prompt are
+different runs and get different filenames instead of overwriting each other.
+
+The direction of derivation is one-way and worth keeping straight: the report
+is rendered *from* the profile, so it can be rebuilt at any time with
+
+```bash
+hif render <output-dir>/traces/profile_<hash>.json
+```
+
+while nothing rebuilds the profile from the report. That asymmetry is why the
+JSON is the file a run always writes and the report is the file you opt into.
+
+### `hif batch` writes its result too — a different result
+
+Same rule, different deliverable. A workload's result is its **record stream**,
+not any one profile, so `batch` always writes `records.jsonl` — to
+`--output-dir` when given, the working directory otherwise — while still
+streaming to stdout, so pipelines are unaffected. It is flushed per row: a
+workload that dies on row 300 leaves the 299 records it earned.
+
+Per-row profile artifacts stay opt-in there, and this is the one place the
+volume argument does real work:
+
+| per row, at defaults | size |
+| --- | --- |
+| `--lite` | ~0.8 MB |
+| default | ~4.5 MB |
+| `--trace` | ~10 MB |
+
+Measured on gpt2, 64 new tokens, top-k 50, 2 variants; it scales linearly in
+both. So `--trace` over a 500-row workload is ~5 GB, which is why
+
+```bash
+hif batch workload.jsonl gpt2 --trace-sample 20
+```
+
+exists: keep at most N artifacts, spread evenly across the workload and always
+including the first row, ~200 MB instead of 5 GB. `--trace-sample` implies
+`--trace`. Every row still emits its record either way — the rows whose
+artifact was not kept simply carry no `trace_path`, which is the honest report
+of what is on disk.
 
 ---
 

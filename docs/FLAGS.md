@@ -32,9 +32,10 @@ Profile many prompts against one loaded model.
 | `--units` | Add a per-measurement units block to each record. Constant per signal_set_version, so off by default; `hif schema` prints the same information without running a model. |
 | `--variant-io` | Add each perturbation variant's input text and the continuation it elicited to every record. |
 | `--entropy-percentile` | Also report output_nucleus_entropy_bits: the entropy of the smallest per-step prefix carrying this percent of the output distribution's mass (e.g. 95), renormalized. Needs a full-logprob backend (`hif models`). |
-| `--output-dir` | Also mirror the stdout record stream to <output-dir>/records.jsonl. |
-| `--trace` | Persist each row's full profile artifact, with the raw variant and branch traces included, for later recomputation. |
-| `--trace-dir` | Where the profile JSON is written (default: <output-dir>/traces, or ./traces when no --output-dir). Passing this implies --trace. |
+| `--output-dir` | Where records.jsonl is written (default: the working directory). The record stream goes to stdout either way. |
+| `--trace` | Also keep each row's full profile artifact, raw variant and branch traces included, for later recomputation. Roughly 10 MB per row at defaults — see --trace-sample to keep a subset instead. |
+| `--trace-sample` | Keep at most N row artifacts under --trace, spread evenly across the workload (N=20 on 500 rows is 20 files, ~200 MB, not 5 GB). Every row still emits its record. |
+| `--trace-dir` | Where the profile JSON is written (default: <output-dir>/traces, or ./traces when no --output-dir; created if absent). Passing this implies --trace. |
 | `--surrogate` | Recover the input-side measurements on backends that cannot teacher-force by teacher-forcing a small local proxy model instead, so those numbers describe the proxy, not your model (see `hif profile --surrogate`). |
 | `--surrogate-model` | Open-weight HF model id to use as that proxy (default: Llama 3.2 1B, ungated mirror). Passing it implies --surrogate; `hif models --surrogates` lists candidates. |
 
@@ -44,7 +45,7 @@ Profile many prompts against one loaded model.
 # the built-in suite: 8 regimes x 5 prompts, one record per row on stdout
 hif batch --sample-set all Qwen/Qwen3-0.6B-Base
 
-# your own rows; records stream to stdout and mirror to out/records.jsonl
+# your own rows; records stream to stdout and land in out/records.jsonl
 hif batch workload.jsonl Qwen/Qwen3-0.6B-Base --output-dir out
 
 # write the suite's rows as a file to edit and run back — no model is loaded
@@ -169,10 +170,10 @@ Run the full hif pipeline on a single (model, prompt) pair.
 | `--variant-io` | Add each perturbation variant's input text and the continuation it elicited to the --json record (null where none was elicited). |
 | `--entropy-percentile` | Also report output_nucleus_entropy_bits: the entropy of the smallest per-step prefix carrying this percent of the output distribution's mass (e.g. 95), renormalized. Needs a full-logprob backend (`hif models`). |
 | `--verbose`, `-v` | Also show model input/output text, perturbation variants, full numeric stats, and internal logging. |
-| `--output-dir` | Write the run's files here: the technical Markdown report, the --charts plots, and the profile JSON (in <output-dir>/traces). |
+| `--output-dir` | Write the run's derived files here: the technical Markdown report and the --charts plots. The profile JSON every run writes moves with it, to <output-dir>/traces. |
 | `--charts` | One interactive Plotly HTML per signal, plus an index.html dashboard. Needs --output-dir. |
 | `--trace` | Add the raw perturbation-variant and trajectory-branch traces to the profile artifact, so field descriptors can be recomputed later without re-running the model. |
-| `--trace-dir` | Where the profile JSON is written (default: <output-dir>/traces, or ./traces when no --output-dir). Passing this implies --trace. |
+| `--trace-dir` | Where the profile JSON is written (default: <output-dir>/traces, or ./traces when no --output-dir; created if absent). Passing this implies --trace. |
 | `--regime` | A free-form label recorded with the run — any string, compared against nothing, changing no measurement. Name it whatever your work calls it; `hif batch --sample-set` names its own. *(default: `ordinary_conversation`)* |
 | `--application` | A free-form label for what this run is for, recorded with the run — any string, changing no measurement. |
 | `--surrogate` | Recover the input-side measurements on backends that cannot teacher-force — score text they did not generate (ollama, openai, anthropic, gemini; see `hif models`). A small local proxy model is teacher-forced instead, so those numbers describe the proxy, not your model. Ignored on hf/tlens. |

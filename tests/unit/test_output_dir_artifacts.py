@@ -1,13 +1,16 @@
-"""What `--output-dir` puts on disk.
+"""What a profile run puts on disk.
 
-The JSON used to be withheld unless `--trace`, on the reasoning that per-step
-top-K with token identity should not reach disk by default. That reasoning
-belonged to the hosted deployment, where the text being profiled was not the
-operator's; it is archived, and a researcher profiling their own prompts on
-their own machine is not disclosing anything to themselves. So the artifact
-the report is an excerpt of — and the only form `hif render` reads back — now
-ships with the report, in the trace dir, whether or not `--trace` was passed:
-that flag decides the artifact's CONTENT, never its location.
+Every run writes its profile JSON; `--output-dir` adds the DERIVED files (the
+report, the charts) that are regenerable from it. The JSON used to be withheld
+unless `--trace`, on the reasoning that per-step top-K with token identity
+should not reach disk by default. That reasoning belonged to the hosted
+deployment, where the text being profiled was not the operator's; it is
+archived, and a researcher profiling their own prompts on their own machine is
+not disclosing anything to themselves.
+
+Where it lands: `--trace-dir`, else a `traces/` directory — under the output
+dir when there is one, in the working directory when there is not. `--trace`
+decides the artifact's CONTENT, never its existence or its location.
 """
 
 from __future__ import annotations
@@ -115,11 +118,10 @@ def test_lite_and_full_runs_do_not_overwrite_each_others_artifacts(
     assert set(full) < set(both)
 
 
-def test_no_output_dir_writes_nothing(monkeypatch, tmp_path):
-    """A run that was not asked for files leaves none."""
+def _run_bare(monkeypatch, tmp_path):
     _patch(monkeypatch)
-    monkeypatch.chdir(tmp_path)  # the no-output-dir trace default is ./traces
-    _run._run_single_profile(
+    monkeypatch.chdir(tmp_path)
+    return _run._run_single_profile(
         model_name="mock-model",
         prompt="hello world",
         regime="factual",
@@ -129,4 +131,25 @@ def test_no_output_dir_writes_nothing(monkeypatch, tmp_path):
         max_new_tokens=4,
         top_k=5,
     )
-    assert list(tmp_path.iterdir()) == []
+
+
+def test_bare_run_creates_traces_in_the_working_directory(monkeypatch, tmp_path):
+    """No --output-dir: the JSON still lands, in ./traces, made if absent."""
+    _, trace_path = _run_bare(monkeypatch, tmp_path)
+
+    assert trace_path.parent == Path("traces")
+    assert (tmp_path / "traces").is_dir()
+    assert len(list((tmp_path / "traces").glob("profile_*.json"))) == 1
+    # Only the trace dir — the derived files are what --output-dir buys.
+    assert [p.name for p in tmp_path.iterdir()] == ["traces"]
+
+
+def test_bare_run_reuses_an_existing_traces_directory(monkeypatch, tmp_path):
+    """An existing traces/ is where the artifact goes, not a sibling of it."""
+    (tmp_path / "traces").mkdir()
+    (tmp_path / "traces" / "profile_earlier.json").write_text("{}")
+
+    _run_bare(monkeypatch, tmp_path)
+
+    assert [p.name for p in tmp_path.iterdir()] == ["traces"]
+    assert len(list((tmp_path / "traces").glob("*.json"))) == 2

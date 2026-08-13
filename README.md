@@ -211,9 +211,10 @@ definition without touching a model.
 
 ## Charts
 
-Nothing is written to disk unless you ask. `--charts` (with `--output-dir`)
-renders one interactive Plotly HTML per signal plus an `index.html` dashboard
-that embeds them, grouped into **Aggregate views** and **Per-step views**:
+Beyond the profile JSON every run writes, files are opt-in. `--charts` (with
+`--output-dir`) renders one interactive Plotly HTML per signal plus an
+`index.html` dashboard that embeds them, grouped into **Aggregate views** and
+**Per-step views**:
 
 ```bash
 hif profile Qwen/Qwen3-0.6B-Base "Explain why the sky appears blue." \

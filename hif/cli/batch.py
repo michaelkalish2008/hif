@@ -106,12 +106,47 @@ def _sample_set_rows(selector: str, *, limit: Optional[int] = None) -> list:
     return rows
 
 
-def _open_records_file(output_dir: Optional[Path]):
-    """Open <output-dir>/records.jsonl for the batch stream mirror (or None)."""
-    if output_dir is None:
-        return None
-    output_dir.mkdir(parents=True, exist_ok=True)
-    return (output_dir / "records.jsonl").open("w")
+class _RecordsFile:
+    """The run's records.jsonl — <output-dir>/ when given, else the cwd.
+
+    A workload's RESULT is its record stream, the way a single profile's result
+    is its JSON artifact, and a result that exists only on stdout is a result
+    that scrolls away: the run that took forty minutes of GPU time leaves
+    nothing behind unless the caller happened to redirect. So it is written
+    without being asked for. Stdout still gets the stream, so pipelines are
+    unaffected.
+
+    Opened on the FIRST record rather than up front, which is the difference
+    between a file that says what a run produced and a file that says a run
+    was attempted: a command that exits before profiling anything — a bad
+    --acquisition, an unloadable model — should not leave an empty
+    records.jsonl behind in whatever directory it was invoked from.
+    """
+
+    def __init__(self, output_dir: Optional[Path]) -> None:
+        self._directory = output_dir if output_dir is not None else Path(".")
+        self._fh = None
+
+    @property
+    def path(self) -> Path:
+        return self._directory / "records.jsonl"
+
+    def write(self, record: dict) -> None:
+        if self._fh is None:
+            self._directory.mkdir(parents=True, exist_ok=True)
+            self._fh = self.path.open("w")
+        # Flushed per row, not at the end: a workload that dies on row 300
+        # should leave the 299 records it earned.
+        self._fh.write(json.dumps(record) + "\n")
+        self._fh.flush()
+
+    def close(self) -> None:
+        if self._fh is not None:
+            self._fh.close()
+
+    @property
+    def wrote_anything(self) -> bool:
+        return self._fh is not None
 
 
 @app.command(cls=PanelledCommand)
@@ -120,7 +155,7 @@ def _open_records_file(output_dir: Optional[Path]):
     "the built-in suite: 8 regimes x 5 prompts, one record per row on stdout",
 
     "hif batch workload.jsonl Qwen/Qwen3-0.6B-Base --output-dir out",
-    "your own rows; records stream to stdout and mirror to out/records.jsonl",
+    "your own rows; records stream to stdout and land in out/records.jsonl",
 
     "hif batch --sample-set all --export-workload suite.jsonl Qwen/Qwen3-0.6B-Base",
     "write the suite's rows as a file to edit and run back — no model is loaded",
@@ -236,15 +271,25 @@ def batch(
     output_dir: Optional[Path] = typer.Option(
         None,
         rich_help_panel=PANEL_FILES,
-        help="Also mirror the stdout record stream to "
-        "<output-dir>/records.jsonl.",
+        help="Where records.jsonl is written (default: the working "
+        "directory). The record stream goes to stdout either way.",
     ),
     trace: bool = typer.Option(
         False,
         "--trace",
         rich_help_panel=PANEL_FILES,
-        help="Persist each row's full profile artifact, with the raw variant "
-        "and branch traces included, for later recomputation.",
+        help="Also keep each row's full profile artifact, raw variant and "
+        "branch traces included, for later recomputation. Roughly 10 MB per "
+        "row at defaults — see --trace-sample to keep a subset instead.",
+    ),
+    trace_sample: Optional[int] = typer.Option(
+        None,
+        "--trace-sample",
+        min=1,
+        rich_help_panel=PANEL_FILES,
+        help="Keep at most N row artifacts under --trace, spread evenly across "
+        "the workload (N=20 on 500 rows is 20 files, ~200 MB, not 5 GB). "
+        "Every row still emits its record.",
     ),
     trace_dir: Optional[Path] = typer.Option(
         None, "--trace-dir", rich_help_panel=PANEL_FILES, help=TRACE_DIR_HELP
@@ -320,10 +365,14 @@ def batch(
     _check_acquisition(acquisition)
 
     # --surrogate-model implies --surrogate; --trace-dir implies --trace
-    # (same conventions as `profile`).
+    # (same conventions as `profile`). --trace-every says how much to keep,
+    # which is only an answer to a question --trace asked, so it implies it
+    # too — passing it alone and getting nothing would be a silent no-op.
     if surrogate_model is not None:
         surrogate = True
     if trace_dir is not None:
+        trace = True
+    if trace_sample is not None:
         trace = True
 
     # Resolve rows up front — before any model load — whichever source.
@@ -384,13 +433,11 @@ def batch(
         (output_dir / "traces") if output_dir else Path("traces")
     )
 
-    records_fh = _open_records_file(output_dir)
+    records = _RecordsFile(output_dir)
 
     def _emit(record: dict) -> None:
         _emit_json_line(record)
-        if records_fh is not None:
-            records_fh.write(json.dumps(record) + "\n")
-            records_fh.flush()
+        records.write(record)
 
     def _log(msg: str) -> None:
         err_console.print(msg, markup=False, highlight=False)
@@ -405,16 +452,18 @@ def batch(
             surrogate_model_id=surrogate_model,
             trace=trace,
             trace_dir=resolved_trace_dir,
+            trace_sample=trace_sample,
             emit=_emit,
             include_units=units,
             variant_io=variant_io,
             log=_log,
         )
     finally:
-        if records_fh is not None:
-            records_fh.close()
+        records.close()
 
     _log(f"batch complete: {n_ok} ok, {n_failed} failed of {len(rows)} row(s)")
+    if records.wrote_anything:
+        _log(f"records: {records.path}")
     if rows and n_ok == 0:
         raise typer.Exit(1)
 

@@ -7,12 +7,18 @@ for one answer, is the worst place in the tool to defend a design decision.
 
 WHY THE EXPENSIVE THINGS ARE OFF BY DEFAULT
 
-A run that was not asked for files leaves none, so `--output-dir` is the opt-in
-that puts anything on disk: the technical report, the `--charts` plots, and the
-profile JSON — which goes to the trace dir (`<output-dir>/traces`, or
-`--trace-dir`), the artifact's one home whether or not `--trace` was passed.
-`--trace` is a second axis, not a stricter version of the first: it decides
-what is IN that JSON, adding the raw perturbation-variant and trajectory-branch
+The profile JSON is the one thing every run writes, because it is the result:
+the report is an excerpt of it, `hif render` reads nothing else, and a
+measurement you cannot re-read is a measurement you have to re-run. It goes to
+`--trace-dir` when given, and otherwise to a `traces/` directory — under
+`--output-dir` when there is one, in the working directory when there is not,
+reused if it exists and created if it does not.
+
+`--output-dir` is what opts into the DERIVED files, the ones regenerable from
+that JSON: the technical report and the `--charts` plots.
+
+`--trace` is a second axis, not a stricter version of either: it decides what
+is IN the JSON, adding the raw perturbation-variant and trajectory-branch
 traces, which is what makes field descriptors recomputable without re-running
 the models, at a cost in size that scales with the variant count. (The BASELINE
 per-step top-K is on `output_side.steps` and therefore in the JSON either way;
@@ -287,8 +293,9 @@ def profile(
     output_dir: Optional[Path] = typer.Option(
         None,
         rich_help_panel=PANEL_FILES,
-        help="Write the run's files here: the technical Markdown report, the "
-        "--charts plots, and the profile JSON (in <output-dir>/traces).",
+        help="Write the run's derived files here: the technical Markdown "
+        "report and the --charts plots. The profile JSON every run writes "
+        "moves with it, to <output-dir>/traces.",
     ),
     charts: bool = typer.Option(
         False, "--charts", rich_help_panel=PANEL_FILES, help=CHARTS_HELP

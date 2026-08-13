@@ -167,6 +167,22 @@ def _error_record(query_id: str, message: str) -> dict:
     }
 
 
+def _sampled_row_indices(n_rows: int, sample: Optional[int]) -> "set[int] | None":
+    """Which 0-based rows keep an artifact — or None for all of them.
+
+    `sample` is a COUNT, not a stride: `--trace-sample 20` over 500 rows keeps
+    20 artifacts at rows 0, 25, 50 … 475. Evenly spaced rather than the first
+    N, because the first N of a workload sorted by regime is a sample of one
+    regime; always including row 0 because that is the row a run gets sanity-
+    checked on. Asking for at least as many as there are rows keeps them all.
+    """
+    if sample is None or sample >= n_rows:
+        return None
+    if sample <= 0:
+        return set()
+    return {(k * n_rows) // sample for k in range(sample)}
+
+
 def _write_row_trace(engine, profile, row: BatchRow, *, seed: int,
                      trace_dir: Path) -> Path:
     """Persist the row's full profile artifact.
@@ -194,6 +210,7 @@ def run_batch(
     surrogate_model_id: Optional[str] = None,
     trace: bool = False,
     trace_dir: Optional[Path] = None,
+    trace_sample: Optional[int] = None,
     emit: Callable[[dict], None],
     include_units: bool = False,
     variant_io: bool = False,
@@ -204,6 +221,15 @@ def run_batch(
     Returns (n_ok, n_failed). Row errors emit a minimal error record and
     continue — the stream never aborts mid-workload. `log` receives
     human-readable progress lines (the CLI routes them to stderr).
+
+    `trace_sample` caps the per-row artifacts at N, spread evenly across the
+    workload and always including the first row: a count, because a count is
+    what the caller actually has a budget for. None keeps every row's.
+
+    The record stream is unaffected — every row still emits its record, and the
+    ones whose artifact was not kept simply carry no `trace_path`. That is the
+    honest report of what is on disk, and it is why the sampling lives here
+    rather than in a post-hoc cleanup.
     """
     create_kwargs = dict(surrogate=surrogate)
     if surrogate_model_id is not None:
@@ -211,6 +237,7 @@ def run_batch(
     engine = SessionEngine.create(config, **create_kwargs)
 
     resolved_trace_dir = Path(trace_dir) if trace_dir is not None else Path("traces")
+    traced_rows = _sampled_row_indices(len(rows), trace_sample)
 
     n_ok = 0
     n_failed = 0
@@ -230,7 +257,7 @@ def run_batch(
             elapsed = time.perf_counter() - t0
 
             trace_path: Optional[Path] = None
-            if trace:
+            if trace and (traced_rows is None or (i - 1) in traced_rows):
                 trace_path = _write_row_trace(
                     engine, profile, row, seed=seed, trace_dir=resolved_trace_dir
                 )

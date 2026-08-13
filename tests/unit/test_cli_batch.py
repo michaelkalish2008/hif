@@ -11,7 +11,8 @@ CliRunner. The contract under test:
 - a row failure emits an error record and the stream continues.
 - malformed workload / bad path
   exit 3 before any engine is created.
-- --limit truncates; --output-dir mirrors the stream to records.jsonl.
+- --limit truncates; records.jsonl is always written (--output-dir chooses
+  where), and --trace-sample caps how many row artifacts come with it.
 """
 
 from __future__ import annotations
@@ -72,9 +73,12 @@ class FakeEngine:
 
 
 @pytest.fixture(autouse=True)
-def _stub_engine(monkeypatch):
+def _stub_engine(monkeypatch, tmp_path):
     FakeEngine.created = 0
     monkeypatch.setattr(batch_mod, "SessionEngine", FakeEngine)
+    # `batch` writes records.jsonl to the working directory when no
+    # --output-dir says otherwise, so every test needs its own.
+    monkeypatch.chdir(tmp_path)
 
 
 def _write_workload(tmp_path, rows, name="workload.jsonl"):
@@ -238,6 +242,60 @@ def test_output_dir_writes_records_jsonl_mirroring_stdout(tmp_path):
     mirror = (out / "records.jsonl").read_text()
     stdout_lines = [l for l in result.stdout.splitlines() if l.strip()]
     assert mirror.splitlines() == stdout_lines
+
+
+def test_records_jsonl_lands_in_the_cwd_without_output_dir(tmp_path):
+    """A workload's result is its record stream, and a result that exists only
+    on stdout scrolls away — forty minutes of GPU time leaving nothing behind
+    unless the caller happened to redirect."""
+    wl = _write_workload(tmp_path, ROWS)
+    result = runner.invoke(app, ["batch", str(wl), "m"])
+    assert result.exit_code == 0, result.output
+
+    written = (tmp_path / "records.jsonl").read_text()
+    stdout_lines = [l for l in result.stdout.splitlines() if l.strip()]
+    assert written.splitlines() == stdout_lines
+
+
+# ---------------------------------------------------------------------------
+# --trace-sample caps the per-row artifacts
+# ---------------------------------------------------------------------------
+
+
+def test_trace_sample_keeps_n_artifacts_and_records_say_which(tmp_path, monkeypatch):
+    """Artifacts are ~10 MB a row; the records still cover every row, and the
+    ones whose artifact was not kept carry no trace_path."""
+    written: list = []
+    monkeypatch.setattr(
+        batch_mod, "_write_row_trace",
+        lambda engine, profile, row, *, seed, trace_dir: (
+            written.append(row.query_id) or (tmp_path / f"{row.query_id}.json")
+        ),
+    )
+    wl = _write_workload(tmp_path, ROWS)
+    result = runner.invoke(app, ["batch", str(wl), "m", "--trace-sample", "2"])
+
+    assert result.exit_code == 0, result.output
+    # 3 rows, 2 wanted: indices 0 and 1 (k*n//sample for k in 0,1).
+    assert written == ["wt_01", "wt_02"]
+    traced = [r.get("trace_path") for r in _stdout_records(result)]
+    assert [t is not None for t in traced] == [True, True, False]
+
+
+def test_trace_sample_implies_trace(tmp_path, monkeypatch):
+    """Passing it alone and getting nothing would be a silent no-op."""
+    written: list = []
+    monkeypatch.setattr(
+        batch_mod, "_write_row_trace",
+        lambda engine, profile, row, *, seed, trace_dir: (
+            written.append(row.query_id) or (tmp_path / "t.json")
+        ),
+    )
+    wl = _write_workload(tmp_path, ROWS)
+    result = runner.invoke(app, ["batch", str(wl), "m", "--trace-sample", "1"])
+
+    assert result.exit_code == 0, result.output
+    assert written == ["wt_01"]
 
 
 # ---------------------------------------------------------------------------

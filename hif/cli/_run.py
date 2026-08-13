@@ -145,15 +145,14 @@ def _run_single_profile(
 ) -> "tuple[BehavioralRangeProfile, Optional[Path]]":
     """Core pipeline: build the profile in memory, return (profile, trace_path).
 
-    Nothing is written implicitly — not as a data-handling rule, but because a
-    measurement run should not litter the working directory. `output_dir` opts
-    into the artifacts of a run: the technical report, the `--charts` plots,
-    and the profile JSON, which lands in the trace dir
-    (`<output_dir>/traces` by default). `trace` is the other opt-in, and it
-    decides what is in that JSON rather than whether it exists: it captures
-    the raw perturbation-variant and trajectory-branch traces so field
-    descriptors can be recomputed without re-running the models. trace_path is
-    the artifact's path, None only when neither opt-in was used.
+    Every run writes its profile JSON, to `trace_dir` when given and a
+    `traces/` directory otherwise — under `output_dir` when there is one, in
+    the working directory when there is not. `output_dir` additionally opts
+    into the derived files: the technical report and the `--charts` plots.
+    `trace` decides what is IN the JSON rather than whether it exists: it
+    captures the raw perturbation-variant and trajectory-branch traces so
+    field descriptors can be recomputed without re-running the models.
+    trace_path is always the artifact's path.
     """
     from hif.engine import SessionEngine
     from hif.profile.render_markdown import render_technical
@@ -203,26 +202,28 @@ def _run_single_profile(
     # write different content and must not write it to the same path.
     h = _profile_hash(model_name, prompt, seed, config)
 
-    # The JSON artifact — every per-step record, and the only form `hif render`
-    # reads back — has ONE home, the trace dir, whether or not --trace was
-    # passed. --trace decides what is IN the artifact (it adds the raw variant
-    # and branch traces); it does not decide where the artifact lands, and a
-    # file that moves between directories depending on an unrelated flag is a
-    # file nobody can write a path to.
+    # The profile JSON is written on every run. It is the result — every
+    # per-step record, and the only form `hif render` reads back — and a
+    # measurement you cannot re-read is a measurement you have to re-run.
     #
-    # It used to be withheld entirely without --trace, on the reasoning that
-    # per-step top-K with token identity should not reach disk by default.
-    # That reasoning came from the hosted deployment (archived), where the text
+    # It used to be withheld unless --trace, on the reasoning that per-step
+    # top-K with token identity should not reach disk by default. That
+    # reasoning came from the hosted deployment (archived), where the text
     # belonged to someone other than the operator; a researcher profiling
     # prompts they wrote, on their own machine, is not disclosing anything to
-    # themselves.
-    trace_path: Optional[Path] = None
-    if trace or output_dir is not None:
-        resolved_trace_dir = trace_dir or (
-            (output_dir / "traces") if output_dir else Path("traces")
-        )
-        trace_path = engine.write_trace(profile, prompt=prompt, seed=seed,
-                                        trace_dir=resolved_trace_dir)
+    # themselves. What --trace decides now is what is IN the artifact (it adds
+    # the raw variant and branch traces), never whether it exists or where it
+    # lands: a file that moves between directories depending on an unrelated
+    # flag is a file nobody can write a path to.
+    # `--trace-dir` when given; otherwise a `traces/` directory — under the
+    # output dir when there is one, in the working directory when there is
+    # not. Reused if it already exists, created if it does not (render_json
+    # makes the parents).
+    resolved_trace_dir = trace_dir or (
+        (output_dir / "traces") if output_dir else Path("traces")
+    )
+    trace_path = engine.write_trace(profile, prompt=prompt, seed=seed,
+                                    trace_dir=resolved_trace_dir)
 
     if output_dir is not None:
         output_dir.mkdir(parents=True, exist_ok=True)
