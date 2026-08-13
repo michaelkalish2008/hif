@@ -67,7 +67,7 @@ appear did not apply. Only proceed on their confirmation.
 hif profile <model> "<prompt>" --config-file run.toml --json
 ```
 
-The record embeds a `run_config` block (`record-v6`) — the same dict `config
+The record embeds a `run_config` block (`record-v7`) — the same dict `config
 show` printed. When reporting results, cite it: "the record's `run_config`
 confirms `distance_threshold = 0.25`". Offer `--variant-io` when perturbation
 is in play: it adds each variant's input and elicited continuation to the

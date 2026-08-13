@@ -154,7 +154,7 @@ class SessionEngine:
         from hif.profile.render_json import render_json
 
         trace_dir = Path(trace_dir)
-        h = profile_hash(self.config.model.name, prompt, seed)
+        h = profile_hash(self.config.model.name, prompt, seed, self.config)
         path = trace_dir / f"profile_{h}.json"
         render_json(profile, path)
         return path

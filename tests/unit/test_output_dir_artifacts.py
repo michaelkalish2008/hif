@@ -79,6 +79,25 @@ def test_json_not_duplicated_when_trace_already_wrote_it(monkeypatch, tmp_path):
     assert len(list(tmp_path.glob("*_technical.md"))) == 1
 
 
+def test_lite_and_full_runs_do_not_overwrite_each_others_artifacts(
+    monkeypatch, tmp_path
+):
+    """The artifact names are hash-addressed, and the two runs are not the
+    same run: a lite run reports two measurements where a full run reports
+    six. While the hash covered only (model, prompt, seed), the second
+    invocation silently replaced the first one's report and JSON in place.
+    """
+    _run_with(monkeypatch, tmp_path)
+    full = sorted(p.name for p in tmp_path.iterdir())
+
+    _run_with(monkeypatch, tmp_path, lite=True)
+    both = sorted(p.name for p in tmp_path.iterdir())
+
+    assert len(full) == 2, full
+    assert len(both) == 4, both
+    assert set(full) < set(both)
+
+
 def test_no_output_dir_writes_nothing(monkeypatch, tmp_path):
     """A run that was not asked for files leaves none."""
     _patch(monkeypatch)

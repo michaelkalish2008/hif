@@ -123,10 +123,16 @@ def test_record_records_truncation(captured, tmp_path, monkeypatch):
     # The record's hash is over the prompt that was actually analysed, not the
     # original — otherwise the hash would not describe the run. (The prompt
     # text itself is never in the record: derived values only.)
+    #
+    # Recomputed from the record's OWN `run_config`, which doubles as a check
+    # that the stage budget the hash covers is the budget the record attests:
+    # a reader holding only the record can reproduce the identifier.
+    from hif.config import RunConfig
     from hif.profile.signals import profile_hash
 
-    assert data["hash"] == profile_hash("m", "one two three", data["seed"])
-    assert data["hash"] != profile_hash("m", LONG_PROMPT, data["seed"])
+    config = RunConfig.model_validate(data["run_config"])
+    assert data["hash"] == profile_hash("m", "one two three", data["seed"], config)
+    assert data["hash"] != profile_hash("m", LONG_PROMPT, data["seed"], config)
 
 
 def test_untruncated_record_carries_no_truncation_keys(captured, tmp_path, monkeypatch):

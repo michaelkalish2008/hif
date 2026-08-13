@@ -14,7 +14,7 @@ hif profile Qwen/Qwen3-0.6B-Base "Explain why the sky appears blue." --json
 
 ```json
 {
-  "schema_version": "record-v6",
+  "schema_version": "record-v7",
   "model": "Qwen/Qwen3-0.6B-Base",
   "backend": "hf",
   "regime": "ordinary_conversation",
@@ -280,6 +280,37 @@ hf  (local-open)  teacher-forcing: yes  ·  logprobs: full
 Measurements a backend cannot support are **absent from the record with a
 stated reason** — never zero, never a default, never silently borrowed from
 elsewhere.
+
+### The prompt is sent as raw text, and no chat template is applied
+
+On `hf`, `tlens` and `ollama` your prompt reaches the model as the exact
+characters you typed. hif never wraps it in `<|im_start|>user … <|im_end|>`,
+because the input-side measurements teacher-force the model over the prompt and
+a template would make every one of them a measurement of a string you did not
+write. (The hosted backends are the other case: `openai`, `anthropic` and
+`gemini` take a chat request, so hif sends the prompt as a single user message
+and the provider applies its own formatting server-side, out of view.)
+
+The consequence, on a local instruct-tuned checkpoint, is that it **continues**
+your prompt instead of answering it:
+
+```bash
+hif profile Qwen/Qwen3-0.6B "Explain why the sky appears blue." --json
+```
+
+comes back with a run of unrelated questions, where `Qwen/Qwen3-0.6B-Base`
+answers with Rayleigh scattering. Nothing is broken — the model read a document
+and continued it, which is what a raw causal LM does. The measurements are real
+measurements of that continuation, and they say so:
+`io_cosine_similarity` is 0.185 on the instruct checkpoint against 0.476 on the
+base one, same prompt.
+
+hif says so at load time too. A checkpoint that declares a chat template *and*
+stops on a token that template emits gets a notice on stderr naming its base
+sibling, when one is published. The record carries the narrower fact under
+`provenance.chat_template_present` — whether the checkpoint declares a template,
+which base checkpoints do too — so an archived profile can be filtered on it
+without rerunning anything.
 
 On closed backends, `--surrogate` recovers some input-side quantities by
 teacher-forcing a small local model over the *prompt* — which means those

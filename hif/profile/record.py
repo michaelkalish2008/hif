@@ -14,6 +14,7 @@ default. Raw-artifact persistence is a separate, explicit opt-in
 from __future__ import annotations
 
 import hashlib
+import json
 from typing import Optional
 
 from hif.config import public_config_dict
@@ -55,11 +56,88 @@ from hif.profile.registry import MEASUREMENT_UNITS, SIGNAL_SET_VERSION
 # applied to procedure instead of model identity. Secrets are redacted, not
 # omitted ("<redacted>" vs null distinguishes "authenticated" from "no key").
 # Absent on a profile built before the block existed.
-RECORD_SCHEMA_VERSION = "record-v6"
+# record-v7 (current): the `hash` covers the run's STAGE BUDGET as
+# well as (model, prompt, seed). It did not, so a `--lite` run and a full run
+# of the same prompt — six measurements vs two — shared an identifier, and the
+# hash could neither dedupe a corpus nor answer "did this run actually do the
+# perturbation stage?". The record shape is unchanged; the VALUE of `hash`
+# changes for every run, which is why this is a version bump and not a silent
+# fix: a consumer keying on the hash needs to know which function produced it.
+# See profile_hash() / stage_budget() below for what is covered and what is
+# deliberately not.
+RECORD_SCHEMA_VERSION = "record-v7"
 
 
-def profile_hash(model_name: str, prompt: str, seed: int) -> str:
+def stage_budget(config) -> Optional[dict]:
+    """Which measurement-producing stages the RESOLVED config permits.
+
+    The projection of a RunConfig that decides which measurements a run can
+    emit at all — as opposed to what values they take. Two runs that agree
+    here produce the same measurement KEYS; two that differ produce different
+    ones, and are therefore different runs however identical their prompt.
+
+    Read off the resolved config, never off the flags that set it. `--lite`
+    and `--acquisition` have no independent existence in a run: they are
+    ceilings applied last in `hif/cli/_run.py::_resolve_run_config`, and they
+    act by switching these fields off. Hashing the flag names instead would be
+    wrong in both directions — a `--config-file` that disables the same stages
+    would collide with a full run (the bug this exists to close), and `--lite`
+    would be distinguished from a config file that did exactly the same work
+    (a difference that is not one).
+
+    Returns None when the config is unknown, which is not the same as a config
+    with everything defaulted — see profile_hash().
+
+    Deliberately NOT covered: knobs that move the numbers without changing
+    which numbers exist (`top_k`, `max_new_tokens`, `temperature`,
+    `rollout_steps`, `distance_threshold`, the embedder, the backend). Those
+    are carried in full by the record's `run_config` block, and folding them in
+    here would churn every identifier on a knob that answers a different
+    question.
+    """
+    if config is None:
+        return None
+    p = config.perturbation
+    return {
+        # The perturbation stage feeds four of the six measurements. Zero
+        # variants, no generators, and no authored file each mean it did not
+        # run; elicit_variant_outputs splits it in half (the two input-side
+        # readings survive, the two that read a variant continuation do not).
+        "perturbation": {
+            "n_variants": p.n_variants,
+            "generators": list(p.generators),
+            "elicit_variant_outputs": p.elicit_variant_outputs,
+            "variants_file": (
+                str(p.variants_file) if p.variants_file is not None else None
+            ),
+        },
+        "trajectory_branches": config.trajectory.n_branches,
+        "semantic": config.semantic.enabled,
+        "exposure": config.exposure.enabled,
+        "semantic_field": config.semantic_field.enabled,
+        "attention": config.attention.enabled,
+        # Gates output_nucleus_entropy_bits: absent entirely when None.
+        "entropy_percentile": config.generation.entropy_percentile,
+    }
+
+
+def profile_hash(model_name: str, prompt: str, seed: int, config) -> str:
+    """The run identifier: (model, prompt, seed, stage budget).
+
+    `config` is REQUIRED and takes the resolved RunConfig — pass None only
+    where the budget is genuinely unknown (a profile built before it was
+    carried). It is not optional-with-a-default on purpose: a call site that
+    forgot it would silently reproduce the collision this signature exists to
+    fix, and a TypeError is the cheaper failure.
+
+    A None config hashes the legacy key, so a budget-less profile keeps the
+    identifier it always had. That is a distinct claim from "the budget was
+    the defaults", and hashes to a distinct value.
+    """
     key = f"{model_name}|{prompt}|{seed}"
+    budget = stage_budget(config)
+    if budget is not None:
+        key += "|" + json.dumps(budget, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(key.encode()).hexdigest()[:12]
 
 
@@ -179,7 +257,13 @@ def signals_record(
     record = {
         "schema_version": RECORD_SCHEMA_VERSION,
         "signal_set_version": SIGNAL_SET_VERSION,
-        "hash": profile_hash(model_name, prompt, seed),
+        # Covers the stage budget as well as (model, prompt, seed), so two
+        # runs whose measurement sets differ cannot share it. The budget comes
+        # off the profile's own resolved config — the same one `run_config`
+        # below serializes — not off any flag the caller remembers passing.
+        "hash": profile_hash(
+            model_name, prompt, seed, getattr(profile, "config", None)
+        ),
         "model": model_name,
         "backend": backend,
         "regime": regime,

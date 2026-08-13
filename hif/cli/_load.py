@@ -62,13 +62,114 @@ def _load_model(
     backend = _resolve_backend(model_name, backend)
     from hif.models.factory import load_model
     try:
-        return load_model(ModelConfig(
+        model = load_model(ModelConfig(
             name=model_name, backend=backend,
             base_url=base_url, extra_body=extra_body,
         ))
     except ValueError as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(1)
+    _notice_chat_tuned_checkpoint(model, model_name)
+    return model
+
+
+# Suffix rules that turn an instruct checkpoint's name into its base sibling's.
+# Guesses, every one — which is why nothing below is printed until the Hub has
+# confirmed the repo exists. Naming a repo that does not is worse than naming
+# none: it sends the reader to a 404 in a message whose whole job is to be the
+# way out.
+#
+# Ordered by how often they are right, and capped below at three lookups so a
+# notice cannot turn into a series of round trips.
+def _base_checkpoint_candidates(model_name: str) -> list[str]:
+    """Plausible names for the base checkpoint `model_name` was tuned from."""
+    org, _, name = model_name.rpartition("/")
+    prefix = f"{org}/" if org else ""
+    parts = name.split("-")
+    candidates: list[str] = []
+
+    # `Qwen2.5-7B-Instruct` → `Qwen2.5-7B`, `Mistral-7B-Instruct-v0.3` →
+    # `Mistral-7B-v0.3`. A hyphen-delimited segment, so `Instructor` is safe.
+    dropped = [p for p in parts if p.lower() not in ("instruct", "chat", "it")]
+    if dropped and dropped != parts:
+        candidates.append(prefix + "-".join(dropped))
+
+    # Gemma names its base checkpoints `-pt` (pretrained) against the `-it`
+    # instruction-tuned ones: `gemma-3-1b-it` → `gemma-3-1b-pt`.
+    if parts[-1].lower() == "it":
+        candidates.append(prefix + "-".join(parts[:-1] + ["pt"]))
+
+    # Qwen3 puts the marker on the BASE checkpoint instead, so the instruct one
+    # carries no suffix to strip: `Qwen3-0.6B` → `Qwen3-0.6B-Base`.
+    candidates.append(f"{model_name}-Base")
+
+    unique: list[str] = []
+    for candidate in candidates:
+        if candidate != model_name and candidate not in unique:
+            unique.append(candidate)
+    return unique[:3]
+
+
+def _published_base_checkpoint(model_name: str) -> str | None:
+    """The base sibling of `model_name` on the Hub, or None if none is found.
+
+    Only reached for a checkpoint that already looks instruct-tuned, so a run
+    on a base model makes no request at all — `hif profile
+    Qwen/Qwen3-0.6B-Base …` stays the offline command the README says it is.
+
+    Every failure answers None: offline, no `huggingface_hub`, an unreachable
+    Hub, a slow one. The notice still prints; it just stops one sentence
+    earlier. A network call is not allowed to decide whether the user hears
+    about this.
+    """
+    try:
+        from huggingface_hub import HfApi
+        from huggingface_hub.constants import HF_HUB_OFFLINE
+    except ImportError:
+        return None
+    if HF_HUB_OFFLINE:
+        return None
+
+    api = HfApi()
+    for candidate in _base_checkpoint_candidates(model_name):
+        try:
+            api.model_info(candidate, timeout=3.0)
+        except Exception:  # noqa: BLE001 — missing, gated, offline, slow
+            continue
+        return candidate
+    return None
+
+
+def _notice_chat_tuned_checkpoint(model, model_name: str) -> None:
+    """Say so when the checkpoint was tuned to answer and hif will not ask it to.
+
+    hif continues the prompt as raw text on every backend, which on an
+    instruct-tuned checkpoint produces a continuation rather than an answer —
+    output a reader takes for a broken tool. The measurements are of that
+    continuation and are real; what is wrong is the framing, and only the
+    caller can fix it, so this is a notice on stderr rather than an error or a
+    silent flag.
+
+    Gated on the EOS test in hif/models/chat_template.py and NOT on "declares a
+    chat template", which base checkpoints do too. That distinction is the
+    whole reason this prints rarely enough to be worth reading.
+    """
+    if not getattr(model, "stops_on_chat_turn_end", None):
+        return
+    base = _published_base_checkpoint(model_name)
+    err_console.print(
+        f"[yellow]{model_name} looks instruct-tuned: it declares a chat "
+        f"template and stops on a token that template emits. hif applies no "
+        f"chat template — your prompt is continued as raw text, so the output "
+        f"reads as a continuation rather than an answer, and the measurements "
+        f"are of that continuation.[/yellow]"
+        + (
+            f"\n[yellow]Its base checkpoint is {base} — raw continuation is "
+            f"the framing that one was trained for.[/yellow]"
+            if base
+            else ""
+        )
+    )
 
 
 def _load_embedder():

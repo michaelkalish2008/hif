@@ -350,6 +350,12 @@ def _run_provenance(
     inference from the result — the evidence each declared `subject` is checked
     against. `output_distribution_model` names the surrogate when step 6b
     recovered a cloud, and the target otherwise.
+
+    `chat_template_present` is read off the target rather than the run: it is
+    what the checkpoint declares, and what this run did with it is fixed (hif
+    applies no template anywhere). Backends with no tokenizer of the
+    checkpoint's own answer None, and None is carried through as None — an
+    unasked question is not a "no".
     """
     return RunProvenance(
         generation_model=model.name,
@@ -360,6 +366,7 @@ def _run_provenance(
             output_trace.steps
         ),
         trajectory_analysis_ran=bool(trajectory.branches),
+        chat_template_present=getattr(model, "chat_template_present", None),
     )
 
 

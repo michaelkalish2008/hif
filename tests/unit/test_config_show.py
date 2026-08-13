@@ -1,4 +1,4 @@
-"""`hif config show` / `hif config init`, strict TOML validation, record-v6.
+"""`hif config show` / `hif config init`, strict TOML validation, record-v7.
 
 The three legs of config trust:
   1. a mistyped key anywhere in the file is rejected (never silently defaulted),

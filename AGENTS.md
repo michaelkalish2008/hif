@@ -15,7 +15,7 @@ against a threshold.
    another measurement.
 2. **Configuration is part of the measurement.** Three measurements are
    comparisons against runs the tool constructs, so their numbers mean nothing
-   without the settings. The record carries them (`record-v6`'s `run_config`
+   without the settings. The record carries them (`record-v7`'s `run_config`
    block) — cite that, not your memory. Numbers taken under different
    `max_new_tokens`, encoders, generator sets, thresholds, or access tiers are
    different measurements wearing the same key; do not compare them.
@@ -95,7 +95,7 @@ hif profile <model> "<prompt>" --config-file run.toml --json
 A mistyped key anywhere in the file — table or inner key — exits 3 with the
 valid alternatives named. `config show` resolves through the same path
 `profile` executes, so what it prints is what runs. The `--json` record
-(`record-v6`) embeds a `run_config` block — the resolved config, secrets
+(`record-v7`) embeds a `run_config` block — the resolved config, secrets
 redacted — so cite the record, not your memory, when reporting what ran.
 
 Propose 2–3 candidate configs with tradeoffs and let the researcher choose;

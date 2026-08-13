@@ -89,12 +89,35 @@ and the two cannot drift. `--diff` limits output to departures from the schema
 defaults; the TOML output is valid `--config-file` input, so
 `hif config show ... > run.toml` round-trips. Secrets print as `<redacted>`.
 
-**The record carries the resolved config.** `record-v6` embeds a `run_config`
+**The record carries the resolved config.** `record-v7` embeds a `run_config`
 block — the same dict `config show` prints, from the same serializer — so a
 record is reproducible and comparable on its own. Two records that differ in
 `distance_threshold` now say so. Secrets are redacted, not omitted:
 `"<redacted>"` vs `null` preserves whether the run authenticated without
 carrying the credential.
+
+**The run hash covers the stage budget.** The `hash` field — the same id
+`profile` prints and the one `--output-dir`/`--trace` artifacts are named with
+— is over `(model, prompt, seed, stage budget)`. The budget is the part of the
+resolved config that decides which measurements a run can emit at all:
+`[perturbation]` `n_variants` / `generators` / `elicit_variant_outputs` /
+`variants_file`, `[trajectory] n_branches`, the `enabled` switches on
+`[semantic]`, `[exposure]`, `[semantic_field]` and `[attention]`, and
+`[generation] entropy_percentile`. So a `--lite` run and a full run of the same
+prompt are two runs with two ids, and the id answers "did this run do the
+perturbation stage?".
+
+It is read off the resolved config, not off the flags: `--lite` and
+`--acquisition` are ceilings that act by switching those fields off, so a
+config file that disables the same stages by hand hashes the same, and a full
+run cannot collide with either. Knobs that move the numbers without changing
+which numbers exist — `top_k`, `max_new_tokens`, `temperature`,
+`rollout_steps`, `distance_threshold`, the encoder, the backend — are **not**
+in the hash; compare `run_config` for those. Two runs with the same id can
+still differ; two runs with different measurement sets cannot share one.
+
+Hashes from before `record-v7` were over `(model, prompt, seed)` only and do
+not match: an artifact regenerated on this version gets a new filename.
 
 ---
 

@@ -528,7 +528,9 @@ def profile(
             raise typer.Exit(1)
         timings["total"] = time.perf_counter() - t_total
 
-    h = _profile_hash(model_name, prompt, seed)
+    # The profile's own resolved config, so the hash printed here is the one
+    # the record carries and the one the artifacts were named with.
+    h = _profile_hash(model_name, prompt, seed, getattr(p, "config", None))
 
     # --metric: print one measurement, in its natural unit, and exit.
     if metric is not None:

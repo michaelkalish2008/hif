@@ -221,7 +221,7 @@ class BehavioralRangeProfile(BaseModel):
     #   the embedded config, output.save_plots / output.plot_format,
     #   attention.top_pairs, and traceability.profiles_dir. Old JSON carrying
     #   any of them still validates — unknown fields are ignored on load.
-    # 0.11.0 (current): REMOVED the image path. prompt.modality,
+    # 0.11.0: REMOVED the image path. prompt.modality,
     #   prompt.input_parts, input_part_map, region_sensitivity and
     #   perturbations[].traces are gone with the VLM backends that populated
     #   them. No measurement ever read any of them — the image quantities were
@@ -229,7 +229,16 @@ class BehavioralRangeProfile(BaseModel):
     #   SIGNAL_SET_VERSION, so records from that path were unversioned claims.
     #   A MAJOR removal for image profiles and a no-op for text profiles,
     #   which never carried the fields.
-    schema_version: str = "0.11.0"
+    # 0.12.0 (current): added provenance.chat_template_present
+    #   (Optional[bool], default None) — whether the target checkpoint's
+    #   tokenizer declares a chat template, which hif does not apply on any
+    #   backend. An instruct-tuned checkpoint therefore continues the prompt
+    #   instead of answering it, and the record now carries the fact rather
+    #   than leaving a reader to infer it from the output text. Defaults to
+    #   None ("not asked", never "no template"), so 0.11.0 profile JSON still
+    #   validates unchanged. See hif/models/chat_template.py for why the field
+    #   is the literal declaration and not a test for "instruct-tuned".
+    schema_version: str = "0.12.0"
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     model: ModelIdentity
     prompt: PromptRecord

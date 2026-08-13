@@ -96,6 +96,35 @@ The first two apply to open weights too. This is why hif reads texts as texts
 rather than treating a reading as a degraded measurement waiting for better
 access — better access would not convert one into the other.
 
+## A subject says whose behaviour, not which behaviour
+
+The `subject` field answers "whose behaviour does this number describe". On a
+local backend the answer is the target model, and it stays the target model no
+matter what you typed. What it does not answer is **which** behaviour of that
+model was elicited, and that is fixed by something upstream of every
+measurement: the framing the prompt arrived in.
+
+hif applies no chat template. Your prompt reaches the model as raw text and the
+model continues it ([README § the prompt is sent as raw
+text](../README.md)). On a base checkpoint that is the framing the weights were
+trained under. On an instruct-tuned one it is not, and what gets measured is the
+checkpoint continuing a document rather than answering a request.
+
+Both are the target's behaviour, so every subject declaration is correct in
+either case. What changes is the claim the numbers can carry. A continuation run
+measures continuation: it is not evidence about how the model behaves for users,
+however instruct-tuned the checkpoint is, and no measurement in the set will say
+otherwise on its own — `io_cosine_similarity` falling from 0.476 to 0.185
+between `Qwen/Qwen3-0.6B-Base` and `Qwen/Qwen3-0.6B` is the instrument working,
+not a defect it reports.
+
+The record carries `provenance.chat_template_present` so that this is
+recoverable from an archived profile rather than only from whoever ran it. It is
+the literal declaration — whether the checkpoint's tokenizer ships a template —
+and not a verdict about the checkpoint, because base checkpoints ship templates
+too (`Qwen/Qwen3-0.6B-Base` is one). Read it as a prompt to check the framing,
+not as a finding.
+
 ## The rule, in one line
 
 A **measurement** answers "what did this model do", carries a subject, and is

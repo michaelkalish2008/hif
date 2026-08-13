@@ -38,6 +38,7 @@ from hif.profile.record import (
     profile_hash,
     semantic_field_scalars,
     signals_record,
+    stage_budget,
 )
 from hif.profile.registry import (
     FUNCTIONALS,
@@ -92,4 +93,5 @@ __all__ = [
     "profile_hash",
     "semantic_field_scalars",
     "signals_record",
+    "stage_budget",
 ]

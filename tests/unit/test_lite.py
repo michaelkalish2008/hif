@@ -82,16 +82,19 @@ def _build(config: RunConfig):
     )
 
 
-def _measurements(config: RunConfig) -> dict:
-    profile = _build(config)
+def _record(config: RunConfig) -> dict:
     return signals_record(
-        profile,
+        _build(config),
         model_name="mock-model",
         prompt="hello world",
         backend="hf",
         regime="test",
         seed=42,
-    )["measurements"]
+    )
+
+
+def _measurements(config: RunConfig) -> dict:
+    return _record(config)["measurements"]
 
 
 # Fed by the stages lite disables. Each must be absent from a lite record.
@@ -160,3 +163,112 @@ class TestLiteRecord:
         """Not just 'something survived' — the output-side entropy readings are
         the reason to run lite at all."""
         assert "output_entropy_bits" in _measurements(_lite_config())
+
+
+class TestLiteHash:
+    """The identifier has to separate the two runs the flag separates.
+
+    The hash reads as a run id: it names the `--output-dir` artifacts
+    (`profile_<hash>.json`, `profile_<hash>_technical.md`, `plots/<hash>/`),
+    it names the `--trace` artifact, and it is the `hash` field of the record.
+    While it covered only (model, prompt, seed), a lite run and a full run of
+    the same prompt shared it — six measurements and two under one id, each
+    overwriting the other's artifacts, and nothing in the id to say which one
+    it was.
+    """
+
+    def test_lite_and_full_records_do_not_share_a_hash(self):
+        full = _record(_full_config())
+        lite = _record(_lite_config())
+        assert full["hash"] != lite["hash"], (
+            "a lite run and a full run of the same model and prompt share an "
+            "identifier while carrying different measurement sets: "
+            f"{sorted(full['measurements'])} vs {sorted(lite['measurements'])}"
+        )
+
+    def test_the_two_runs_really_do_differ(self):
+        """Guards the test above: if the measurement sets ever converged, the
+        hash assertion would be asking for a distinction that is not one."""
+        full = _record(_full_config())
+        lite = _record(_lite_config())
+        assert set(lite["measurements"]) < set(full["measurements"])
+
+    def test_same_budget_still_hashes_the_same(self):
+        """The fix must not make the hash a nonce — a rerun of the same run is
+        the same run, and hash-addressed artifacts depend on it."""
+        assert _record(_full_config())["hash"] == _record(_full_config())["hash"]
+
+    def test_hash_is_over_the_resolved_budget_not_the_flag(self):
+        """`--lite` has no independent existence in the run: it is a ceiling
+        applied to the config. A config file that switches the same stages off
+        by hand IS a lite run and must hash as one — and, conversely, a full
+        run must not collide with it."""
+        from hif.profile.record import profile_hash
+
+        by_hand = _full_config()
+        by_hand.perturbation.generators = []
+        by_hand.perturbation.n_variants = 0
+        by_hand.trajectory.n_branches = 0
+        by_hand.semantic.enabled = False
+        by_hand.exposure.enabled = False
+        by_hand.semantic_field.enabled = False
+        by_hand.attention.enabled = False
+
+        assert profile_hash("m", "p", 42, by_hand) == profile_hash(
+            "m", "p", 42, _lite_config()
+        )
+        assert profile_hash("m", "p", 42, by_hand) != profile_hash(
+            "m", "p", 42, _full_config()
+        )
+
+
+class TestStageBudgetCoverage:
+    """What else the identifier has to separate.
+
+    `--lite` is the loudest case, not the only one. Each knob below changes
+    which measurements a run can emit, so two runs differing in it are two
+    runs.
+    """
+
+    @staticmethod
+    def _h(config: RunConfig) -> str:
+        from hif.profile.record import profile_hash
+
+        return profile_hash("m", "p", 42, config)
+
+    def test_acquisition_observational_differs_from_full(self):
+        """`--acquisition observational` (hif/cli/_run.py) drops the
+        perturbation and trajectory stages but keeps the per-step ones, so it
+        is also distinct from `--lite`, which drops both sets."""
+        obs = _full_config()
+        obs.perturbation.generators = []
+        obs.perturbation.n_variants = 0
+        obs.perturbation.variants_file = None
+        obs.trajectory.n_branches = 0
+
+        assert self._h(obs) != self._h(_full_config())
+        assert self._h(obs) != self._h(_lite_config())
+
+    def test_acquisition_synthesized_input_differs_from_full(self):
+        """The variants are authored and teacher-forced but never generated
+        from: two of the four perturbation measurements go absent."""
+        synth = _full_config()
+        synth.perturbation.elicit_variant_outputs = False
+        synth.trajectory.n_branches = 0
+
+        assert self._h(synth) != self._h(_full_config())
+
+    def test_variant_count_and_generator_set_are_covered(self):
+        more = _full_config()
+        more.perturbation.n_variants = 5
+        other = _full_config()
+        other.perturbation.generators = ["tone"]
+
+        assert self._h(more) != self._h(_full_config())
+        assert self._h(other) != self._h(_full_config())
+
+    def test_unknown_budget_is_not_the_default_budget(self):
+        """A profile that carries no config hashes the legacy key. "I do not
+        know what this run did" is a different claim from "it ran the
+        defaults", and must not be recorded as the same run."""
+        assert self._h(None) != self._h(RunConfig())

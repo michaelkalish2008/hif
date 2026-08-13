@@ -21,9 +21,16 @@ flags that drive the absence rules. Roles, not stages: "which model's
 distributions are these numbers computed from" is the question a subject
 declaration answers, and a role is the smallest thing that answers it.
 
-This is deliberately not a parallel metadata system. It records what no other
-part of the profile records — the *identity per role* — and nothing that can be
-derived from the registry, the config, or the metric bundle.
+One field is about the prompt path rather than a role — ``chat_template_present``,
+whether the target checkpoint declares a chat template this run did not apply.
+It is here for the same reason as the rest: it is an observation made while the
+pipeline ran that changes how a number should be read, and it cannot be
+recovered from anything else in the record. The backend name does not carry it
+(two `hf` runs differ), and the config does not either.
+
+This is deliberately not a parallel metadata system. Every field is something
+no other part of the profile records, and nothing here can be derived from the
+registry, the config, or the metric bundle.
 """
 
 from __future__ import annotations
@@ -85,6 +92,19 @@ class RunProvenance(BaseModel):
     # the stage was skipped, which is when branch quantities must be absent
     # rather than computed over an empty branch list.
     trajectory_analysis_ran: bool = False
+    # The target checkpoint's tokenizer carries a chat template, which this run
+    # did NOT apply — hif continues the prompt as raw text on every backend
+    # (hif/models/chat_template.py). A literal reading of
+    # `tokenizer.chat_template`, not a test for "instruct-tuned": base
+    # checkpoints ship templates too (`Qwen/Qwen3-0.6B-Base` is one), so True
+    # does not by itself mean the continuation is off-distribution.
+    #
+    # None is "not asked", never "no template". Only the backends holding the
+    # checkpoint's own tokenizer can answer — a hosted API has none to inspect
+    # and applies its own chat formatting server-side, and Ollama's fallback
+    # tokenizer is matched to the model family rather than to this checkpoint.
+    # It is also None on any profile written before this field existed.
+    chat_template_present: Optional[bool] = None
 
 
 def _role_model(measurement, prov: RunProvenance) -> Optional[str]:

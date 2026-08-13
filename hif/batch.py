@@ -178,7 +178,7 @@ def _write_row_trace(engine, profile, row: BatchRow, *, seed: int,
     from hif.profile.record import profile_hash
     from hif.profile.render_json import render_json
 
-    h = profile_hash(engine.config.model.name, row.text, seed)
+    h = profile_hash(engine.config.model.name, row.text, seed, engine.config)
     path = Path(trace_dir) / f"profile_{sanitize_query_id(row.query_id)}_{h}.json"
     render_json(profile, path)
     return path

@@ -82,6 +82,37 @@ class Model(ABC):
     def supports_teacher_forcing(self) -> bool:
         """True for HF and TLens; False for Ollama."""
 
+    # --- What the checkpoint declares about chat framing ---------------------
+    #
+    # Concrete, not abstract, and None by default. hif applies no chat template
+    # anywhere (hif/models/chat_template.py says why); these two report what the
+    # checkpoint says about that, for the backends that can be asked.
+    #
+    # None is "no answer", never "no template". A hosted API has no tokenizer to
+    # inspect and applies its own chat formatting server-side — it receives the
+    # prompt as a single user message, so the question this asks is not even the
+    # same question there. Ollama loads a substitute HF tokenizer matched to the
+    # model FAMILY, whose template is not this checkpoint's, so it answers None
+    # too rather than reporting a stand-in's declaration as the target's.
+
+    @property
+    def chat_template_present(self) -> Optional[bool]:
+        """Whether the checkpoint's own tokenizer carries a chat template.
+
+        A literal fact, recorded in `provenance.chat_template_present`. Not a
+        test for "instruct-tuned": base checkpoints ship templates too.
+        """
+        return None
+
+    @property
+    def stops_on_chat_turn_end(self) -> Optional[bool]:
+        """Whether the checkpoint halts on a token its chat template emits.
+
+        The inference behind the load-time notice — see
+        hif/models/chat_template.py. Never recorded: the record carries facts.
+        """
+        return None
+
     @abstractmethod
     def tokenize(self, text: str) -> list[int]: ...
 

@@ -197,7 +197,10 @@ def _run_single_profile(
                                  authored_variants=authored_variants,
                                  variant_output_sink=variant_output_sink)
 
-    h = _profile_hash(model_name, prompt, seed)
+    # Artifact filenames are hash-addressed, so the hash has to separate runs
+    # the artifacts separate: a --lite run and a full run of the same prompt
+    # write different content and must not write it to the same path.
+    h = _profile_hash(model_name, prompt, seed, config)
 
     trace_path: Optional[Path] = None
     if trace:

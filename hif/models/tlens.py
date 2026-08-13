@@ -10,6 +10,7 @@ except ImportError:
     _TLENS_AVAILABLE = False
 
 from hif.config import ModelConfig
+from hif.models import chat_template as _chat_template
 from hif.models.base import GenerationResult, Logits, Model, StepRecord, TopKEntry
 from hif.utils.logging import get_logger
 
@@ -60,6 +61,29 @@ class TLensModel(Model):
     @property
     def supports_teacher_forcing(self) -> bool:
         return True
+
+    # --- What this checkpoint declares about chat framing ---
+
+    @property
+    def chat_template_present(self) -> Optional[bool]:
+        tok = getattr(self._model, "tokenizer", None)
+        if tok is None:
+            return None
+        return _chat_template.declares_chat_template(tok)
+
+    @property
+    def stops_on_chat_turn_end(self) -> Optional[bool]:
+        """Tokenizer EOS only — HookedTransformer carries no generation config.
+
+        So this misses the families whose chat-turn terminator lives only
+        there (Gemma's `<end_of_turn>`). A miss is a notice that does not
+        print, which is the direction hif/models/chat_template.py argues these
+        should fail in.
+        """
+        tok = getattr(self._model, "tokenizer", None)
+        if tok is None:
+            return None
+        return _chat_template.stops_on_chat_turn_end(tok, [tok.eos_token_id])
 
     # --- Tokenization ---
 

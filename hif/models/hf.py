@@ -6,6 +6,7 @@ import torch
 import torch.nn.functional as F
 
 from hif.config import ModelConfig
+from hif.models import chat_template as _chat_template
 from hif.models.base import GenerationResult, Logits, Model, StepRecord, TopKEntry
 from hif.utils.logging import get_logger
 
@@ -75,6 +76,31 @@ class HFModel(Model):
     @property
     def supports_teacher_forcing(self) -> bool:
         return True
+
+    # --- What this checkpoint declares about chat framing ---
+
+    @property
+    def chat_template_present(self) -> bool:
+        return _chat_template.declares_chat_template(self._tokenizer)
+
+    @property
+    def stops_on_chat_turn_end(self) -> bool:
+        return _chat_template.stops_on_chat_turn_end(
+            self._tokenizer, self._eos_token_ids()
+        )
+
+    def _eos_token_ids(self) -> list[Optional[int]]:
+        """Every id this checkpoint would halt generation on.
+
+        The generation config first, because it is the one that carries the
+        chat-turn terminator on some families (`google/gemma-3-1b-it` halts on
+        `<end_of_turn>`; its tokenizer reports `<eos>`), and it holds either an
+        int or a list.
+        """
+        configured = getattr(self._model.generation_config, "eos_token_id", None)
+        ids = list(configured) if isinstance(configured, (list, tuple)) else [configured]
+        ids.append(self._tokenizer.eos_token_id)
+        return ids
 
     # --- Tokenization ---
 

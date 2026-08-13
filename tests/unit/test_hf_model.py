@@ -82,3 +82,17 @@ def test_max_top_k_is_none(gpt2_model: HFModel) -> None:
 
 def test_supports_teacher_forcing(gpt2_model: HFModel) -> None:
     assert gpt2_model.supports_teacher_forcing is True
+
+
+def test_chat_framing_flags_on_a_checkpoint_that_declares_nothing(
+    gpt2_model: HFModel,
+) -> None:
+    """The wiring, on the one checkpoint every environment has.
+
+    False, not None: HF holds the checkpoint's own tokenizer and can answer.
+    The cases where the two flags DIVERGE need checkpoints that may not be
+    cached — tests/unit/test_chat_template.py covers those from the real
+    declarations without downloading anything.
+    """
+    assert gpt2_model.chat_template_present is False
+    assert gpt2_model.stops_on_chat_turn_end is False
