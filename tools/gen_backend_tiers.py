@@ -149,7 +149,7 @@ def build() -> str:
     lines = [
         BEGIN,
         "",
-        "| access | backends | teacher forcing | what you get |",
+        "| access | backends | teacher forcing | what it yields |",
         "|---|---|---|---|",
     ]
     for _logprobs, tag, name, desc in TIERS:

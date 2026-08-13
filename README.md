@@ -32,25 +32,25 @@ hif profile Qwen/Qwen3-0.6B-Base "Explain why the sky appears blue." --json
 Real output, rounded for width — `Qwen/Qwen3-0.6B-Base` on CPU, no API key, no
 network. The `-Base` matters: hif continues the prompt as a raw causal LM and
 applies no chat template, so an instruct-tuned checkpoint would answer a
-different question than the one you typed.
+different question than the one the prompt asks.
 
-## Four of those numbers are comparisons, and you control the comparison
+## Four of those numbers are comparisons, and the comparison is configurable
 
-Two measurements read the prompt and the one continuation you asked for:
+Two measurements read the prompt and the single continuation it produced:
 `prompt_surprisal_excess_bits` and `output_entropy_bits`. The other four compare
-that baseline against runs the tool constructs, so the number means nothing
-until you know what was constructed.
+that baseline against runs the tool constructs, so none of them can be read
+without knowing what was constructed.
 
 `input_entropy_shift_bits` and `input_entropy_std_bits` teacher-force the model
-over meaning-preserving paraphrases of your prompt and report how far, and how
+over meaning-preserving paraphrases of the prompt and report how far, and how
 unevenly, its input-side uncertainty moved. `perturbation_jsd_bits` reports how
 far the output distribution moved over the same variants.
 `io_cosine_similarity` compares the prompt's embedding against the
 continuation's across those runs.
 
 All four therefore depend on `[perturbation]`: which generators ran, and how
-many variants each produced. Change that and you have changed the measurement,
-not just its precision — so the config travels in the record, and
+many variants each produced. Change that and the measurement changes, not just
+its precision — so the config travels in the record, and
 `hif config show --diff` prints what will run before anything runs.
 
 ## Install
@@ -62,8 +62,8 @@ pip install -e .
 
 Python 3.10+. `pip install -e '.[hf]'` adds torch and transformers for local
 weights; `[openai]`, `[anthropic]`, `[gemini]`, `[ollama]`, `[tlens]` add the
-other backends. Bring your own weights or your own API key — there is no account,
-no tier, and no hosted component.
+other backends. Weights and API keys are supplied by the caller — there is no
+account, no tier, and no hosted component.
 
 ```bash
 hif doctor     # what is installed, what is reachable, what is missing
@@ -113,7 +113,7 @@ credentials
 ```
 
 If it says `unset` for a key
-you believe you loaded, the usual cause is `source .env`: on bare `KEY=value`
+that appears to be loaded, the usual cause is `source .env`: on bare `KEY=value`
 lines that creates *shell* variables, and a child process inherits only the
 *environment*, so hif never sees them. `set -a; source .env; set +a` exports them
 — or just let hif read the file itself.
@@ -131,15 +131,15 @@ lines that creates *shell* variables, and a child process inherits only the
 
 Both scales take the **same** `--config-file`, `--mode`, `--acquisition`,
 `--lite`, and `--variant-io`, resolved through one code path — so a ceiling
-means the same thing whether you run one prompt or forty, and a corpus is
-comparable with the single runs it aggregates.
+means the same thing at one prompt or at forty, and a corpus is comparable with
+the single runs it aggregates.
 
 The built-in prompt suite is a **row source**, not a separate command:
 `--sample-set all` (or a single regime name) feeds `batch` the same 8 x 5
 fixed stimulus set, and inherits every control above. It is fixed on purpose —
 a cross-model comparison is only a comparison when the stimulus was identical
 — but it is not a benchmark (unlabeled prompts, nothing scored), and it is not
-where your own question lives. Fork it:
+where a particular research question lives. Fork it:
 
 ```bash
 hif batch --sample-set all --export-workload suite.jsonl   # 40 rows, no model
@@ -191,7 +191,7 @@ hif batch workload.jsonl Qwen/Qwen3-0.6B-Base 2>/dev/null | jq '.measurements.ou
 A failed row is still a record — it carries an `error` key instead of
 `measurements`, so one bad prompt does not lose the run.
 
-To see every model you can pass to `profile`, with the backend each one needs:
+To list every model `profile` accepts, with the backend each one needs:
 
 ```bash
 hif models --json 2>/dev/null | jq -r '.backends[] | .name as $b | .models[] | "\($b)\t\(.)"'
@@ -205,9 +205,9 @@ reached is visible rather than silently thin.
 
 Units are **not** in the record by default. They are constant per
 `signal_set_version` and would repeat verbatim on every JSONL line, so pass
-`--units` to `profile` or `batch` when you want records that describe
-themselves, or run `hif schema` to print every measurement with its unit and
-definition without touching a model.
+`--units` to `profile` or `batch` for records that describe themselves, or run
+`hif schema` to print every measurement with its unit and definition without
+touching a model.
 
 ## Charts
 
@@ -255,7 +255,7 @@ both, up front:
   charts (--charts): ok — HTML (PNG needs kaleido: pip install kaleido)
 ```
 
-## What you can measure depends on the backend
+## What can be measured depends on the backend
 
 Access is a property of what the backend exposes, not of the model. The tiers
 are `hif/models/capabilities.py`'s `logprobs` field under a readable name, so
@@ -264,7 +264,7 @@ the table is generated from that registry rather than kept beside it — run
 
 <!-- generated: backend access tiers — tools/gen_backend_tiers.py -->
 
-| access | backends | teacher forcing | what you get |
+| access | backends | teacher forcing | what it yields |
 |---|---|---|---|
 | `[F]` full | `hf`, `tlens` | yes | full-vocabulary distributions — every measurement |
 | `[T-k]` truncated | `ollama`, `openai`, `gemini` | no | top-k logprobs only; output entropy is a lower bound |
@@ -274,15 +274,16 @@ the table is generated from that registry rather than kept beside it — run
 
 Gemini's tier is set by the endpoint, not the model: logprobs come back on Vertex
 AI and the developer API degenerates, so `gemini-2.5-pro` is `[T-k]` on one and
-`[P]` on the other. `hif models` reports what your credentials actually reach.
+`[P]` on the other. `hif models` reports what the configured credentials
+actually reach.
 
-**The table lists backends, not every model you can profile.** Any provider with
-an OpenAI-compatible API — DeepSeek, Mistral, Grok, a local vLLM — is reached
-through `--backend openai` with `[model] base_url` set, and inherits the
-`openai` row: `[T-k]`, no teacher forcing. DeepSeek is not missing from the
-table because it is unsupported; three DeepSeek families are in the published
-corpus. It is absent because it is not a `--backend` value, which is the only
-thing the registry knows how to name. See
+**The table lists backends, not every model that can be profiled.** Any
+provider with an OpenAI-compatible API — DeepSeek, Mistral, Grok, a local vLLM
+— is reached through `--backend openai` with `[model] base_url` set, and
+inherits the `openai` row: `[T-k]`, no teacher forcing. DeepSeek is not missing
+from the table because it is unsupported; three DeepSeek families are in the
+published corpus. It is absent because it is not a `--backend` value, which is
+the only thing the registry knows how to name. See
 [docs/CONFIG.md](docs/CONFIG.md) § `[model]` for the endpoint and key.
 
 `[P]` is not measurement-free. `anthropic` fully supports `io_cosine_similarity`,
@@ -317,16 +318,17 @@ elsewhere.
 
 ### The prompt is sent as raw text, and no chat template is applied
 
-On `hf`, `tlens` and `ollama` your prompt reaches the model as the exact
-characters you typed. hif never wraps it in `<|im_start|>user … <|im_end|>`,
-because the input-side measurements teacher-force the model over the prompt and
-a template would make every one of them a measurement of a string you did not
-write. (The hosted backends are the other case: `openai`, `anthropic` and
-`gemini` take a chat request, so hif sends the prompt as a single user message
-and the provider applies its own formatting server-side, out of view.)
+On `hf`, `tlens` and `ollama` the prompt reaches the model as the exact
+characters it was written with. hif never wraps it in
+`<|im_start|>user … <|im_end|>`, because the input-side measurements
+teacher-force the model over the prompt and a template would make every one of
+them a measurement of a string nobody wrote. (The hosted backends are the other
+case: `openai`, `anthropic` and `gemini` take a chat request, so hif sends the
+prompt as a single user message and the provider applies its own formatting
+server-side, out of view.)
 
 The consequence, on a local instruct-tuned checkpoint, is that it **continues**
-your prompt instead of answering it:
+the prompt instead of answering it:
 
 ```bash
 hif profile Qwen/Qwen3-0.6B "Explain why the sky appears blue." --json
@@ -348,11 +350,11 @@ without rerunning anything.
 
 On closed backends, `--surrogate` recovers some input-side quantities by
 teacher-forcing a small local model over the *prompt* — which means those
-numbers describe the prompt under a reference model, not the model you asked
-about, and nothing the target did enters them. They are reported in a separate
+numbers describe the prompt under a reference model, not the target model, and
+nothing the target did enters them. They are reported in a separate
 `prompt_measurements` block naming that reference model, never inside
-`measurements`, because a caveat flag would still read as a fact about your
-model. `hif schema` gives every measurement's subject; docs/MEASUREMENTS.md
+`measurements`, because a caveat flag would still read as a fact about the
+target. `hif schema` gives every measurement's subject; docs/MEASUREMENTS.md
 § Subject gives the rule.
 
 A fair objection: behavioural measurement of a closed model is of limited
@@ -389,27 +391,27 @@ threshold. 2.17 bits is roughly the uncertainty of a uniform choice among four
 or five tokens, which is checkable; `0.31` on some index would not be.
 
 Interpretation is the researcher's, and it belongs in the work that cites this
-tool rather than in the tool. That division is the point: a number you can check
-is worth more than a verdict you have to trust.
+tool rather than in the tool. That division is the point: a checkable number is
+worth more than a verdict that has to be trusted.
 
 Known limitations, stated plainly:
 
 - **The signal set is smaller than it looks.** Effective dimensionality across the
   measurements is roughly 3. Several are correlated; treating them as independent
-  evidence will mislead you.
+  evidence is misleading.
 - **On `[T-k]` and `[P]` backends, some quantities describe a local surrogate
-  rather than the model you asked about.** They are computed from prompt text and
+  rather than the target model.** They are computed from prompt text and
   a local reader, and cannot observe a hosted model's internals — they return
-  the same value whichever model you profiled. They are reported separately from
+  the same value whichever model was profiled. They are reported separately from
   the measurement set on those backends, with their reference model named. Check
   `hif models` before drawing conclusions about an API model.
 - **`output_entropy_bits` is a lower bound** whenever the distribution is
   truncated to top-k, and is not comparable across backends with different k.
 - **No thresholds, no levels, no verdicts.** Deciding what a value *means*
-  requires a baseline you establish yourself, on your own models and prompts —
-  including measuring what the number does when nothing has changed. That
-  judgement is deliberately out of scope here — it depends on your models, your
-  prompts, and what you are asking, none of which this tool can know.
+  requires a baseline established independently, on the models and prompts in
+  question — including measuring what the number does when nothing has changed.
+  That judgement is deliberately out of scope here — it depends on the models,
+  the prompts, and the question being asked, none of which this tool can know.
 
 ## Documentation
 
@@ -425,7 +427,7 @@ Profiles generated with this tool are published and explorable at
 `.claude/skills/hif/SKILL.md` is a skill for Claude Code: how to author and
 **verify** a `run.toml`, which knob moves which measurement, how to choose an
 acquisition tier, and the reporting rules (absence is not zero; no thresholds,
-no verdicts). It loads automatically when you work inside this repo.
+no verdicts). It loads automatically inside this repo.
 
 To use it from another project, copy or symlink it:
 
