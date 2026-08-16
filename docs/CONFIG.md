@@ -134,18 +134,51 @@ needs at least one variant continuation to compare against, so a run with
 | --- | --- | --- |
 | `generators` | `["synonym", "tone", "reorder"]` | Which paraphrase families are applied to the prompt |
 | `n_variants` | `2` | Variants per generator. Total runs = `len(generators) × n_variants`, each costing one generation pass |
-| `use_llm_perturbation` | `false` | Rule-based (deterministic, free) vs. LLM-authored paraphrases |
+| `paraphraser` | `"local"` | Who writes the variants: `local` (a cached instruct model), `rule` (the WordNet/heuristic generators), or `llm` (an OpenAI-compatible endpoint) |
+| `paraphraser_model` | `"google/gemma-3-4b-it"` | Which local checkpoint writes them. Recorded in `run_config`, because the paraphraser is part of the instrument |
+| `use_llm_perturbation` | `false` | Older spelling of `paraphraser = "llm"` |
 | `llm_base_url` | `null` | OpenAI-compatible endpoint. Required when `use_llm_perturbation = true` |
 | `llm_api_key` | `null` | Key for that endpoint |
 | `llm_model` | `null` | Model at that endpoint; omit for the generator's own default |
 | `elicit_variant_outputs` | `true` | Whether the model **generates** from each variant. `false` authors and teacher-forces them only — the input-side pair survives, the four output-side ones go absent. See [`--acquisition`](#--acquisition--what-the-run-may-bring-into-existence) |
 | `variants_file` | `null` | Workload JSONL of researcher-authored variants — the tool authors nothing. See below |
 
+### `paraphraser` — who writes the variants
+
+Four measurements compare the baseline against text the tool constructs, and
+the definition of all four says *meaning-preserving paraphrase*. Who writes
+that text therefore decides what the numbers mean, which is why the choice is
+recorded in `run_config` alongside the count.
+
+`local` is the default. It reads a cached instruction-tuned checkpoint from the
+HuggingFace cache — no server, no API key, no network once the weights are
+present.
+
+`rule` selects the older WordNet/heuristic generators. They are instant and
+need no weights, and they do not produce meaning-preserving paraphrases:
+
+* `synonym` pools lemmas across every synset of a word with no sense
+  disambiguation, then filters out rare and multi-word lemmas — which deletes
+  the correct sense and keeps the wrong one, because precise terms are rarer
+  and more often compound. The surviving pool for "headache" is
+  `{concern, worry, vexation}`, all from the *"something that causes anxiety"*
+  sense; for "week" it is `{workweek}`.
+* Measured on the built-in stimulus set at the default budget, `tone` returns
+  the prompt **unchanged** for 50% of variants and `reorder` duplicates 34% of
+  its own output. Nothing filters them, so each enters the aggregate as a
+  divergence of exactly zero.
+
+Use `rule` to reproduce a profile that was produced with it — the published
+corpus was — and not otherwise.
+
+A local model respects word sense and writes natural English. It does **not**
+guarantee meaning preservation: in testing it rewrote "headaches" as
+"migraines" and "every morning" as "daily". Checking that is still yours.
+
 ### `variants_file` — author the perturbations yourself
 
-The generators above are rule-based text manipulations; you control *which
-families* run but not *what they write*. Authored variants invert that: every
-variant is a string a person wrote.
+The generators control *which families* run, not *what they write*. Authored
+variants invert that: every variant is a string a person wrote.
 
 There is **one row format for all case data**: the workload JSONL that
 `hif batch` profiles (`{"query_id", "text", ...}`), extended with a
@@ -201,8 +234,8 @@ Commit the JSONL next to `run.toml` — it is as much a part of the measurement
 as the thresholds are.
 
 **Available generators.** `synonym`, `tone`, `reorder`, `substitution`,
-`ambiguity`. The first three have both rule-based and LLM implementations;
-`substitution` and `ambiguity` are rule-based only.
+`ambiguity`. The first three exist for every `paraphraser`; `substitution` and
+`ambiguity` are rule-based only and are unaffected by that setting.
 
 The choice is not cosmetic. `synonym` and `substitution` perturb lexical choice;
 `reorder` perturbs syntax; `tone` perturbs register; `ambiguity` perturbs

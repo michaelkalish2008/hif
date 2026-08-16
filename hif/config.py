@@ -1,7 +1,7 @@
 """Pydantic v2 configuration models for hif runs."""
 
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
@@ -75,12 +75,43 @@ class PerturbationConfig(BaseModel):
     n_variants: int = 2  # variants per generator (3 generators × 2 = 6 total)
     generators: list[str] = ["synonym", "tone", "reorder"]
 
-    # Rule-based generators (zero compute cost) are the default for every
-    # generator name above. Set use_llm_perturbation=True with an explicit
-    # llm_base_url/llm_api_key to opt into LLM-backed paraphrasing instead,
-    # via any OpenAI-compatible endpoint (bring your own key/endpoint, e.g.
-    # a local Ollama server). llm_model is optional — omit to use the
-    # generator's own default.
+    # WHO WRITES THE VARIANTS.
+    #
+    # "local" (the default) is a locally cached instruction-tuned model,
+    # reading the HuggingFace cache — no server, no API key, no network once
+    # the weights are present. It replaced the rule-based generators as the
+    # default because those do not produce the meaning-preserving paraphrases
+    # the input-side measurements are defined against:
+    #
+    #   * `synonym` pools lemmas across every WordNet synset with no sense
+    #     disambiguation, and its rarity/multi-word filters delete the correct
+    #     sense while keeping the wrong one. The surviving pool for "headache"
+    #     is {concern, worry, vexation}; for "week" it is {workweek}.
+    #   * On the built-in stimulus set at this budget, `tone` returned the
+    #     prompt UNCHANGED for 50% of variants and `reorder` duplicated 34% of
+    #     its own output. Nothing filtered them, so each entered the aggregate
+    #     as a divergence of exactly zero.
+    #
+    # "rule" selects those generators anyway — reproducing a pre-existing
+    # profile needs them, and the published corpus was produced with them.
+    # "llm" is the OpenAI-compatible path (a running Ollama, or a hosted
+    # gateway), configured by the llm_* fields below.
+    #
+    # This choice changes what the numbers mean, so it travels in run_config
+    # like every other perturbation setting: a profile records who wrote its
+    # variants, not just how many there were.
+    paraphraser: Literal["local", "rule", "llm"] = "local"
+
+    # Which local checkpoint writes the variants. Named rather than left None
+    # so the record says WHICH model wrote them: the paraphraser determines
+    # what four of the measurements compare against, which makes it part of
+    # the instrument, and "local" alone does not identify an instrument. Kept
+    # as a literal to avoid importing the perturbation package here;
+    # tests/unit/test_paraphraser_default.py asserts it still matches
+    # hif.perturbation.local_llm.DEFAULT_LOCAL_MODEL.
+    paraphraser_model: Optional[str] = "google/gemma-3-4b-it"
+
+    # Back-compat: setting this is equivalent to paraphraser = "llm".
     use_llm_perturbation: bool = False
     llm_base_url: Optional[str] = None
     llm_api_key: Optional[str] = None

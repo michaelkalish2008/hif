@@ -518,20 +518,42 @@ def build_profile(
     if authored_variants:
         variant_plan.append(("authored", list(authored_variants)))
     else:
+        # Who writes the variants — see PerturbationConfig.paraphraser for why
+        # "local" is the default. use_llm_perturbation is the older spelling of
+        # paraphraser="llm" and still selects it.
+        source = config.perturbation.paraphraser
+        if config.perturbation.use_llm_perturbation:
+            source = "llm"
         for gen_name in config.perturbation.generators:
             try:
                 generator = get_generator(
                     gen_name,
-                    use_llm=config.perturbation.use_llm_perturbation,
+                    use_local=(source == "local"),
+                    use_llm=(source == "llm"),
                     base_url=config.perturbation.llm_base_url,
                     api_key=config.perturbation.llm_api_key,
-                    model=config.perturbation.llm_model,
+                    model=(
+                        config.perturbation.paraphraser_model
+                        if source == "local"
+                        else config.perturbation.llm_model
+                    ),
                 )
                 pert_result = generator.generate(
                     prompt, config.perturbation.n_variants, seed
                 )
             except Exception as exc:
                 logger.warning("Perturbation generator %r failed: %s", gen_name, exc)
+                continue
+            if not pert_result.variants:
+                # The local paraphraser returns fewer variants rather than
+                # padding with the prompt, and can return none. An empty plan
+                # entry would contribute nothing while looking like a stage
+                # that ran, so say it and leave the entry out.
+                logger.warning(
+                    "Perturbation generator %r produced no usable variants "
+                    "(paraphraser=%s) — its measurements will be absent, not zero",
+                    gen_name, source,
+                )
                 continue
             variant_plan.append((gen_name, pert_result.variants))
 
