@@ -157,12 +157,14 @@ class TestTrajectoryAnalysis:
             assert bf.max_radius >= bf.mean_radius >= 0.0
             assert bf.radius_variance >= 0.0
             assert bf.cluster_count >= 1
-            # field_dispersion == 1 - trajectory_continuity (both from the same
-            # branch embeddings), when continuity is available.
-            if result.trajectory_continuity is not None:
-                assert bf.field_dispersion == pytest.approx(
-                    1.0 - result.trajectory_continuity, abs=1e-6
-                )
+            # No field_dispersion: it was 1 - trajectory_continuity over the
+            # same embeddings, so the two summed to exactly 1.0 in every
+            # published profile. The raw expression is trajectory_continuity,
+            # which travels beside this block; the complement is a reading a
+            # consumer computes, not a second number to store.
+            assert not hasattr(bf, "field_dispersion")
+            if result.n_branches >= 2:
+                assert result.trajectory_continuity is not None
         else:
             assert bf is None
 
@@ -175,7 +177,7 @@ class TestSchema:
         assert rec.prompt_hash == hashlib.sha256(text.encode()).hexdigest()
 
     def test_behavioral_range_profile_schema_version(self):
-        assert _make_profile().schema_version == "0.14.0"
+        assert _make_profile().schema_version == "0.15.0"
 
     def test_behavioral_range_profile_created_at_is_datetime(self):
         assert isinstance(_make_profile().created_at, datetime)

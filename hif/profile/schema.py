@@ -187,6 +187,16 @@ class BehavioralRangeProfile(BaseModel):
     #   geometry of the sampling-perturbation (trajectory branch) cloud, the twin
     #   of the perturbation field. Derived scalars only. Defaults to None, so
     #   0.4.0 profile JSON still validates unchanged.
+    # 0.15.0: REMOVED trajectory.branch_field.field_dispersion. It was
+    #   1 - mean_pairwise_cosine over the same branch embeddings
+    #   trajectory_continuity is computed from, by the same function, so the
+    #   pair summed to exactly 1.0 in all 120 published profiles. A `1 - x`
+    #   beside its own x is the shape the measurement set dropped in favour of
+    #   raw expressions. Unlike every entry above this is a REMOVAL, so a
+    #   0.14.0 profile carries a key a 0.15.0 profile deliberately does not;
+    #   the quantity is recoverable as 1 - trajectory_continuity, which ships
+    #   in the same block. PerturbationField.field_dispersion is untouched — it
+    #   is a raw generalized JSD in bits, not a complement.
     # 0.6.0: added semantic_field (SemanticFieldReading, default None) —
     #   the within-generation semantic field instrument (Veer): per-step semantic-
     #   centroid displacement + field-spread change. Derived scalars only. Defaults
@@ -303,7 +313,7 @@ class BehavioralRangeProfile(BaseModel):
     #   A MAJOR change on the same terms as 0.13.0: old JSON still validates,
     #   but a consumer reading any of these as a float now meets None where
     #   the old value was invented.
-    schema_version: str = "0.14.0"
+    schema_version: str = "0.15.0"
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     model: ModelIdentity
     prompt: PromptRecord

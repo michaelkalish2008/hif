@@ -45,16 +45,30 @@ class BranchField(BaseModel):
     cluster_count, which detects MULTI-MODALITY (branches splitting into distinct
     attractors) that a mean cannot see.
 
-    Radii/dispersion are cosine distances in [0, 2]. Descriptor names align with
-    PerturbationField so compute_field_deformation / platform parseField consume
-    both; cluster_count is the extra (multi-modality) descriptor. Derived scalars
-    only — no embeddings persisted."""
+    Radii are cosine distances in [0, 2]; cluster_count is the extra
+    (multi-modality) descriptor. Derived scalars only — no embeddings persisted.
+
+    There is deliberately NO `field_dispersion` here. It was
+    `1 - _mean_pairwise_cosine(embeddings)` over the same array
+    `trajectory_continuity` is computed from by the same function, so the two
+    summed to exactly 1.0 in every published profile — the `1 - x` shape the
+    measurement set dropped in favour of raw expressions. The raw quantity is
+    `trajectory_continuity` on TrajectoryAnalysis, alongside this block; a
+    consumer wanting the distance subtracts it from 1 itself, which is a
+    reading, not a second number to store.
+
+    The name used to be justified as aligning with PerturbationField for
+    compute_field_deformation and the platform's parseField. Neither holds:
+    compute_field_deformation is typed `(before: PerturbationField, after:
+    PerturbationField)` and never sees a BranchField, and parseField lived in a
+    platform that no longer exists. PerturbationField keeps its own
+    field_dispersion, which is a raw generalized JSD in bits and not a
+    complement of anything."""
 
     n_branches: int
     mean_radius: float        # mean branch→centroid cosine distance
     radius_variance: float    # variance of branch radii (isotropy of the cloud)
     max_radius: float         # most divergent branch (the worst-case future)
-    field_dispersion: float   # mean pairwise cosine distance (1 − trajectory_continuity)
     cluster_count: int        # HDBSCAN clusters among branches — multi-modality
 
 
@@ -112,7 +126,6 @@ def _compute_branch_field(
     cn = np.linalg.norm(centroid)
     centroid = centroid / (cn if cn > 0 else 1e-8)
     radii = 1.0 - (normed @ centroid)  # cosine distance to centroid, per branch
-    field_dispersion = 1.0 - _mean_pairwise_cosine(embeddings)
     try:
         cluster_count = cluster_embeddings(embeddings, cluster_config).n_clusters
     except Exception:
@@ -122,7 +135,6 @@ def _compute_branch_field(
         mean_radius=float(np.mean(radii)),
         radius_variance=float(np.var(radii)),
         max_radius=float(np.max(radii)),
-        field_dispersion=float(field_dispersion),
         cluster_count=int(cluster_count),
     )
 
