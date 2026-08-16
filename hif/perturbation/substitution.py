@@ -94,7 +94,11 @@ class SubstitutionGenerator(PerturbationGenerator):
             )
             return PerturbationResult(
                 original=prompt,
-                variants=[prompt] * n_variants,
+                # Degenerate: nothing to perturb. Produce NOTHING rather than
+                # n copies of the prompt — each copy contributes a divergence
+                # of exactly zero, so a prompt this generator cannot touch
+                # would otherwise be recorded as a model that did not move.
+                variants=[],
                 generator=self.name,
             )
 

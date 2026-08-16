@@ -54,7 +54,12 @@ from typing import Any, Literal
 from hif.perturbation.base import PerturbationGenerator, PerturbationResult
 # One source for the instruction text — this module changes where inference
 # happens, not what is asked for.
-from hif.perturbation.llm import _SYSTEM_PROMPTS, _build_user_prompt, VariantType
+from hif.perturbation.llm import (
+    _SYSTEM_PROMPTS,
+    _build_user_prompt,
+    parse_variants,
+    VariantType,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -160,45 +165,6 @@ def _load(model_id: str, dtype_name: str | None, device: str | None) -> tuple[An
     return tokenizer, model
 
 
-def _parse_variants(text: str, prompt: str, n: int) -> list[str]:
-    """Numbered-list lines, deduplicated, with no-ops removed.
-
-    Deliberately does NOT pad to `n` with the original prompt, which is what
-    `llm._parse_numbered_list` does. A variant identical to the baseline
-    contributes a divergence of exactly zero to every measurement that reads
-    it, so padding manufactures agreement the model never showed — the same
-    defect that put 50% no-ops in the rule-based `tone` output. Returning
-    fewer variants is the honest result; the aggregate is over what was
-    actually produced.
-    """
-    text = re.sub(r"```[^\n]*\n?", "", text)
-    # Reasoning models emit a think block before the answer; drop it.
-    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
-
-    out: list[str] = []
-    seen: set[str] = set()
-    norm = " ".join(prompt.split()).strip().lower().rstrip(".")
-
-    for line in text.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        line = re.sub(r"^[\d]+[.)]\s*", "", line)
-        line = re.sub(r"^[-*]\s*", "", line).strip()
-        line = line.strip('"').strip("'").strip()
-        if not line:
-            continue
-        key = " ".join(line.split()).lower().rstrip(".")
-        if key == norm:          # a no-op is not a perturbation
-            continue
-        if key in seen:          # a duplicate adds no evidence
-            continue
-        seen.add(key)
-        out.append(line)
-
-    return out[:n]
-
-
 class LocalParaphraseGenerator(PerturbationGenerator):
     """Meaning-preserving paraphrases from a locally cached instruct model."""
 
@@ -252,7 +218,7 @@ class LocalParaphraseGenerator(PerturbationGenerator):
             )
             return PerturbationResult(original=prompt, variants=[], generator=self.name)
 
-        variants = _parse_variants(raw, prompt, n_variants)
+        variants = parse_variants(raw, prompt, n_variants)
         if len(variants) < n_variants:
             # Absent, not padded. The caller sees how many it actually got.
             logger.info(

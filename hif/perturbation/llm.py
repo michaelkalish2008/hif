@@ -85,40 +85,49 @@ def _build_user_prompt(prompt: str, n: int) -> str:
     )
 
 
-def _parse_numbered_list(text: str, n: int, fallback: str) -> list[str]:
-    """Extract up to n lines from a numbered-list response.
+def parse_variants(text: str, prompt: str, n: int) -> list[str]:
+    """Numbered-list lines, deduplicated, with no-ops removed.
 
-    Accepts lines like: '1. text', '1) text', or just 'text' as fallback.
-    Returns exactly n items, padding with `fallback` if the model under-produces.
+    Returns AT MOST n, and fewer when the model under-produces. It used to pad
+    the shortfall with the original prompt, which is why that mattered: a
+    variant identical to the baseline contributes a divergence of exactly zero
+    to every measurement computed from it, so padding manufactured agreement
+    the model never showed. Against a live Ollama this was not hypothetical —
+    a 2-variant request came back as two byte-identical copies of the prompt,
+    indistinguishable in the record from a model that genuinely did not move.
+
+    It is the same defect the rule-based `tone` generator had, where 50% of
+    variants on the built-in stimulus set were the prompt unchanged. Returning
+    fewer variants is the honest result; the aggregate is over what was
+    actually produced, and a generator that produced none is dropped from the
+    plan by the builder rather than entered as an empty set.
     """
-    # Strip markdown code fences if the model wrapped the output
-    text = re.sub(r"```[^\n]*\n?", "", text).strip()
+    text = re.sub(r"```[^\n]*\n?", "", text)
+    # Reasoning models emit a think block before the answer; drop it.
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
 
-    lines: list[str] = []
+    out: list[str] = []
+    seen: set[str] = set()
+    norm = " ".join(prompt.split()).strip().lower().rstrip(".")
+
     for line in text.splitlines():
         line = line.strip()
         if not line:
             continue
-        # Strip leading "1.", "1)", "- " etc.
-        cleaned = re.sub(r"^[\d]+[.)]\s*", "", line).strip()
-        cleaned = re.sub(r"^[-*]\s*", "", cleaned).strip()
-        # Strip surrounding quotes the model sometimes adds
-        cleaned = cleaned.strip('"').strip("'").strip()
-        if cleaned:
-            lines.append(cleaned)
+        line = re.sub(r"^[\d]+[.)]\s*", "", line)
+        line = re.sub(r"^[-*]\s*", "", line).strip()
+        line = line.strip('"').strip("'").strip()
+        if not line:
+            continue
+        key = " ".join(line.split()).lower().rstrip(".")
+        if key == norm:          # a no-op is not a perturbation
+            continue
+        if key in seen:          # a duplicate adds no evidence
+            continue
+        seen.add(key)
+        out.append(line)
 
-    # De-duplicate while preserving order
-    seen: set[str] = set()
-    unique: list[str] = []
-    for l in lines:
-        if l.lower() not in seen:
-            seen.add(l.lower())
-            unique.append(l)
-
-    # Pad if short; truncate if long
-    while len(unique) < n:
-        unique.append(fallback)
-    return unique[:n]
+    return out[:n]
 
 
 def _openai_compatible_chat(
@@ -190,15 +199,21 @@ class LLMParaphraseGenerator(PerturbationGenerator):
             raw = _openai_compatible_chat(
                 messages, self.model, self.base_url, self.api_key, self.temperature, seed=seed,
             )
-            variants = _parse_numbered_list(raw, n_variants, prompt)
+            variants = parse_variants(raw, prompt, n_variants)
         except Exception as exc:
+            # Produce nothing rather than n copies of the prompt. Each copy
+            # would contribute a divergence of exactly zero, so a failed
+            # endpoint call would have been recorded as a model that did not
+            # move — the strongest possible stability claim, published about a
+            # request that never completed.
             logger.warning(
-                "LLMParaphraseGenerator (%s) failed for prompt %r: %s — using original.",
+                "LLMParaphraseGenerator (%s) failed for prompt %r: %s — "
+                "producing no variants; its measurements will be absent, not zero.",
                 self.variant_type,
                 prompt[:60],
                 exc,
             )
-            variants = [prompt] * n_variants
+            variants = []
 
         return PerturbationResult(
             original=prompt,

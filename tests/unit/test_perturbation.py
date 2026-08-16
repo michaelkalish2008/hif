@@ -128,9 +128,15 @@ class TestWordOrderGenerator:
             assert v_words == orig_words, f"Word set changed: {v!r}"
 
     def test_degenerate_short_prompt(self):
+        """Nothing to reorder produces nothing, not n copies of the prompt.
+
+        This used to assert len == 3, pinning the padding: a copy of the
+        baseline contributes a divergence of exactly zero, so a prompt the
+        generator cannot touch was recorded as a model that did not move.
+        """
         gen = WordOrderGenerator()
         result = gen.generate("hello", n_variants=3, seed=SEED)
-        assert len(result.variants) == 3
+        assert result.variants == []
 
     def test_generator_name(self):
         gen = WordOrderGenerator()
@@ -178,11 +184,10 @@ class TestSubstitutionGenerator:
         assert result.generator == "substitution"
 
     def test_degenerate_no_known_words(self):
+        """No known word to substitute produces nothing — see the note above."""
         gen = SubstitutionGenerator()
         result = gen.generate("xyzzy quux bloop", n_variants=3, seed=SEED)
-        assert len(result.variants) == 3
-        for v in result.variants:
-            assert v == "xyzzy quux bloop"
+        assert result.variants == []
 
 
 # ---------------------------------------------------------------------------
@@ -220,9 +225,10 @@ class TestAmbiguityGenerator:
         assert len(changed) > 0
 
     def test_degenerate_no_applicable_words(self):
+        """No applicable word produces nothing — see the note above."""
         gen = AmbiguityGenerator(mode="increase")
         result = gen.generate("xyzzy quux bloop", n_variants=3, seed=SEED)
-        assert len(result.variants) == 3
+        assert result.variants == []
 
     def test_invalid_mode(self):
         with pytest.raises(ValueError, match="mode"):
