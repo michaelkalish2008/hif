@@ -253,10 +253,10 @@ def render_technical(profile: BehavioralRangeProfile, output_path: Path) -> None
     a("## Distribution Metrics (per output step)")
     a("")
     tokens = _step_tokens(profile)
-    a("| Token | Step | Entropy (bits) | Logit margin | Top-K mass | Eff. support | Tail weight |")
+    a("| Token | Step | Entropy (bits) | Logit margin | Top-K mass | Nucleus eff. support | Tail weight |")
     a("|---|---|---|---|---|---|---|")
     for i, dm in enumerate(profile.metrics.distribution[:10]):
-        a(f"| {_token_cell(tokens, i)} | {i} | {dm.entropy_bits:.3f} | {dm.logit_margin:.3f} | {dm.topk_cumulative_mass:.3f} | {dm.effective_support_size:.1f} | {dm.tail_weight:.3f} |")
+        a(f"| {_token_cell(tokens, i)} | {i} | {dm.entropy_bits:.3f} | {dm.logit_margin:.3f} | {dm.topk_cumulative_mass:.3f} | {dm.nucleus_effective_support_size:.1f} | {dm.tail_weight:.3f} |")
     if len(profile.metrics.distribution) > 10:
         a(f"| | ... | ({len(profile.metrics.distribution) - 10} more steps) | | | | |")
     a("")

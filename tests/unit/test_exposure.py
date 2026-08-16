@@ -399,7 +399,7 @@ def _make_minimal_profile_for_exposure(exposure_data):
     )
     dm = DistributionMetrics(
         entropy_bits=3.0, logit_margin=2.0, topk_cumulative_mass=0.9,
-        effective_support_size=8.0, tail_weight=0.05, truncated=True,
+        nucleus_effective_support_size=8.0, tail_weight=0.05, truncated=True,
         nucleus_fraction={"p90": 0.002, "p95": 0.004},
         nucleus_entropy_bits=2.5,
     )

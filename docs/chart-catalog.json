@@ -7,15 +7,6 @@
   },
   "signals": [
     {
-      "id": "effective_support_size",
-      "label": "Effective support size",
-      "short": "Effective support size",
-      "kind": "aggregate",
-      "measurement_key": null,
-      "needs_diagnostics": false,
-      "file": "effective_support_size.html"
-    },
-    {
       "id": "input_entropy_trace",
       "label": "Input entropy trace",
       "short": "Input entropy trace",
@@ -32,6 +23,15 @@
       "measurement_key": "io_cosine_similarity",
       "needs_diagnostics": false,
       "file": "io_cosine_similarity.html"
+    },
+    {
+      "id": "nucleus_effective_support_size",
+      "label": "Nucleus effective support size",
+      "short": "Nucleus effective support size",
+      "kind": "aggregate",
+      "measurement_key": null,
+      "needs_diagnostics": false,
+      "file": "nucleus_effective_support_size.html"
     },
     {
       "id": "perturbation_jsd_bits",

@@ -5,7 +5,7 @@ Single source of truth for the viz engine: which signals exist, their identity
 availability predicate that decides whether *this* profile has the backing data.
 
 Insertion order is stable and taxonomy-faithful:
-  aggregates: input_entropy_trace, effective_support_size,
+  aggregates: input_entropy_trace, nucleus_effective_support_size,
               prompt_surprisal_excess_trace, perturbation_jsd_bits,
               io_cosine_similarity
   readings:   output_entropy_bits, prompt_surprisal_excess_bits
@@ -39,12 +39,14 @@ convention as `name` on a measurement row, and for the same reason. Three
 charts do not draw a measurement directly, and their ids say so by not being
 registry keys: `input_entropy_trace` draws the per-position series behind the
 aggregate, `prompt_surprisal_excess_trace` draws the per-position series
-`prompt_surprisal_excess_bits` summarises, and `effective_support_size` draws
-a quantity that is not in the measurement set at all.
+`prompt_surprisal_excess_bits` summarises, and
+`nucleus_effective_support_size` draws a quantity that is not in the
+measurement set at all — the id names its basis because the basis decides the
+ceiling (nucleus size, not vocabulary).
 
 The bridge is explicit: `measurement_key` on each row names
 the measurement the chart draws (None for a chart, like
-`effective_support_size`, that draws a component quantity which is
+`nucleus_effective_support_size`, that draws a component quantity which is
 deliberately NOT in the measurement set), and
 `family` is copied from that measurement's `functional` so the two registries
 share one vocabulary. `resolve_signal()` accepts either a signal id or a
@@ -59,9 +61,9 @@ from typing import Callable
 
 from hif.profile.registry import MEASUREMENT_BY_KEY
 from hif.viz.signals import (
-    effective_support_size,
     input_entropy_trace,
     io_cosine_similarity,
+    nucleus_effective_support_size,
     output_entropy_bits,
     perturbation_jsd_bits,
     prompt_surprisal_excess_bits,
@@ -121,10 +123,12 @@ _SPEC = [
     # key is carried so `--metric input_entropy_std_bits --charts` resolves.
     ("input_entropy_trace", "aggregate", input_entropy_trace,
      "input_entropy_std_bits", False),
-    # Draws per-step effective support size — deliberately NOT a measurement
-    # (ESS is entropy in different units; docs/MEASUREMENTS.md excludes it),
-    # so it maps to no key.
-    ("effective_support_size", "aggregate", effective_support_size, None, False),
+    # Draws per-step nucleus effective support size — deliberately NOT a
+    # measurement (ESS is a bijection of entropy and fails the gate's
+    # distinct-disclosure condition), so it maps to no key. The id names the
+    # 0.95 nucleus basis rather than the backend's top-K, which is a different
+    # count with a different ceiling.
+    ("nucleus_effective_support_size", "aggregate", nucleus_effective_support_size, None, False),
     # The same per-position excess-surprisal series that
     # prompt_surprisal_excess_bits reduces. That chart is the designated one
     # for the measurement, so only it carries the key — one measurement must
@@ -218,8 +222,9 @@ def _build(sid: str, kind: str, mod, mkey: str | None, draws: bool) -> SignalViz
     return SignalViz(
         id=sid, label=mod.LABEL, kind=kind,
         # One vocabulary: the chart's family IS its measurement's functional.
-        # effective_support_size (no measurement) draws support size off the output
-        # distribution — information-theoretic like the entropy it re-scales.
+        # nucleus_effective_support_size (no measurement) draws support size off
+        # the output distribution — information-theoretic like the entropy it
+        # re-scales.
         family=(
             MEASUREMENT_BY_KEY[mkey].functional
             if mkey is not None

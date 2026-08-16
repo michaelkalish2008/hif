@@ -251,7 +251,7 @@ class TestComputeDistributionMetrics:
         p = make_uniform(k)
         logits = np.log(p)
         result = compute_distribution_metrics(p, logits)
-        assert result.effective_support_size == pytest.approx(float(k), abs=1e-6)
+        assert result.nucleus_effective_support_size == pytest.approx(float(k), abs=1e-6)
 
     def test_tail_weight_consistent(self):
         p = make_uniform(1000)  # each 0.001 < 0.01

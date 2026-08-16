@@ -42,13 +42,35 @@ Every registry row now declares an `acquisition`, and `hif schema` prints it:
 A computable triple is not automatically a measurement. **This gate is the acceptance criterion for contributing a new measurement** (see [CONTRIBUTING.md](../CONTRIBUTING.md)). Six conditions, all required — 1–2 admit a quantity at all, 3–6 are what removed ten rows in hif-v4:
 
 1. **Derivability** — computable from the distributional observable alone, no inference to hidden structure.
-2. **Distinct disclosure** — discloses a facet no admitted measurement already captures; must move independently somewhere across contexts.
+2. **Distinct disclosure** — discloses a facet no admitted measurement already captures. Three tests, all required; see [How condition 2 is tested](#how-condition-2-is-tested) below for why "move independently somewhere" was not enough on its own.
+   - **(a) Outside the span of the admitted set.** A quantity that is a deterministic function of admitted measurements — a difference, ratio, sum, or any fixed transform of them — discloses nothing by construction. It is rejected at the definition stage, before any measurement, because a consumer computes it from the record in one line.
+   - **(b) Independence tested at the resolution the row reports.** A row reports a run-level scalar, so that is where the test binds. A per-step trace can show independent movement that the run-level mean does not.
+   - **(c) Redundancy judged on reliability-corrected correlation.** Raw correlation understates redundancy when either series is noisy. A residual that is itself mostly measurement noise is not a disclosure.
 3. **About the target** — the number must move when the target model changes. A quantity produced by a fixed reference instrument reading the prompt is bit-identical across targets and fails this by construction.
 4. **Powered at the run's own n** — a statistic whose default sample size cannot distinguish its typical values from zero publishes noise. (`io_correlation_r` failed here: 69 of the 96 published corpus values sat below the significance floor of its own n=15.)
 5. **No embedded thresholds** — a fraction of threshold-crossings is a verdict wearing a unit. Report the underlying quantity in its natural unit instead.
 6. **Present where it claims to be** — a row absent from most of the corpus it was designed for is not carrying its weight; either the requirement is declared honestly or the row does not enter.
 
-The *distinct disclosure* condition is why several plausible quantities are *not* in the set: `continuity` was `1 − sensitivity` computed from the same JS divergences, the historical `wager` aggregate was byte-for-byte the `surprise` aggregate, and ESS is entropy in different units. Each quantity appears exactly once.
+The *distinct disclosure* condition is why several plausible quantities are *not* in the set: `continuity` was `1 − sensitivity` computed from the same JS divergences, the historical `wager` aggregate was byte-for-byte the `surprise` aggregate, and ESS is a bijection of entropy (2^H). Each quantity appears exactly once.
+
+### How condition 2 is tested
+
+The condition previously read "must move independently **somewhere** across contexts." That wording is exploitable, and a candidate row exposed all three ways it fails. The candidate was the **nucleus entropy gap**, `entropy_bits − nucleus_entropy_bits`, proposed on the reasoning that two distributions with equal entropy can differ in how much of it sits outside the nucleus.
+
+**(a) caught it with no experiment.** At run level the gap is *exactly* `output_entropy_bits − output_nucleus_entropy_bits` — the two run-level means agree with their difference to 4×10⁻¹⁶, because the mean is linear. It is a subtraction of two admitted rows. Everything below was measured only because this test did not exist yet; with clause (a) in the gate, none of it was necessary.
+
+**(b) is why "somewhere" had to go.** Pooled over four open-weight models × eight prompts × 32 full-vocabulary steps, the gap's redundancy with entropy reads very differently at the two resolutions:
+
+| resolution | R² with entropy |
+|---|---|
+| per-step trace | 0.26 |
+| **run-level scalar (what the row would report)** | **0.66** |
+
+The step-level number would have admitted the row under the old wording. It is also inflated by a mechanical branch: on 15.6% of steps the top token carries ≥ 0.95 of the mass, the nucleus collapses to one token, and the gap equals entropy *by construction*. Off that branch the step-level R² is 0.060 — the trace looks independent largely because it mixes an identity with noise.
+
+**(c) is the correction to the naive reading.** The tempting conclusion from (b) — "averaging destroys independent variation" — is wrong, and the opposite of what happened. Disattenuated for reliability, run-level R² is 0.84–0.96, and the non-entropy residual has split-half reliability 0.35 with no prompt structure (F = 1.21, p = 0.33). The independence visible per-step was mostly noise, and averaging correctly removed it. Redundancy therefore has to be judged after correcting for reliability, not on raw correlation.
+
+**A fourth observation, belonging to conditions 3 and 6.** On truncated backends the gap is not even the quantity it claims: `entropy_bits` reads the raw top-K slice while `nucleus_entropy_bits` renormalizes, so their difference is dominated by the missing mass. Across all 118 published corpus profiles — every one of them truncated — the gap is near-deterministic in fields already published (joint R² = 0.995 on mass, entropy and their interactions) and is *negative* in 41.5% of them, which the tail-structure story cannot explain. This is the same failure class as the `normalized` block below: an artifact of how much the backend returned, wearing a behavioural name.
 
 ## Natural units
 
@@ -335,7 +357,7 @@ Sum over the top-K candidates the backend returned at each generation step `j = 
 
 The chart draws two series: the **nucleus entropy** (95% mass, renormalised — comparable across backends regardless of how many logprobs each exposes) and the **raw top-K entropy** (the truncation lower bound). The trace is the full shape that a single mean compresses: it shows whether that mean conceals a flat plateau, a single tall spike, or alternating peaks and troughs — patterns that carry distinct interpretive weight.
 
-**Relation to Breadth / ESS.** Output entropy and Effective Support Size are the same underlying signal in different units: `ESS = 2^H_nucleus`, an equivalent token count. The Breadth chart draws the ESS trace with its mean; the measurement set reports `output_entropy_bits` and not ESS, because a quantity appears once.
+**Relation to Breadth / ESS.** Output entropy and Effective Support Size are the same underlying signal in different units: `ESS = 2^H`, an equivalent token count. The Breadth chart draws the nucleus ESS trace with its mean. The measurement set reports `output_entropy_bits` and not ESS, because a quantity appears once. See Effective Support Size below for why the transform is 2^H and why the basis has to travel with the number.
 
 **Truncation.** Whenever the distribution is top-k truncated, the reported entropy is a **lower bound** on true full-vocabulary entropy, and values are not comparable across backends with different k. `DistributionMetrics.entropy_bits_upper` carries the uniform-tail upper bound where the vocabulary size is known.
 
@@ -444,17 +466,30 @@ M = logit[rank-1] - logit[rank-2]
 
 ### Effective Support Size
 
-**Definition.** The number of equally-likely tokens that would produce the same Shannon entropy — computed from the **nucleus** entropy, not the raw top-K entropy.
+**Definition.** The effective number of equally-likely tokens a distribution behaves like — 1 at a point mass, |support| at the uniform.
 
 ```
-ESS(p) = 2^H_nucleus(p)
+ESS(p) = 2^H(p)
 ```
 
-**Expected range.** [1, K]. ESS=1 means one token has all the mass; ESS=K means uniform across the K candidates.
+**Why 2^H and not another effective-size formula.** The measures satisfying the natural requirements form a one-parameter family, `S(p, α) = (Σ pᵢ^α)^(1/(1−α))` — the exponential of Rényi's α-entropy (Grendár, *Entropy and Effective Support Size*, Entropy 2006, 8[3], 169–174, [doi:10.3390/e8030169](https://doi.org/10.3390/e8030169)). Every α in it is continuous and symmetric, is bounded by `1 ≤ S ≤ m`, is unchanged by appending an impossible outcome, and is multiplicative over independent variables. Only **α = 1** additionally satisfies `S(X)·S(Y) ≥ S(X,Y)` with equality iff X and Y are independent; for α ≠ 1 that inequality can reverse. α = 1 is the limit case — the closed form is 0/0 there — and its value is `exp(H)`, which is `2^H` when H is in bits. So the common alternative α = 2 (inverse Simpson / participation ratio) is excluded by an axiom, not by taste.
 
-**Interpretation.** ESS is the per-step unit the Breadth chart draws. "The model is effectively choosing among ~8 equally-likely candidates" is more accessible than "the entropy is 3.0 bits." A legacy `effective_support_size_upper = 2^entropy_bits_upper` is also recorded when the vocabulary size is known.
+**Whose entropy — the basis decides the ceiling.** 2^H says nothing about *which* distribution H came from, and hif carries two, over different bases:
 
-Note that ESS is *not* itself a reported measurement — `output_entropy_bits` is. ESS and entropy are the same signal in different units, and the measurement set carries each quantity exactly once.
+| field | basis | ceiling |
+|---|---|---|
+| `nucleus_effective_support_size` | the renormalized 95% nucleus | nucleus size |
+| `full_effective_support_size_upper` | full vocabulary, uniform-tail corrected | `vocab_size` |
+
+These are **not** a bracket on one quantity and must not be read as one. The nucleus field is what the chart draws — it is comparable across backends precisely because it always works with the same fraction of the mass, whereas raw top-K entropy grows with K. (They were previously `effective_support_size` and `effective_support_size_upper`, which named them as one quantity and its bound.)
+
+**Expected range.** `[1, ceiling]` per the table above.
+
+**ESS is not a measurement.** It is a bijection of entropy: it moves with entropy exactly and discloses nothing entropy does not, so it fails the Significance Gate's *distinct disclosure* condition as squarely as `continuity = 1 − sensitivity` did. It never enters `measurements`, and the CLI does not print it.
+
+**Why bits are the stored unit.** Entropy *differences* are meaningful and are themselves measurements here — `input_entropy_shift_bits` **is** a difference of entropies, and `perturbation_jsd_bits` is a divergence in bits. ESS does not subtract (`2^H₁ − 2^H₂` is not a quantity); it only ratios, `ESS₁/ESS₂ = 2^(H₁−H₂)`. The record's arithmetic lives in bits, so the record stores bits.
+
+Explaining a number in the other unit is a job for prose, and this document does it above: 4.9 bits is about a uniform choice among ~30 tokens. That is a gloss on a unit, not a second measurement, and it needs no machinery — only the basis named, which the field names now carry.
 
 ---
 

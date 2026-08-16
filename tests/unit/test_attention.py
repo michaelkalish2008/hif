@@ -529,7 +529,7 @@ def _make_minimal_profile_with_attention(attention_data):
         entropy_bits=3.0,
         logit_margin=2.0,
         topk_cumulative_mass=0.9,
-        effective_support_size=8.0,
+        nucleus_effective_support_size=8.0,
         tail_weight=0.05,
         truncated=True,
     )

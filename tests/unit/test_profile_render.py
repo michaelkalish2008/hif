@@ -152,7 +152,7 @@ class TestDistributionTableTokenColumn:
         content = out.read_text()
         assert (
             "| Token | Step | Entropy (bits) | Logit margin | Top-K mass | "
-            "Eff. support | Tail weight |"
+            "Nucleus eff. support | Tail weight |"
         ) in content
         tok = profile.output_side.steps[0].selected_token_str
         assert f"| `{tok!r}` | 0 |" in content

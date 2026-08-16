@@ -39,7 +39,7 @@ def generate_signal_plots(
 
     - ``only_signal`` renders exactly that one chart and nothing else (no
       dashboard) — for a single ``--metric`` request. It accepts a signal id
-      (``"effective_support_size"``) or a measurement key
+      (``"nucleus_effective_support_size"``) or a measurement key
       (``"output_entropy_bits"``): the
       CLI passes measurement keys, and the registry's ``measurement_key``
       bridge maps each to the chart that draws it. A measurement no chart

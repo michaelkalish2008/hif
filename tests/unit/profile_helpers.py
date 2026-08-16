@@ -157,7 +157,7 @@ def _make_distribution_metrics() -> DistributionMetrics:
         entropy_bits=3.0,
         logit_margin=2.0,
         topk_cumulative_mass=0.9,
-        effective_support_size=8.0,
+        nucleus_effective_support_size=8.0,
         tail_weight=0.05,
         truncated=True,
         nucleus_fraction={"p90": 0.002, "p95": 0.004},

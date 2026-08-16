@@ -10,8 +10,16 @@ class DistributionMetrics(BaseModel):
     nucleus_entropy_bits: float              # H of the 95% nucleus, renormalized — comparable across model types
     logit_margin: float                      # rank-1 minus rank-2 logit (not probability)
     topk_cumulative_mass: float              # sum of top-k probabilities
-    effective_support_size: float            # 2^nucleus_entropy_bits — effective tokens within 95% nucleus
-    effective_support_size_upper: float | None = None  # 2^entropy_bits_upper (legacy upper bound)
+    # The two effective-support-size fields are over DIFFERENT distributions,
+    # and the names now say which. They are not a bracket on one quantity and
+    # must not be read as one: the first is ESS of the renormalized 95%
+    # nucleus (ceiling = nucleus size), the second is ESS of the full
+    # vocabulary under the uniform-tail correction (ceiling = vocab_size).
+    # They were previously `effective_support_size` and
+    # `effective_support_size_upper`, which named them as one quantity and its
+    # bound.
+    nucleus_effective_support_size: float    # 2^nucleus_entropy_bits — effective tokens within the 95% nucleus
+    full_effective_support_size_upper: float | None = None  # 2^entropy_bits_upper — upper bound on FULL-vocabulary ESS; None when vocab_size unknown
     tail_weight: float                       # probability mass below threshold
     truncated: bool                          # True if distribution was truncated to top-K before computation
     nucleus_fraction: dict[str, float]       # {p90, p95}: fraction of vocab in top-p nucleus
@@ -107,7 +115,32 @@ def topk_cumulative_mass(probs: np.ndarray, k: int) -> float:
 
 
 def effective_support_size(probs: np.ndarray) -> float:
-    """Perplexity: 2^H where H is entropy in bits."""
+    """Effective support size: 2^H, where H is this distribution's entropy in bits.
+
+    The effective number of equally-likely outcomes the distribution behaves
+    like — 1 at a point mass, |support| at the uniform.
+
+    2^H is not one effective-size formula among several. The measures
+    satisfying the natural requirements form the family
+    S(p, a) = (sum p_i^a)^(1/(1-a)), the exponential of Renyi's a-entropy
+    (Grendar, "Entropy and Effective Support Size", Entropy 2006, 8[3],
+    169-174, doi:10.3390/e8030169). Every a in that family is continuous and
+    symmetric, is bounded by 1 <= S <= m, is unchanged by appending an
+    impossible outcome, and is multiplicative over independent variables.
+    Only a = 1 also satisfies S(X) S(Y) >= S(X, Y) with equality iff X and Y
+    are independent — for a != 1 that inequality can reverse. a = 1 is the
+    limit case (the closed form is 0/0 there), and its value is exp(H), which
+    is 2^H when H is in bits. The common alternative a = 2 (inverse Simpson /
+    participation ratio) is therefore excluded by an axiom, not by taste.
+
+    WHOSE entropy is the caller's choice and the whole story: this function
+    exponentiates whatever it is handed. On a raw top-K slice the result
+    inherits the slice's lower-bound character; on a renormalized nucleus it
+    counts the nucleus only, with the nucleus size as its ceiling rather than
+    the vocabulary. Callers name their basis — see
+    `nucleus_effective_support_size` and `full_effective_support_size_upper`
+    in DistributionMetrics.
+    """
     h = entropy_bits(probs)
     return float(2.0 ** h)
 
@@ -205,9 +238,9 @@ def compute_distribution_metrics(
         what keeps `--entropy-percentile` additive: every existing field is
         computed exactly as before whether or not it is passed. Deliberately
         separate from nucleus_p — that one is pinned at 0.95 because
-        effective_support_size and the charts are defined in terms of it, and
-        retuning them from a measurement flag would silently redefine three
-        other numbers.
+        nucleus_effective_support_size and the charts are defined in terms of
+        it, and retuning them from a measurement flag would silently redefine
+        three other numbers.
     """
     h = entropy_bits(probs)
     h_nucleus = nucleus_entropy_bits(probs, p=nucleus_p)
@@ -227,8 +260,8 @@ def compute_distribution_metrics(
         percentile_entropy_bits=h_percentile,
         logit_margin=logit_margin(logits),
         topk_cumulative_mass=topk_cumulative_mass(probs, k=top_k_for_mass),
-        effective_support_size=float(2.0 ** h_nucleus),
-        effective_support_size_upper=float(2.0 ** h_upper) if h_upper is not None else None,
+        nucleus_effective_support_size=float(2.0 ** h_nucleus),
+        full_effective_support_size_upper=float(2.0 ** h_upper) if h_upper is not None else None,
         tail_weight=tail_weight(probs, threshold=tail_threshold),
         truncated=truncated,
         nucleus_fraction={

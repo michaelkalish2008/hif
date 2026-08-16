@@ -135,7 +135,15 @@ All six conditions, from docs/MEASUREMENTS.md — this is the acceptance bar, an
 1. **Derivability** — computable from the distributional observable alone, no
    inference to hidden structure.
 2. **Distinct disclosure** — it must disclose a facet no admitted measurement
-   already captures, and move independently of them somewhere across contexts.
+   already captures. Three tests, all required:
+   **(a)** it is not a deterministic function of admitted rows — no difference,
+   ratio, sum, or fixed transform of them; **(b)** its independence is tested at
+   the resolution the row *reports* (the run-level scalar), not at the
+   resolution of the trace behind it; **(c)** redundancy is judged on
+   reliability-corrected correlation, because a residual that is mostly
+   measurement noise is not a disclosure.
+   Start with (a). It is free, and it decides most candidates before a model is
+   loaded.
 3. **About the target** — the number must move when the target model changes.
    A quantity produced by a fixed reference instrument reading the prompt is
    bit-identical across targets and fails this by construction.
@@ -149,10 +157,29 @@ All six conditions, from docs/MEASUREMENTS.md — this is the acceptance bar, an
 
 Condition 2 rejects most candidates. Precedents: `continuity` was
 `1 − sensitivity` from the same JS divergences; the `wager` aggregate was
-byte-for-byte the `surprise` aggregate; ESS is entropy in different units.
+byte-for-byte the `surprise` aggregate; ESS is a bijection of entropy (2^H).
 Each of those was removed, and a new measurement that fails the same test will
 not be admitted. If your quantity is an existing one re-scaled, re-signed, or
 re-averaged, it is not a new measurement.
+
+**Do 2(a) on paper first.** The most recent rejection — the nucleus entropy
+gap, `entropy_bits − nucleus_entropy_bits` — turned out at run level to be
+exactly `output_entropy_bits − output_nucleus_entropy_bits`, agreeing with that
+difference to 4×10⁻¹⁶ because the mean is linear. It cost a 118-profile corpus
+analysis and a four-model, 1024-step experiment to reject something a line of
+algebra decides. Write your quantity out in terms of the admitted rows before
+you measure anything; if it closes, you are done.
+
+The other two tests are what that experiment established, and both are
+counterintuitive. Per-step, the gap's R² with entropy was 0.26 and it looked
+like a distinct facet; at run level — the number the row would actually report
+— it was 0.66. Do not read that as "averaging destroys signal": disattenuated,
+run-level R² was 0.84–0.96, and the per-step independence was 15.6% mechanical
+identity (a nucleus that collapses to one token when the top token holds ≥ 0.95
+of the mass, making the gap equal entropy by construction) plus noise that
+averaging correctly removed. Test at the reported resolution, and correct for
+reliability before believing a residual. See docs/MEASUREMENTS.md
+§ *How condition 2 is tested* for the full worked example.
 
 Conditions 3–6 reject quantities that compute cleanly and disclose something
 new, and are still not readings of the model — the failure mode that removed

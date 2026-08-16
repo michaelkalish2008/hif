@@ -126,7 +126,7 @@ def _make_distribution_metrics() -> DistributionMetrics:
         entropy_bits=3.0,
         logit_margin=2.0,
         topk_cumulative_mass=0.9,
-        effective_support_size=8.0,
+        nucleus_effective_support_size=8.0,
         tail_weight=0.05,
         truncated=True,
         nucleus_fraction={"p90": 0.002, "p95": 0.004},
@@ -294,9 +294,9 @@ class TestSignalEngine:
             generate_signal_plots(minimal_profile, tmp_path, tier="free")
 
     def test_only_signal_renders_exactly_one_chart(self, minimal_profile, tmp_path):
-        results = generate_signal_plots(minimal_profile, tmp_path, only_signal="effective_support_size")
-        assert set(results) == {"effective_support_size"}  # one chart, no dashboard
-        assert results["effective_support_size"]["html"].exists()
+        results = generate_signal_plots(minimal_profile, tmp_path, only_signal="nucleus_effective_support_size")
+        assert set(results) == {"nucleus_effective_support_size"}  # one chart, no dashboard
+        assert results["nucleus_effective_support_size"]["html"].exists()
 
     def test_only_signal_unknown_id_raises(self, minimal_profile, tmp_path):
         with pytest.raises(ValueError, match="Unknown signal"):
@@ -336,7 +336,7 @@ class TestSignalEngine:
 
     def test_available_signals_report_none(self, minimal_profile):
         """Available signals report None from available()."""
-        available_ids = ["effective_support_size", "output_entropy_bits", "input_entropy_trace", "perturbation_jsd_bits"]
+        available_ids = ["nucleus_effective_support_size", "output_entropy_bits", "input_entropy_trace", "perturbation_jsd_bits"]
 
         for sig_id in available_ids:
             sig_obj = next((s for s in SIGNALS if s.id == sig_id), None)
