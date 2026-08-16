@@ -20,6 +20,7 @@ from hif.perturbation.base import (
     PerturbationResult,
 )
 from hif.perturbation.llm import LLMParaphraseGenerator
+from hif.perturbation.local_llm import LocalParaphraseGenerator
 from hif.perturbation.substitution import SubstitutionGenerator
 from hif.perturbation.synonym import SynonymGenerator
 from hif.perturbation.tone import ToneGenerator
@@ -30,6 +31,7 @@ __all__ = [
     "PerturbationGenerator",
     "PerturbationResult",
     "LLMParaphraseGenerator",
+    "LocalParaphraseGenerator",
     "SubstitutionGenerator",
     "SynonymGenerator",
     "ToneGenerator",
@@ -60,6 +62,7 @@ def get_generator(
     name: str,
     *,
     use_llm: bool = False,
+    use_local: bool = False,
     base_url: str | None = None,
     api_key: str | None = None,
     model: str | None = None,
@@ -75,6 +78,19 @@ def get_generator(
     default endpoint. `model` is optional; omit it to use the generator's own
     default (see hif/perturbation/llm.py).
     """
+    if use_local:
+        # Locally cached instruct model — no server, no key, no network once
+        # the weights are present. Unlike use_llm this needs no endpoint, so
+        # there is nothing to require of the caller and no metered cost to
+        # guard against; the cost is wall-clock on this machine.
+        if name not in _LLM_TYPES:
+            raise ValueError(
+                f"{name!r} has no paraphrase variant. Available: {sorted(_LLM_TYPES)}"
+            )
+        kwargs: dict = {"variant_type": name}
+        if model:
+            kwargs["model"] = model
+        return LocalParaphraseGenerator(**kwargs)
     if use_llm:
         if name not in _LLM_TYPES:
             raise ValueError(f"{name!r} has no LLM-backed variant. Available: {sorted(_LLM_TYPES)}")
