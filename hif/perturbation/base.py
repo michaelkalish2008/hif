@@ -2,7 +2,7 @@
 
 `PerturbationGenerator` (str -> str) is resolved via `get_generator()`.
 There was a second, media-side namespace (`PerturbationFamily`, resolved by
-`get_family()`); it went with the image path in hif-v4.
+`get_family()`); it went with the image path.
 """
 
 from __future__ import annotations

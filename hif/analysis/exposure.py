@@ -26,7 +26,9 @@ was. It is not an inference about what the model was doing, and it is
 explicitly NOT a factuality or correctness judgment: only diffusion-zone
 steps are counted, so the convergence case (a model that is confident and
 narrow but aimed wrong) is excluded by construction, and a confident response
-can still be wrong. See docs/MEASUREMENTS.md § Retired in hif-v4.
+can still be wrong. This block is a diagnostic, not a measurement — see
+docs/MEASUREMENTS.md Part 1 for the rows the set carries and the table there
+for why this one is not among them.
 
 This analysis reuses the already-computed semantic embeddings from the
 per-step output trace — no new model inference is required.  The embedding

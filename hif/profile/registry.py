@@ -47,131 +47,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-# Version of the measurement set this package computes. Minor bumps within a
-# major family are additive supersets (see cli._signal_set_family), so
-# artifacts across them still compare over the intersection.
-#
-# hif-v2.1: added input_entropy_std_bits and
-# branch_pairwise_cosine_similarity — the natural-unit forms of the Stability
-# and Continuity aggregates, which were computed but never surfaced.
-# hif-v3: `measurements` no longer contains prompt-only quantities.
-# This is a REMOVAL from the measurement set, not an additive superset — a
-# hif-v2 artifact carries numbers under keys a hif-v3 artifact deliberately
-# does not, so the two are not intersectable without silently comparing a
-# fact about the target against a fact about a reference model.
-# hif-v3.1: added output_step_jsd_bits (the step-to-step
-# output divergence that existed only as a chart, so a reader could see it on
-# the companion website and not reproduce it with the CLI) and its companion
-# output_step_topk_overlap_fraction. Purely additive within the hif-v3 family:
-# no key was removed, so `hif compare` still intersects across v3 and v3.1.
-# The same release made `perturbation_jsd_bits` ABSENT on selected-only
-# backends, which is an absence rule on an already-optional key rather than a
-# change of set membership — a hif-v3 artifact from such a backend carries a
-# number a hif-v3.1 run declines to produce, and declining is the correction.
-# hif-v3.2 (current): the same absence rule now covers the candidate-cloud
-# quantities on a selected-only backend with no surrogate recovery
-# (output_entropy_bits, output_entropy_step_delta_bits,
-# candidate_cluster_entropy_bits, and the two analyses built on the same cloud).
-# hif/models/capabilities.py already declared them unproducible there and the
-# CLI already refused `--metric` for them; `measurements()` emitted 0.0 anyway,
-# because a point mass has exactly one candidate and the entropy of a cloud of
-# one is zero by construction. That is a fabricated measurement claim under the
-# absent-not-pinned rule. No key was removed from the set — the rule is an
-# absence condition on already-optional keys, so `hif compare` still intersects
-# across the v3 family.
-# hif-v3.3 (current): removed the `label` field. Rows carried an optional
-# shorthand from this project's own vocabulary — Stability, Sensitivity, Wager,
-# Continuity, Horizon, Exposure, Veer, Spread, Entropy, Shift — alongside the
-# descriptive `name`. Two names for one
-# quantity is one name too many, and the shorthand was the one that went wrong:
-# "Stability" ended up on `input_entropy_std_bits`, a standard deviation, where
-# a higher number means LESS stable. A name that inverts the reading direction
-# of its own number is worse than no name. `name` remains, and says what the
-# quantity is in the terms it is computed in. No key, unit, definition, or
-# absence rule changed, so `hif compare` still intersects across the v3 family;
-# a consumer reading `label` off `hif schema` reads `name` instead.
-# hif-v3.4 (current): added the `acquisition` field. Every row now says what
-# taking the measurement had to bring into existence — nothing (observational),
-# authored prompt text (synthesized-input), or model output that did not exist
-# before (elicited-output). The fact was always true of the pipeline and was
-# recoverable only by reading builder.py and tracing which stage fed which key,
-# so `hif schema` could not distinguish an observation from an elicitation and
-# the two were reported side by side under one heading. Purely additive
-# metadata: no key, unit, definition, or absence rule changed, so `hif compare`
-# still intersects across the v3 family. A consumer that does not read
-# `acquisition` sees exactly what it saw before.
-# hif-v4 (current): the set contracts from sixteen rows to six. A REMOVAL, and
-# therefore a MAJOR bump: `hif compare` refuses a v3-vs-v4 pair outright
-# (family mismatch, exit 2) rather than intersecting over the survivors.
-# Intersecting would silently read "we no longer claim this" as "both runs
-# measured this", which is the same conflation the absence rules exist to stop.
-#
-# The cut was made against the project's own 120-profile corpus, and each row
-# fell to evidence, not taste:
-#   io_correlation_r                   69 of 96 published values sat below the
-#                                      significance floor of its own n=15
-#                                      (|r| >= 0.514) — noise, published.
-#   output_step_jsd_bits (+ overlap)   100% of variance between models, 0%
-#                                      between regimes, splitting exactly on
-#                                      backend top-k (k=50 vs k=20): a backend
-#                                      fingerprint, not behaviour. Degenerate
-#                                      or suspect on every API backend.
-#   output_entropy_step_delta_bits     a derived statistic of the published
-#                                      entropy trace — a chart concern, not a
-#                                      second observable.
-#   candidate_cluster_entropy_bits     rides clusterer and embedder degrees of
-#                                      freedom; its 74% between-model share
-#                                      tracks cloud size k.
-#   semantic_centroid_veer_cosine      absent from 57/120 profiles; embedder-
-#                                      dependent; silently vanished from seven
-#                                      models' records for a week unnoticed.
-#   counterfactual_exposure_fraction   defined by two embedded thresholds
-#                                      (min_prob, distance) inside a
-#                                      no-thresholds instrument; absent 74/120.
-#   attention_entropy_*_bits           a fixed encoder's attention, not the
-#                                      target's; the input row is bit-identical
-#                                      across all fifteen models by
-#                                      construction.
-#   branch_pairwise_cosine_similarity  absent from 74/120 profiles including
-#                                      open-weight runs (single-cluster
-#                                      collapse); needs teacher forcing AND a
-#                                      lucky rollout.
-#
-# The artifact is unchanged: stages still record their blocks (attention
-# capture, exposure, semantic field, trajectory) as raw material under
-# --diagnostics. The SET is the claims; the artifact is the evidence. A row
-# can return by meeting the Significance Gate in docs/MEASUREMENTS.md: about the
-# target, powered at the default n, no embedded thresholds, and present on
-# the backends it claims.
-# hif-v4.1 (current): adds output_nucleus_entropy_bits. An ADDITION, so a
-# MINOR bump — a v4 artifact and a v4.1 one stay in the same family and
-# `hif compare` still intersects over the six rows both carry.
-#
-# The Significance Gate asks four questions; this row answers them and one
-# more that the gate does not yet ask.
-#   about the target        the same per-step candidate cloud
-#                           output_entropy_bits reads, under the same subject
-#                           and the same surrogate story.
-#   no embedded thresholds  the one number that shapes it, the nucleus mass,
-#                           is not embedded — it is the flag, absent by
-#                           default, and recorded in run_config on every run
-#                           that sets it. A row whose constant is the user's
-#                           choice is not a row with a hidden constant.
-#   present where claimed   `--entropy-percentile` refuses a backend that
-#                           cannot expose full logprobs, and the row is absent
-#                           on any run whose captured top-K missed the nucleus
-#                           at any step.
-#   powered at default n    it is a per-step mean like output_entropy_bits,
-#                           over the same steps.
-#
-# The extra question is comparability, and it is why this is a separate key
-# rather than a basis switch on output_entropy_bits. The two are different
-# quantities: one is the entropy of everything the backend exposed, the other
-# the entropy of a fixed fraction of the mass. Reported under one key with a
-# flag deciding which, every published profile would need reading alongside
-# the flag to know what its number meant. Reported as two keys, a run that
-# took both reports both, a run that took neither is unchanged, and no
-# existing artifact's meaning moves.
+# Version of the measurement set this package computes. A MINOR bump is an
+# additive superset (see cli._signal_set_family): artifacts across it still
+# compare, over the intersection. A MAJOR bump is a removal, and `hif compare`
+# refuses a cross-family pair outright rather than intersecting over the
+# survivors — intersecting would silently read "we no longer claim this" as
+# "both runs measured this", the same conflation the absence rules exist to
+# stop. Which rows the set carries, and why each admitted row earned its
+# place, is docs/MEASUREMENTS.md; the rows themselves are below.
 SIGNAL_SET_VERSION = "hif-v4.1"
 
 

@@ -110,8 +110,8 @@ def generate_findings(
 # _build_profile_mm (image+text) live here once, so what stays inline in each
 # orchestrator is only what actually differs. Where a stage differs, the
 # difference is an ARGUMENT, visible at the call site. The shape is kept from
-# when there were two builder paths — one of them an image path removed in
-# hif-v4 — because it is what stops a stage from growing a second, silently
+# when there were two builder paths — one of them an image path since
+# removed — because it is what stops a stage from growing a second, silently
 # different implementation.
 #
 # A stage whose log line differs between callers keeps that line at the call

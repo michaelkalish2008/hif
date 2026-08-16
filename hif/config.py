@@ -151,9 +151,9 @@ class SemanticConfig(BaseModel):
     """Per-step semantic metrics — embedding and clustering each step's
     candidate cloud.
 
-    On by default; this is the switch `--lite` throws. hif-v4 publishes no
-    measurement derived from candidate geometry — `candidate_cluster_entropy_bits`
-    was cut — so disabling it now costs only the diagnostic blocks that read the
+    On by default; this is the switch `--lite` throws. No measurement is
+    derived from candidate geometry — `candidate_cluster_entropy_bits` is not
+    in the set — so disabling it costs only the diagnostic blocks that read the
     cloud (cluster, exposure, semantic field) and leaves every published
     measurement on the entropy side untouched. It is the single most expensive per-step stage on a run
     with no perturbation variants, which is why it is separable at all."""

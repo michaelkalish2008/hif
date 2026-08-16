@@ -46,8 +46,8 @@ def schema(
 
     Each measurement is emitted as its complete registry row — key, name,
     unit, definition, and its triple (observable, functional, resolution).
-    A row carries one name and no coined shorthand; see the
-    SIGNAL_SET_VERSION history in hif/profile/registry.py (hif-v3.3).
+    A row carries one name and no coined shorthand; see
+    docs/MEASUREMENTS.md Part 1.
     This is the contract for `hif profile --json` and `hif batch` records, and the machine-readable mirror of
     docs/MEASUREMENTS.md. Every measurement is in natural units; there is no
     normalised variant and no level.

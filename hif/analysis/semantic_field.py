@@ -1,8 +1,8 @@
 """Within-generation semantic field (Veer) — a diagnostic block.
 
-Published `semantic_centroid_veer_cosine` through hif-v3; hif-v4 retired that
-row (the stage is off by default, so it was absent from most of the corpus)
-and kept the block, which ships under `--diagnostics` as evidence.
+`semantic_centroid_veer_cosine` is not a measurement — the stage is off by
+default, so the row was absent from most of the corpus. The block is kept, and
+ships under `--diagnostics` as evidence.
 
 The Veer rule (docs/ARCHITECTURE.md § Field-model notes): the admitted
 instruments read one generation event; this one reads the *trajectory* of the

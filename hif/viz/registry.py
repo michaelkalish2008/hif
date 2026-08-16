@@ -10,9 +10,9 @@ Insertion order is stable and taxonomy-faithful:
               io_cosine_similarity
   readings:   output_entropy_bits, prompt_surprisal_excess_bits
 
-Charts for the measurements cut in hif-v4 were cut with them: a chart whose
-measurement is gone recreates the "existed only as a chart" gap that hif-v3.1
-was created to close.
+A chart whose measurement was cut was cut with it: keeping one recreates the
+"visible on the website, unreachable from the CLI" gap this registry's bridge
+to the measurement set exists to close.
 
 FIDELITY CONTRACT: one visualization per signal, gated on data availability.
 No signal is ever rendered from another signal's data, and no absent signal is

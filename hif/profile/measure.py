@@ -128,7 +128,7 @@ def _all_measured_values(p) -> dict[str, float]:
     # that row — so this sweep is currently redundant. It is kept because it is
     # the general form: the flag was once hand-enforced branch by branch, which
     # is how `io_correlation_r` came to publish a measured 0.0 correlation
-    # between a real input series and a fabricated one before hif-v4 cut it.
+    # between a real input series and a fabricated one before it was cut.
     #
     # A row that says it needs a pair of real distributions is absent whenever
     # the run has none, and a second such row inherits that for free.

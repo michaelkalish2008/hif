@@ -13,7 +13,7 @@ directly determines which measurements can be computed:
   backends provide them; Anthropic returns only the selected token, so its
   distributions degenerate.
 
-hif-v4 cut ten rows, including both attention rows and every row read off the
+The set no longer carries the attention rows or any row read off the
 trajectory, cluster and exposure stages. Those stages still run and still
 record their blocks under `--diagnostics` — they are evidence, not claims — so
 nothing below gates on them. ATTENTION_METRICS and TRAJECTORY_METRICS are
@@ -34,7 +34,7 @@ them by reading the PROMPT — the target contributes nothing, so on that backen
 their subject is `prompt-only` and they are reported in `prompt_measurements`
 rather than in `measurements`. `hif models` prints both facts per backend.
 
-No row is statically prompt-only in hif-v4: every surviving row is about the
+No row is statically prompt-only: every row in the set is about the
 target on a backend that can support it, and `prompt-only` is now reached only
 dynamically, under `--surrogate`. `hif models` prints both facts per backend.
 
@@ -44,7 +44,7 @@ models expose attention" and that the attention was "not the target's". The
 first was false, verifiable in one command — profiling gpt2 and gpt2-medium on
 the same prompt returned a bit-identical attention_entropy_input_bits
 (1.6677721955190443), which is what a number that cannot see the target looks
-like. That fix opened the gate. hif-v4 asked the sharper question the same
+like. That fix opened the gate. The set now asks the sharper question the same
 evidence supports — a quantity identical across two different targets is not a
 measurement OF either — and removed the row instead. Condition 3 of the
 Significance Gate (docs/MEASUREMENTS.md) is that argument generalised.
@@ -89,7 +89,7 @@ from hif.profile.registry import MEASUREMENT_REGISTRY
 INPUT_SIDE_METRICS = frozenset(
     m.key for m in MEASUREMENT_REGISTRY if m.surrogate_group == "input"
 )
-# BOTH OF THESE ARE EMPTY IN hif-v4, and that is not a bug: the cut removed
+# BOTH OF THESE ARE EMPTY, and that is not a bug: the cut removed
 # every row observing an attention row or a trajectory branch. They are kept
 # derived rather than deleted because deleting them would delete the guards
 # that read them, and a future row with either observable would then arrive

@@ -21,50 +21,13 @@ from hif.config import public_config_dict
 from hif.profile.measure import measurements, prompt_measurement_block
 from hif.profile.registry import MEASUREMENT_UNITS, SIGNAL_SET_VERSION
 
-# Version of the machine-record shape emitted by signals_record(). Bump on
-# any breaking change to record structure (field renames/removals). Additive
-# keys do not require a bump.
-#
-# record-v2: the `signals`/`readings` split, the `normalized` and `levels`
-# blocks, and `findings_levels` are gone; a single flat `measurements` block
-# in natural units replaces them.
-# record-v3: the per-record `units` block is opt-in (`--units`)
-# rather than always present — it is identical for every record of a given
-# schema_version and `hif schema` prints it on demand. The field-descriptor
-# blocks are renamed to the names docs/MEASUREMENTS.md Part 4 gives them:
-# `field` -> `perturbation_field`, `branch_field` -> `trajectory_branch_field`.
-# record-v4: every measurement declares a SUBJECT (whose behaviour
-# the number describes), and quantities whose subject on the active backend is
-# `prompt-only` are no longer emitted inside `measurements` with a surrogate
-# flag — they move to a separate top-level `prompt_measurements` block naming
-# the reference model that produced them. See the "Subject" section below.
-# record-v5: a `provenance` block carries which model actually filled
-# each role in the run (teacher forcing, output distributions, attention
-# analysis) plus the degradation flags, so a published profile carries the
-# evidence behind its subject declarations rather than only the claim. The
-# record path cross-checks every emitted measurement against it and refuses to
-# emit a record that contradicts it (hif/profile/provenance.py). Absent — like
-# any other absent block — on a profile built before the block existed.
-# record-v6 (current): a `run_config` block carries the RESOLVED run
-# configuration — the same dict `hif config show` prints, from the same
-# serializer (hif.config.public_config_dict). Three measurements are
-# comparisons against runs the tool constructs (perturbation variants,
-# trajectory branches, exposure thresholds); before this block, two records
-# that differed only in [perturbation] generators or distance_threshold were
-# identical in shape and different in value, with nothing in either to say
-# why. That is the provenance failure this record format exists to prevent,
-# applied to procedure instead of model identity. Secrets are redacted, not
-# omitted ("<redacted>" vs null distinguishes "authenticated" from "no key").
-# Absent on a profile built before the block existed.
-# record-v7 (current): the `hash` covers the run's STAGE BUDGET as
-# well as (model, prompt, seed). It did not, so a `--lite` run and a full run
-# of the same prompt — six measurements vs two — shared an identifier, and the
-# hash could neither dedupe a corpus nor answer "did this run actually do the
-# perturbation stage?". The record shape is unchanged; the VALUE of `hash`
-# changes for every run, which is why this is a version bump and not a silent
-# fix: a consumer keying on the hash needs to know which function produced it.
-# See profile_hash() / stage_budget() below for what is covered and what is
-# deliberately not.
+# Version of the machine-record shape emitted by signals_record(). Bump on any
+# breaking change to record structure — a field rename or removal, or a change
+# to the VALUE of an identifying field such as `hash`, which a consumer keying
+# on it needs to know about. Additive keys do not require a bump, and a block
+# absent from an older profile reads as any other absence. What each block
+# means is docs/MEASUREMENTS.md; see profile_hash() / stage_budget() below for
+# what the hash covers and what it deliberately does not.
 RECORD_SCHEMA_VERSION = "record-v7"
 
 

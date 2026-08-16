@@ -28,8 +28,8 @@ per-step top-K is on `output_side.steps` and therefore in the JSON either way;
 text to every record, so the record becomes the review surface for elicited
 output; inputs stay immutable, outputs live in records. `--diagnostics` runs
 two stages (attention capture, the semantic field) that publish no
-measurement in hif-v4 and cost real compute; their blocks ship in the trace
-as evidence. `--charts` needs `--output-dir` because plots are files.
+measurement and cost real compute; their blocks ship in the trace as
+evidence. `--charts` needs `--output-dir` because plots are files.
 
 `--entropy-percentile` is off by default so `output_entropy_bits` keeps its
 full-vocabulary basis: the nucleus entropy is an ADDITIONAL row

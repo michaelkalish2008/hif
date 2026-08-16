@@ -223,10 +223,9 @@ class BehavioralRangeProfile(BaseModel):
     #   names, so archived profile JSON and old TOML config files load
     #   unchanged; newly written artifacts emit only the new names. The
     #   analysis was renamed because it measures the semantic distance of
-    #   accessible alternatives — not hallucination (docs/MEASUREMENTS.md
-    #   § Retired in hif-v4: "This is not a factuality
-    #   judgment").
-    #   The same release removed fields nothing ever populated or read:
+    #   accessible alternatives — not hallucination: this is not a
+    #   factuality judgment.
+    #   The same change removed fields nothing ever populated or read:
     #   metrics.stability.temperature_robustness / prompt_order_robustness
     #   (documented-dead since docs/MEASUREMENTS.md first said so), and from
     #   the embedded config, output.save_plots / output.plot_format,

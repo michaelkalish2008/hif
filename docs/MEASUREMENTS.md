@@ -175,18 +175,28 @@ The measurement set is defined once, in `MEASUREMENT_REGISTRY` in `hif/profile/r
 | `output_entropy_bits` | Output entropy (bits) | bits | per-step | `target-distribution` → `target-output-text` | top-k logprobs |
 | `output_nucleus_entropy_bits` | Output nucleus entropy (bits) | bits | per-step | `target-distribution` → `target-output-text` | full logprobs + `--entropy-percentile` |
 
-**hif-v4.1 adds `output_nucleus_entropy_bits`** — an addition, so a minor
-bump: a v4 artifact and a v4.1 one stay in the same family and `hif compare`
-still intersects over the six rows both carry. It is off unless
-`--entropy-percentile` is passed, so a run that does not ask for it is
-byte-identical to a v4 run.
+`output_nucleus_entropy_bits` is off unless `--entropy-percentile` is passed,
+so a run that does not ask for it carries exactly the rows above it.
 
-**The set is six rows**, each admitted
-against the project's own 120-profile corpus — the evidence is recorded row by
-row in the `SIGNAL_SET_VERSION` history (`hif/profile/registry.py`) and the
-criteria are now conditions 3–6 of the Significance Gate above. The pipeline
-stages behind several cut rows still run under `--diagnostics` and their blocks
-still ship in the artifact as evidence; the set is the claims.
+Every row here was admitted against the project's own 120-profile corpus, and
+the rows that are *not* here fell to that same corpus rather than to taste.
+What each one failed is conditions 3–6 of the Significance Gate above:
+
+| row, and why it is not in the set | evidence |
+|---|---|
+| `io_correlation_r` | 69 of 96 published values sat below the significance floor of its own n=15 (\|r\| ≥ 0.514) — noise, published |
+| `output_step_jsd_bits` (+ its overlap companion) | 100% of variance between models, 0% between regimes, splitting exactly on backend top-k (k=50 vs k=20): a backend fingerprint, not behaviour |
+| `output_entropy_step_delta_bits` | a derived statistic of the published entropy trace — a chart concern, not a second observable |
+| `candidate_cluster_entropy_bits` | rides clusterer and embedder degrees of freedom; its 74% between-model share tracks cloud size k |
+| `semantic_centroid_veer_cosine` | absent from 57/120 profiles; embedder-dependent; vanished from seven models' records for a week unnoticed |
+| `counterfactual_exposure_fraction` | defined by two embedded thresholds (`min_prob`, distance) inside a no-thresholds instrument; absent from 74/120 |
+| `attention_entropy_*_bits` | a fixed encoder's attention, not the target's; the input row is bit-identical across all fifteen corpus models by construction |
+| `branch_pairwise_cosine_similarity` | absent from 74/120 profiles including open-weight runs (single-cluster collapse); needs teacher forcing *and* a lucky rollout |
+
+The pipeline stages behind several of these still run under `--diagnostics` and
+their blocks still ship in the artifact as evidence. The set is the claims; the
+artifact is the evidence. A row returns by meeting the gate, not by appeal to
+having once been here.
 
 Each row has exactly one name, and it names the quantity in the terms the quantity is computed in. Rows carried a second, coined name until `hif-v3.3` — "Stability", "Sensitivity", "Wager ▲", "Entropy ●", "Shift ◆", "Veer ◈", "Spread ■", "Horizon", "Exposure ◇", "Continuity" — and the coined one is the one that went wrong: "Stability" sat on `input_entropy_std_bits`, a standard deviation, where a *higher* number means *less* stable. A name that inverts the reading direction of its own number is worse than no name. The quantities here have accepted names already — Shannon entropy, Jensen-Shannon divergence, Pearson r, cosine similarity, surprisal — so the key and the name now say the same thing at two registers, and no glossary sits between a reader and a number. Chart glyphs are a display concern and live in `hif/viz/registry.py`.
 
@@ -416,8 +426,8 @@ distributional commitments were most systematically violated — per position on
 the prompt side, per step on the output side.
 
 Combinations involving the retired traces (attention spread, step JSD, centroid
-veer, exposure) went with their measurements — see the hif-v4 history in
-`hif/profile/registry.py`. The blocks those stages produce still ship in the
+veer, exposure) went with their measurements — see the table of rows not in the
+set, above. The blocks those stages produce still ship in the
 artifact under `--diagnostics` for anyone who wants to read them as evidence.
 
 ## Part 3 — Low-Level Component Metrics
