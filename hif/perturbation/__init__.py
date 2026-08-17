@@ -43,7 +43,19 @@ __all__ = [
 
 # LLM-backed variant types, keyed by the same name used for their rule-based
 # counterpart below (LLMParaphraseGenerator.variant_type must be one of these).
-_LLM_TYPES = {"synonym", "substitution", "tone", "reorder"}
+# `substitution` is deliberately NOT here. It briefly had a drafted variant,
+# and on the built-in stimulus set that variant was indistinguishable from
+# `synonym`: a substitution rewrite sat exactly as far from a synonym rewrite
+# (0.143 cosine) as two synonym rewrites sat from each other (0.143) — a ratio
+# of 1.00, and 27% of its output was dropped as a literal duplicate. Both are
+# lexical-substitution operations, so an embedder is the right instrument for
+# that comparison and the verdict stands.
+#
+# The RULE-based generator keeps its distinct job: a fixed table of general
+# words (person, thing, way, system) swapped for specific ones. That is not
+# what synonym does. The drafted prompt lost the distinction the table has,
+# which is an argument against the prompt, not against the family.
+_LLM_TYPES = {"synonym", "tone", "reorder"}
 
 # Rule-based generators — the default. "reorder" (the LLM-side name) maps to
 # WordOrderGenerator, whose own .name is "word_order"; both keys resolve to

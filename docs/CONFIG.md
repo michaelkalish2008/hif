@@ -233,9 +233,9 @@ model-generated content to every record.
 Commit the JSONL next to `run.toml` — it is as much a part of the measurement
 as the thresholds are.
 
-**Available generators.** `synonym`, `substitution`, `tone`, `reorder`,
-`ambiguity`. The first four exist for every `paraphraser`; `ambiguity` is
-rule-based only and is unaffected by that setting.
+**Available generators.** `synonym`, `tone`, `reorder`, `substitution`,
+`ambiguity`. The first three exist for every `paraphraser`; `substitution` and
+`ambiguity` are rule-based only and are unaffected by that setting.
 
 The choice is not cosmetic. `synonym` and `substitution` perturb lexical choice;
 `reorder` perturbs syntax; `tone` perturbs register; `ambiguity` perturbs

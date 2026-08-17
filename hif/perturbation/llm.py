@@ -38,7 +38,7 @@ from hif.perturbation.base import PerturbationGenerator, PerturbationResult
 
 logger = logging.getLogger(__name__)
 
-VariantType = Literal["synonym", "substitution", "tone", "reorder"]
+VariantType = Literal["synonym", "tone", "reorder"]
 
 # Default: local Ollama via its OpenAI-compatible endpoint. Ollama ignores
 # the API key but the openai SDK requires a non-empty string.
@@ -56,15 +56,6 @@ _SYSTEM_PROMPTS: dict[VariantType, str] = {
         "You are a paraphrase generator. Rewrite the given sentence by substituting "
         "1–2 content words (nouns, verbs, or adjectives) with genuine synonyms that "
         "preserve the exact meaning. Do not change word order or sentence structure. "
-        "Produce natural, idiomatic English. "
-        "Return ONLY a numbered list with one rewrite per line — no explanations, no extra text."
-    ),
-    "substitution": (
-        "You are a paraphrase generator. Rewrite the given sentence by replacing "
-        "1-2 general, high-frequency nouns or verbs (words like 'person', 'thing', "
-        "'way', 'problem', 'system', 'work') with a more specific or domain-neutral "
-        "alternative that preserves the exact meaning. Do not change any technical "
-        "or domain-specific term, and do not change sentence structure. "
         "Produce natural, idiomatic English. "
         "Return ONLY a numbered list with one rewrite per line — no explanations, no extra text."
     ),
