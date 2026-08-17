@@ -72,6 +72,15 @@ _SYSTEM_PROMPTS: dict[VariantType, str] = {
         "You are a tone-shift paraphrase generator. Rewrite the given sentence in a "
         "different register while preserving its exact meaning. Rotate through these "
         "registers in order across the numbered variants: formal, casual, direct, hedged. "
+        # Register is how something is said, not what is claimed. Raising the
+        # formality of "high blood pressure" to "hypertension" swaps a lay
+        # observation for a clinical diagnosis, which is a different statement
+        # in a healthcare prompt — and the kind of drift no embedding screen
+        # catches, because it is one word.
+        "Do NOT exchange a lay term for its technical or clinical equivalent, or the "
+        "reverse: keep every domain term exactly as given. Do not add or remove a claim, "
+        "and keep each sentence the same kind of act it was — a statement stays a "
+        "statement, a question stays a question, an instruction stays an instruction. "
         "Produce natural, idiomatic English. "
         "Return ONLY a numbered list with one rewrite per line — no explanations, no extra text."
     ),
@@ -79,6 +88,13 @@ _SYSTEM_PROMPTS: dict[VariantType, str] = {
         "You are a paraphrase generator. Rewrite the given sentence by restructuring "
         "its grammatical word order — changing clause order, active/passive voice, or "
         "fronting different constituents — while preserving its exact meaning. "
+        # Two sentences folded into one conditional loses an assertion: "My
+        # doctor mentioned X. What does that mean?" states that the doctor
+        # said it; "What does it mean if my doctor mentioned X?" no longer
+        # does. That is a change of claim wearing a change of word order.
+        "Keep the SAME NUMBER of sentences, and keep each one the same kind of act — "
+        "do not merge a statement and a question into one conditional, and do not turn "
+        "an assertion into a hypothetical. "
         "Each variant must be structurally distinct from the others. "
         "Produce natural, idiomatic English. "
         "Return ONLY a numbered list with one rewrite per line — no explanations, no extra text."
