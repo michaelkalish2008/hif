@@ -524,6 +524,23 @@ def build_profile(
         source = config.perturbation.paraphraser
         if config.perturbation.use_llm_perturbation:
             source = "llm"
+        # The endpoint stays explicit — get_generator refuses to default to a
+        # metered one, which is the cost guardrail. The KEY is credential
+        # hygiene rather than a cost decision, so it resolves from the
+        # environment exactly like the target backends' keys do
+        # (hif/models/openai_model.py), and run.toml never has to hold a
+        # secret. public_config_dict redacts it either way.
+        llm_key = config.perturbation.llm_api_key
+        if source == "llm" and not llm_key:
+            import os
+
+            base = (config.perturbation.llm_base_url or "").lower()
+            llm_key = (
+                os.environ.get("DEEPSEEK_API_KEY") if "deepseek" in base
+                else os.environ.get("XAI_API_KEY") if "x.ai" in base
+                else os.environ.get("MISTRAL_API_KEY") if "mistral" in base
+                else None
+            ) or os.environ.get("OPENAI_API_KEY")
         for gen_name in config.perturbation.generators:
             try:
                 generator = get_generator(
@@ -531,7 +548,7 @@ def build_profile(
                     use_local=(source == "local"),
                     use_llm=(source == "llm"),
                     base_url=config.perturbation.llm_base_url,
-                    api_key=config.perturbation.llm_api_key,
+                    api_key=llm_key,
                     model=(
                         config.perturbation.paraphraser_model
                         if source == "local"
