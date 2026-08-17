@@ -43,7 +43,7 @@ __all__ = [
 
 # LLM-backed variant types, keyed by the same name used for their rule-based
 # counterpart below (LLMParaphraseGenerator.variant_type must be one of these).
-_LLM_TYPES = {"synonym", "tone", "reorder"}
+_LLM_TYPES = {"synonym", "substitution", "tone", "reorder"}
 
 # Rule-based generators — the default. "reorder" (the LLM-side name) maps to
 # WordOrderGenerator, whose own .name is "word_order"; both keys resolve to

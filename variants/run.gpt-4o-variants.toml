@@ -1,0 +1,13 @@
+# Corpus run against frozen, pre-drafted perturbation variants.
+#
+# The variants in variants/stimulus40.gpt-4o.jsonl were drafted ONCE by gpt-4o
+# and committed. Pointing every model at the same file is what makes a
+# cross-model comparison a comparison: hif otherwise re-runs the generators per
+# profile, and a sampled drafter would hand each model different text for the
+# same prompt.
+#
+# With variants_file set, `generators` and `n_variants` are ignored — the file
+# IS the perturbation set — and each profile records generator="authored".
+# Nothing here calls an API: the drafting already happened.
+[perturbation]
+variants_file = "variants/stimulus40.gpt-4o.jsonl"
