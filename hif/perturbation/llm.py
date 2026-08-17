@@ -86,9 +86,31 @@ _SYSTEM_PROMPTS: dict[VariantType, str] = {
 }
 
 
+# A stimulus that does not end in terminal punctuation is an open
+# continuation — the model is meant to continue it, not answer it. A drafter
+# left to itself closes them: on the built-in suite, 28% of variants for the
+# seven fragment prompts came back as complete sentences, several of them
+# broken ("You must first accept that to understand the ocean."). A model
+# responding differently to a mangled fragment is behaving correctly, so those
+# variants inflate every perturbation measurement for the literary_continuation
+# and poetic_metaphorical regimes.
+_FRAGMENT_RULE = (
+    " The text is an INCOMPLETE sentence that trails off mid-thought. Every "
+    "rewrite must also be incomplete, must stop at the same point in the "
+    "thought, and must NOT be completed, resolved, or given closing "
+    "punctuation."
+)
+
+
+def _is_fragment(prompt: str) -> bool:
+    return not re.search(r"[.?!]['\")\]]*\s*$", prompt.strip())
+
+
 def _build_user_prompt(prompt: str, n: int) -> str:
+    noun = "fragment" if _is_fragment(prompt) else "sentence"
+    rule = _FRAGMENT_RULE if _is_fragment(prompt) else ""
     return (
-        f'Rewrite this sentence {n} times, one per numbered line:\n'
+        f'Rewrite this {noun} {n} times, one per numbered line.{rule}\n'
         f'"{prompt}"\n\n'
         + "\n".join(f"{i + 1}." for i in range(n))
     )
