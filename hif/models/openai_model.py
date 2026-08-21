@@ -347,20 +347,40 @@ class OpenAIModel(Model):
         # any visible output. max_completion_tokens covers both, so we need a large
         # minimum (2000) even when max_new_tokens=1 — otherwise GPT-5 / o-series
         # exhausts its quota on thinking and returns empty visible content.
-        budget = max(min(max_new_tokens * 20, 16000), 2000)
+        # The floor was 2000 and that was empirically too low. gpt-5 returned
+        # NOTHING on 10 of 40 corpus rows at 2000 (stop_reason=length), and on a
+        # continuation fragment it spent all 2000 on reasoning even with
+        # reasoning_effort="minimal" — the same prompt returns a full
+        # continuation at 4000 with reasoning_tokens=0. An empty completion is
+        # not the model declining; it is the elicitation running out of room,
+        # and recording it as absent behaviour would publish a fact about the
+        # budget as a fact about the model.
+        budget = max(min(max_new_tokens * 20, 16000), 4000)
 
+        # `extra_body` reaches this path too. Without it the only lever on a
+        # reasoning model is the budget, and the budget is not a reliable one:
+        # gpt-5 spent 1216 of 2000 tokens reasoning on a prompt that fit, and
+        # returned NOTHING on 10 of 40 corpus rows that did not
+        # (stop_reason=length). Raising the budget would also raise the visible
+        # output above the 64 content steps every other model is measured over,
+        # so it buys coverage by breaking comparability. `reasoning_effort:
+        # "minimal"` takes reasoning tokens to 0 and leaves the content budget
+        # alone — the same trade DeepSeek's `thinking: disabled` makes.
+        extra = self._config.extra_body or {}
         # Try max_completion_tokens first (required by reasoning models); fall back to max_tokens
         try:
             response = self._client.chat.completions.create(
                 model=self.name,
                 messages=messages,
                 max_completion_tokens=budget,
+                **extra,
             )
         except Exception:
             response = self._client.chat.completions.create(
                 model=self.name,
                 messages=messages,
                 max_tokens=budget,
+                **extra,
             )
 
         choice = response.choices[0]

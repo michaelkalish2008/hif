@@ -494,7 +494,18 @@ def profile(
         t_total = time.perf_counter()
         try:
             t0 = time.perf_counter()
-            model = _load._load_model(model_name, backend)
+            # base_url / extra_body come from [model] in --config-file. This
+            # is the SECOND place a model is loaded (the other is
+            # hif/cli/_run.py), and because the model is constructed here and
+            # passed down, the guard there never runs. Dropping them meant a
+            # run.toml pointing `profile` at DeepSeek asked OpenAI instead and
+            # got 404 model_not_found — the exact confusion _load_model's
+            # docstring says cost three regeneration passes.
+            model = _load._load_model(
+                model_name, backend,
+                base_url=(base_config.model.base_url if base_config else None),
+                extra_body=(base_config.model.extra_body if base_config else None),
+            )
             timings["model_load"] = time.perf_counter() - t0
             progress.update(task, description="Loading embedder...")
             t0 = time.perf_counter()

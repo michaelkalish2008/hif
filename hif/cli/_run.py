@@ -166,7 +166,20 @@ def _run_single_profile(
     )
 
     if model is None:
-        model = _load._load_model(model_name, backend)
+        # Forward base_url and extra_body from the RESOLVED config. They were
+        # dropped here, so `[model] base_url` and `[model] extra_body` in a
+        # run.toml reached `hif batch` — which passes config.model whole
+        # (hif/engine.py SessionEngine.create) — and silently did nothing on
+        # this path. A DeepSeek model name against OpenAI's endpoint answers
+        # 404 model_not_found, which _load_model's own docstring records as
+        # having cost three regeneration passes to diagnose; and a reasoning
+        # model loses the one setting that stops it spending its whole budget
+        # thinking.
+        model = _load._load_model(
+            model_name, backend,
+            base_url=config.model.base_url,
+            extra_body=config.model.extra_body,
+        )
     if embedder is None:
         embedder = _load._load_embedder()
 
